@@ -58,7 +58,7 @@ public class ParameterCrossCheckTests
             demand.VTypesById.ContainsKey(vTypeId),
             $"[{scenario}] golden.vtype.json declares vType '{vTypeId}' but rou.rou.xml has no such <vType>.");
 
-        var resolved = VTypeDefaults.ResolvePassenger(demand.VTypesById[vTypeId]);
+        var resolved = VTypeDefaults.Resolve(demand.VTypesById[vTypeId]);
         var golden = LoadGoldenVType(scenarioDir, vTypeId);
 
         void Check(string attr, double expected, double actual) =>
@@ -66,7 +66,7 @@ public class ParameterCrossCheckTests
                 Math.Abs(expected - actual) < 1e-9,
                 $"[{scenario}/{vTypeId}] {attr}: golden={expected} resolved={actual}");
 
-        Assert.Equal("passenger", resolved.VClass);
+        Assert.Equal(golden.VClass, resolved.VClass);
         Assert.Equal(golden.CarFollowModel, resolved.CarFollowModel);
         Check("length", golden.Length, resolved.Length);
         Check("minGap", golden.MinGap, resolved.MinGap);
@@ -89,6 +89,7 @@ public class ParameterCrossCheckTests
         var vType = doc.RootElement.GetProperty("vTypes").GetProperty(vTypeId);
 
         return new GoldenVType(
+            VClass: vType.GetProperty("vClass").GetString()!,
             CarFollowModel: vType.GetProperty("carFollowModel").GetString()!,
             Length: vType.GetProperty("length").GetDouble(),
             MinGap: vType.GetProperty("minGap").GetDouble(),
@@ -105,6 +106,7 @@ public class ParameterCrossCheckTests
     }
 
     private sealed record GoldenVType(
+        string VClass,
         string CarFollowModel,
         double Length,
         double MinGap,

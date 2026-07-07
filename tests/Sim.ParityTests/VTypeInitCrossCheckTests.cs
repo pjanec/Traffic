@@ -5,7 +5,7 @@ using Xunit;
 namespace Sim.ParityTests;
 
 // vType defaults resolver init cross-check (CLAUDE.md rule 6: match vType/init first when a
-// parity gap appears). Diffs Sim.Ingest.VTypeDefaults.ResolvePassenger's output against
+// parity gap appears). Diffs Sim.Ingest.VTypeDefaults.Resolve's output against
 // scenarios/01-single-free-flow/golden.vtype.json -- an empirical libsumo/TraCI dump of the
 // resolved passenger defaults (cross-checked against the vendored source in
 // VTYPE_CROSSCHECK.md; the two agree on every parameter). This is a fast-fail that separates
@@ -15,7 +15,7 @@ public class VTypeInitCrossCheckTests
     private static readonly string ScenarioDir = Path.Combine(RepoRoot(), "scenarios", "01-single-free-flow");
 
     [Fact]
-    public void ResolvePassenger_PureDefaults_MatchGoldenVTypeJson()
+    public void Resolve_PureDefaultsPassenger_MatchGoldenVTypeJson()
     {
         var golden = LoadGoldenVType();
 
@@ -23,7 +23,7 @@ public class VTypeInitCrossCheckTests
         // vType that declares only vClass="passenger", with no explicit sigma, to compare like
         // for like.
         var pureVType = new VType(Id: "probe", VClass: "passenger", Sigma: null);
-        var resolved = VTypeDefaults.ResolvePassenger(pureVType);
+        var resolved = VTypeDefaults.Resolve(pureVType);
 
         Assert.Equal("passenger", resolved.VClass);
         Assert.Equal(golden.CarFollowModel, resolved.CarFollowModel);
@@ -46,7 +46,7 @@ public class VTypeInitCrossCheckTests
     }
 
     [Fact]
-    public void ResolvePassenger_ScenarioVType_AppliesSigmaOverride()
+    public void Resolve_ScenarioVTypePassenger_AppliesSigmaOverride()
     {
         // The rung-1 scenario's rou.xml explicitly overrides sigma="0" for determinism (see
         // VTYPE_CROSSCHECK.md "Scenario-specific overrides"). The resolved EFFECTIVE sigma must
@@ -54,7 +54,7 @@ public class VTypeInitCrossCheckTests
         // half of the init cross-check, everything else must still match the pure defaults.
         var demand = DemandParser.Parse(Path.Combine(ScenarioDir, "rou.rou.xml"));
         var rawVType = demand.VTypesById["passenger0"];
-        var resolved = VTypeDefaults.ResolvePassenger(rawVType);
+        var resolved = VTypeDefaults.Resolve(rawVType);
 
         Assert.Equal(0.0, resolved.Sigma, precision: 9);
 

@@ -25,8 +25,8 @@ public sealed class Engine : IEngine
             var rawVType = _demand.VTypesById[def.TypeId];
             // vType defaults resolver (CLAUDE.md rule 6: match vType/init first): only vClass
             // and any explicit overrides (e.g. rou.xml's sigma="0") come from the raw parse;
-            // everything else is a resolved SUMO vClass default (VTypeDefaults.ResolvePassenger).
-            var vType = VTypeDefaults.ResolvePassenger(rawVType);
+            // everything else is a resolved SUMO vClass default (VTypeDefaults.Resolve).
+            var vType = VTypeDefaults.Resolve(rawVType);
             var runtime = new VehicleRuntime { Def = def, VType = vType };
 
             // Rung 5: seed this vehicle's own stop queue (StopRuntime) from its immutable Def.
