@@ -207,6 +207,40 @@ non-boxing `struct Enumerator` (no `IEnumerable<T>`/iterator block/LINQ), so all
 not move beyond noise. `dotnet test` (62/62 green) and the trajectory hash are both unchanged,
 confirming the phase/query restructuring changed no calculation order and no visited-vehicle set.
 
+## D8 (parallel plan)
+Captured on the same reference VM (4 logical cores), same command, 500 steps, immediately after
+the D8 refactor: `Engine.UseParallelPlan` (default `false`, opt-in) makes `PlanMovements`
+iterate `_vehicles` via `System.Threading.Tasks.Parallel.For(0, _vehicles.Count, i => {...})`
+instead of the sequential `foreach (var v in ActiveVehicles())`, guarded per-index by the same
+`Inserted && !Arrived` predicate. No other phase is parallelized (`ExecuteMoves` and the
+post-move LC phase stay sequential, per the briefing — `DecideSpeedGainChanges` has a genuine
+intra-phase read-after-write via the inline keep-right swap). `Sim.Bench` now runs BOTH modes
+back-to-back and reports each; `RungD8ParallelDeterminismTests` runs a 120-step slice of this
+same scenario in both modes inside `dotnet test` and asserts the trajectory hashes are IDENTICAL
+(and peak concurrent >= 50, the same density floor D1 already checks):
+
+| metric | single (`UseParallelPlan=false`) | parallel (`UseParallelPlan=true`) |
+|---|---|---|
+| peak concurrent vehicles | 378 | 378 |
+| veh-steps emitted | 115,141 | 115,141 |
+| throughput | 1740–1884 steps/s (0.531–0.575 ms/step) | 1778–1992 steps/s (0.502–0.563 ms/step) |
+| alloc / veh-step | ~206 B | ~207–215 B (`Parallel.For`'s own partitioner/task overhead; no allocation added by the ported code itself) |
+| GC gen0/1/2 | 3 / 3 / 1 | 1 / 1 / 0 (fewer, larger Gen0 collections — plausible artifact of `Parallel.For`'s batching, not a signal either way) |
+| deterministic (2 runs identical) | **True** | **True** |
+| **trajectory hash** | **`909605E965BFFE59`** | **`909605E965BFFE59`** (byte-identical to single-threaded, across every run captured) |
+| speedup (parallel/single) | — | **1.01x–1.06x** (run-to-run range on this shared 4-core VM) |
+
+**The point of D8 is the byte-identical hash, not the speedup** (per the briefing) — and it holds
+across every run captured. The speedup itself is small and noisy on this VM: `PlanMovements` is
+only one of five per-step phases (`InsertDepartingVehicles`, `EmitTrajectory`, `UpdateReroutes`,
+`ExecuteMoves`, `DecideSpeedGainChanges` all stay sequential), and each vehicle's own
+`ComputeMoveIntent` call is already cheap (a handful of `Math.Min`-folded constraint calls, no
+per-call allocation post-D4) relative to `Parallel.For`'s own per-step task-partitioning/
+scheduling overhead on only 4 logical cores and ~378 concurrent vehicles — Amdahl's law plus a
+workload too small for the parallelism dividend to dominate scheduling cost on this box. A
+denser scenario and/or more cores would be expected to show a larger win; that is future-rung
+territory, not this one's done-condition.
+
 ## What the numbers say (targets for D2–D8)
 - **~736 B allocated per vehicle-step** is the headline: this is the AoS `class` entities +
   `LaneNeighborQuery`'s per-step `Dictionary`/`List` (built twice/step) + the reducer's

@@ -80,6 +80,28 @@ public sealed class Engine : IEngine
     // predicate (the complement) and is left as a direct `_vehicles` walk, per the briefing.
     private ActiveVehicleQuery ActiveVehicles() => new(_vehicles);
 
+    // D8 (FastDataPlane ECS readiness -- parallelize the Simulation phase). Default OFF so every
+    // existing scenario/test/benchmark path (and the FCD parity path) stays exactly as it was.
+    // When ON, PlanMovements below runs concurrently over `_vehicles` instead of sequentially via
+    // ActiveVehicles(). This is provably safe (not just "probably fine"): ComputeMoveIntent's
+    // ENTIRE call tree (LeaderFollowSpeedConstraint, StopLineConstraint, RedLightConstraint,
+    // JunctionYieldConstraint/AdaptToJunctionLeader/FindFoeVehicle/IndexOfLaneHandle,
+    // ObstacleConstraint, ProcessNextStop, KraussModel's static pure functions) reads ONLY:
+    // this vehicle's own start-of-step Kinematics/lane/vType/stop-queue-front, the frozen
+    // pre-move `neighbors` LaneNeighborQuery snapshot (Refilled once, before PlanMovements is
+    // called, and never mutated again until DecideSpeedGainChanges' own later Refill -- see that
+    // field's header comment), and the immutable `_network`/`_config`/`_obstacles`/
+    // `_laneSeqPool`/`_stopsByEntity`/`_avoidedByEntity` side storage -- none of which is written
+    // by anything in the plan phase (writes to those tables happen only in LoadScenario,
+    // UpdateReroutes, and ExecuteMoves, all of which have already completed or not yet started
+    // relative to PlanMovements). Each loop iteration below writes ONLY `v.Intent`, its own
+    // entity's field (ProcessNextStop returns a StopTransition through MoveIntent rather than
+    // mutating the stop side-table -- see its own header comment) -- no shared mutable
+    // accumulator, no lock, no cross-entity write. That is exactly why plain per-index iteration
+    // over `_vehicles` (rather than the ActiveVehicleQuery `foreach`, which is not itself
+    // partitionable) is race-free here.
+    public bool UseParallelPlan { get; set; } = false;
+
     public void AddObstacle(string id, string laneId, double frontPos, double length,
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity)
     {
@@ -560,6 +582,25 @@ public sealed class Engine : IEngine
     // holds even though a vehicle's own stop bookkeeping "changes" every step it is stopped.
     private void PlanMovements(LaneNeighborQuery neighbors, double time)
     {
+        // D8: opt-in concurrent plan -- see UseParallelPlan's own header comment for the
+        // race-free argument. Indexes over the backing list (not the ActiveVehicleQuery
+        // `foreach`) so Parallel.For can partition it; the "inserted, not arrived" guard is
+        // re-checked inline per index, matching ActiveVehicleQuery.Enumerator's own predicate.
+        if (UseParallelPlan)
+        {
+            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, i =>
+            {
+                var v = _vehicles[i];
+                if (!v.Inserted || v.Arrived)
+                {
+                    return;
+                }
+
+                v.Intent = ComputeMoveIntent(v, neighbors, time);
+            });
+            return;
+        }
+
         // D6: the Query() analog -- see ActiveVehicles()'s own comment.
         foreach (var v in ActiveVehicles())
         {

@@ -609,11 +609,30 @@ and determinism (no RNG/wallclock). **The gap is representation, not architectur
   backend. Deliverable: the abstraction + the engine running through it, byte-identical, so the seam
   is proven. (When the owner later wires `Fdp.Core`, read `Engine/Fdp.ModuleHost` + `Engine/Examples`
   for the exact `IModule`/registration signatures.)
-- **D8. Parallelize the Simulation phase.** With D2–D6 done, run the plan/decide systems concurrently
-  in-house (`Parallel.For` over the plan/decide loops). The frozen-snapshot + order-independent-
-  decision discipline already guarantees byte-identical output — this rung *proves* it (same
-  trajectory single- vs multi-threaded, same determinism hash) and reports the throughput delta on
-  D1's benchmark. (An `IModule`-in-`Simulation` scheduling is the FDP analog the owner adds later.)
+- **D8. Parallelize the Simulation phase. DONE.** `Engine.UseParallelPlan` (default `false`,
+  opt-in): when `true`, `PlanMovements` iterates `_vehicles` via `System.Threading.Tasks.
+  Parallel.For(0, _vehicles.Count, i => {...})` (guarded per-index by the same `Inserted &&
+  !Arrived` predicate `ActiveVehicleQuery` applies) instead of the sequential `foreach (var v in
+  ActiveVehicles())`. `ComputeMoveIntent`'s entire call tree (`LeaderFollowSpeedConstraint`,
+  `StopLineConstraint`, `RedLightConstraint`, `JunctionYieldConstraint`/
+  `AdaptToJunctionLeader`/`FindFoeVehicle`, `ObstacleConstraint`, `ProcessNextStop`) was verified
+  to read ONLY start-of-step state (this vehicle's own `Kinematics`/lane/vType/stop-queue-front,
+  the frozen pre-move `LaneNeighborQuery` snapshot Refilled once before `PlanMovements` runs, and
+  the immutable network/config/obstacle/lane-sequence-pool/stop/avoided-edge side storage) and
+  write ONLY `v.Intent` — no shared mutable accumulator, no lock, no cross-entity write anywhere
+  in that call tree — so concurrent per-vehicle iteration is race-free by construction (see
+  `UseParallelPlan`'s own header comment in `Engine.cs` for the full argument). `ExecuteMoves` and
+  the post-move LC phase (`DecideSpeedGainChanges`, which has a genuine intra-phase
+  read-after-write via the inline keep-right swap) are deliberately left sequential, per the
+  briefing. New test `RungD8ParallelDeterminismTests` runs `scenarios/_bench/highway-dense` for
+  120 steps with `UseParallelPlan=false` and again with `UseParallelPlan=true` and asserts the
+  trajectory hashes are IDENTICAL and peak concurrent >= 50. `Sim.Bench` now runs both modes and
+  reports each — the 500-step hash is `909605E965BFFE59` in BOTH modes, every run captured;
+  measured speedup was small and noisy (1.01x–1.06x) on this shared 4-core VM (`PlanMovements` is
+  only one of five per-step phases, and the workload is cheap enough post-D4 that `Parallel.For`'s
+  own scheduling overhead competes with the parallelism dividend) — the byte-identical hash, not
+  the speedup, is this rung's point. `dotnet test` = 63 green (62 + this rung's new test).
+  Benchmark row appended to `scenarios/_bench/highway-dense/BASELINE.md`.
 - **D9. Info/replication export SEAM (READINESS — NO FDP network wiring).** Expose a clean,
   per-frame component-snapshot / observer API shaped for later `IDescriptorTranslator`-style
   consumption (ECS component → external descriptor), so an info/replication layer *could* attach

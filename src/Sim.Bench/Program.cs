@@ -69,15 +69,50 @@ internal static class Program
         Console.WriteLine($"alloc / veh-step   : {allocPerVehStep:F1} B");
         Console.WriteLine($"GC gen0/1/2        : {gc0} / {gc1} / {gc2}");
         Console.WriteLine($"deterministic      : {deterministic}  (hashA={hashA:X16})");
-        return deterministic ? 0 : 1;
+
+        // D8 (FastDataPlane ECS readiness -- parallelize the Simulation phase): a second measured
+        // run with Engine.UseParallelPlan = true. The plan phase reads only start-of-step state
+        // and writes only its own MoveIntent (see Engine.UseParallelPlan's own header comment), so
+        // this MUST produce the exact same trajectory hash as the single-threaded run above --
+        // that is the byte-identical parallelism proof this rung exists to make; throughput is
+        // secondary and is expected to be noisy on a shared VM.
+        var gc0p = GC.CollectionCount(0);
+        var gc1p = GC.CollectionCount(1);
+        var gc2p = GC.CollectionCount(2);
+        var allocBeforeParallel = GC.GetTotalAllocatedBytes(precise: true);
+        var swParallel = Stopwatch.StartNew();
+        var trajParallel = RunOnce(net, rou, cfg, steps, out _, useParallelPlan: true);
+        swParallel.Stop();
+        var allocBytesParallel = GC.GetTotalAllocatedBytes(precise: true) - allocBeforeParallel;
+        gc0p = GC.CollectionCount(0) - gc0p;
+        gc1p = GC.CollectionCount(1) - gc1p;
+        gc2p = GC.CollectionCount(2) - gc2p;
+
+        var hashParallel = TrajectoryHash(trajParallel);
+        var parallelMatchesSingle = hashParallel == hashA;
+
+        var stepsPerSecParallel = steps / swParallel.Elapsed.TotalSeconds;
+        var msPerStepParallel = swParallel.Elapsed.TotalMilliseconds / steps;
+        var allocPerVehStepParallel = totalPoints == 0 ? 0 : allocBytesParallel / (double)totalPoints;
+        var speedup = stepsPerSecParallel / stepsPerSec;
+
+        Console.WriteLine();
+        Console.WriteLine("=== D8: parallel plan (Engine.UseParallelPlan = true) ===");
+        Console.WriteLine($"throughput (par)   : {stepsPerSecParallel:F1} steps/s  ({msPerStepParallel:F3} ms/step)");
+        Console.WriteLine($"alloc / veh-step   : {allocPerVehStepParallel:F1} B");
+        Console.WriteLine($"GC gen0/1/2 (par)  : {gc0p} / {gc1p} / {gc2p}");
+        Console.WriteLine($"deterministic (par == single) : {parallelMatchesSingle}  (hashPar={hashParallel:X16})");
+        Console.WriteLine($"speedup (par/single): {speedup:F2}x");
+
+        return deterministic && parallelMatchesSingle ? 0 : 1;
     }
 
     private static TrajectorySet RunOnce(string net, string rou, string cfg, int steps)
         => RunOnce(net, rou, cfg, steps, out _);
 
-    private static TrajectorySet RunOnce(string net, string rou, string cfg, int steps, out TrajectorySet traj)
+    private static TrajectorySet RunOnce(string net, string rou, string cfg, int steps, out TrajectorySet traj, bool useParallelPlan = false)
     {
-        var engine = new Engine();
+        var engine = new Engine { UseParallelPlan = useParallelPlan };
         engine.LoadScenario(net, rou, cfg);
         traj = engine.Run(steps);
         return traj;
