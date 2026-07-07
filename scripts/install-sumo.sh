@@ -36,7 +36,6 @@ if [[ -z "${SUMO_VERSION:-}" ]]; then
 fi
 
 echo "==> Installing SUMO (eclipse-sumo==${SUMO_VERSION}) via pip ..."
-python3 -m pip install --upgrade pip >/dev/null
 python3 -m pip install "eclipse-sumo==${SUMO_VERSION}"
 
 # The pip package exposes the `sumo` entry point. Verify it runs and reports the

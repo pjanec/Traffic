@@ -1,0 +1,6 @@
+{
+  "parityMode": "exact",
+  "comparedAttributes": ["lane", "pos", "speed"],
+  "pos": 0.001,
+  "speed": 0.001
+}

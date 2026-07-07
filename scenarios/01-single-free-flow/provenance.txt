@@ -1,0 +1,9 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-07T01:59:59Z
+command=sumo -c /home/user/Traffic/scenarios/01-single-free-flow/config.sumocfg --fcd-output /home/user/Traffic/scenarios/01-single-free-flow/golden.fcd.xml --fcd-output.acceleration --save-state.times 1 --save-state.files /home/user/Traffic/scenarios/01-single-free-flow/golden.state.xml --no-step-log true
+state_time=1
+# input file hashes (sha256):
+input=net.net.xml sha256=eeed7da7d588c1be53557d7c963aa71fea8c6d97493f9412ce8742af5b399847
+input=rou.rou.xml sha256=dd2464e004360570a122123a392a493b51de50da75ee37b44f8d4440e4b11af9
+input=config.sumocfg sha256=699db8bb19c2a04771823cdf07425db7a0f6132e15010addab11757894f29d7d

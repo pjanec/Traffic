@@ -25,6 +25,16 @@ work queue. This file is the rules of the road.
    only the memory layout and the *timing of structural mutations* (deferred to a command
    buffer). When in doubt, read the vendored source and match it.
 
+## Environment bootstrapping
+
+The .NET 8 SDK itself is **not committed** — it is ephemeral, provisioned by the cloud
+environment's setup script via `apt-get install -y dotnet-sdk-8.0`, and reinstalled from
+scratch on every fresh VM. Microsoft's `dotnet-install.sh` endpoint
+(`builds.dotnet.microsoft.com`) is blocked by the egress proxy policy; use the Ubuntu
+archive mirror through `apt` instead. Never rely on the SDK being pre-committed or
+pre-existing in the offline test loop — a fresh session gets it from the setup script, not
+from the repo.
+
 ## The committed-vs-ephemeral split (memorize this)
 
 **Committed (the project — survives VM death):**
