@@ -70,7 +70,7 @@ public sealed class Engine : IEngine
             // built ONCE per step, here, from the same frozen start-of-step snapshot every
             // vehicle's plan phase reads (Seam 1: neighbor discovery behind an interface).
             var neighbors = LaneNeighborQuery.Build(_vehicles);
-            PlanMovements(neighbors);
+            PlanMovements(neighbors, time);
             ExecuteMoves(dt);
         }
 
@@ -222,7 +222,7 @@ public sealed class Engine : IEngine
     // writes, even single-threaded -- the rung-5 stop-transition decision (see ProcessNextStop)
     // is threaded through MoveIntent.StopUpdate rather than mutating v.Stops here, so this rule
     // holds even though a vehicle's own stop bookkeeping "changes" every step it is stopped.
-    private void PlanMovements(LaneNeighborQuery neighbors)
+    private void PlanMovements(LaneNeighborQuery neighbors, double time)
     {
         foreach (var v in _vehicles)
         {
@@ -231,7 +231,7 @@ public sealed class Engine : IEngine
                 continue;
             }
 
-            v.Intent = ComputeMoveIntent(v, neighbors);
+            v.Intent = ComputeMoveIntent(v, neighbors, time);
         }
     }
 
@@ -248,7 +248,7 @@ public sealed class Engine : IEngine
     // the front of v.Stops, never mutated here), the frozen `neighbors` snapshot, and the
     // immutable network/vType data -- no shared-state writes happen here; the resulting
     // StopTransition is handed back for ExecuteMoves to apply.
-    private MoveIntent ComputeMoveIntent(VehicleRuntime v, LaneNeighborQuery neighbors)
+    private MoveIntent ComputeMoveIntent(VehicleRuntime v, LaneNeighborQuery neighbors, double time)
     {
         var lane = _network!.LanesById[v.LaneId];
         var dt = _config!.StepLength;
@@ -278,6 +278,13 @@ public sealed class Engine : IEngine
             // keepStopping())` is simply false for a non-waypoint stop that IS reached) or when
             // there is no stop at all.
             StopLineConstraint(v, dt, actionStepLengthSecs),
+
+            // Red light (rung 10): MSVehicle.cpp's planMoveInternal per-link loop (~2641-2666,
+            // 2734), yellowOrRed arm only. +infinity (non-binding) when this lane's outgoing
+            // connection is not TL-controlled, or its light is green, at the time this Plan/
+            // Execute cycle's result will be observed (see RedLightConstraint's own comment on
+            // why that is `time + dt`, not `time`).
+            RedLightConstraint(v, lane, time, dt, actionStepLengthSecs),
         };
 
         var vPos = constraints.Min();
@@ -394,6 +401,74 @@ public sealed class Engine : IEngine
         var stopSpeed = KraussModel.StopSpeed(newStopDist, v.Kinematics.Speed, v.VType, dt, actionStepLengthSecs);
 
         return Math.Max(stopSpeed, vMinComfortable);
+    }
+
+    // Ported from MSVehicle.cpp's planMoveInternal per-link loop, yellowOrRed arm only
+    // (~lines 2630-2666 for laneStopOffset/stopDist, ~line 2734 for the stopSpeed call itself).
+    // Non-binding (+infinity) when this lane's outgoing connection is not TL-controlled, or the
+    // controlling link's state is green, at the time this Plan/Execute cycle's result will
+    // actually be observed.
+    //
+    // Timing note (why `time + dt`, not `time`): SUMO's MSNet::simulationStep processes, for its
+    // own internal clock reading T, `myLogics->check2Switch(T)` (the TLS phase switch, if T is a
+    // scheduled switch time) THEN `myEdges->planMovements(T)`/`executeMovements(T)` (using that
+    // now-current state) BEFORE `writeOutput()` tags the just-computed result as T (MSNet.cpp's
+    // postMoveStep, called at the end of the same simulationStep(); myStep is only incremented
+    // afterward). Our engine's loop instead EMITS the trajectory point tagged `time` at the TOP
+    // of its iteration (using the PREVIOUS iteration's Plan/Execute result), then Plans/Executes
+    // for `time` itself, whose result becomes the trajectory emitted at the NEXT iteration's
+    // `time + dt`. So the movement this Plan phase is computing right now corresponds exactly to
+    // SUMO's internal clock reading `time + dt`, not `time` -- the TL state must be sampled there
+    // (this is the one place a scenario boundary (t=29 -> t=30, red -> green) actually falsifies
+    // the naive "just use `time`" reading: the golden's t=30 row already shows free-flow
+    // acceleration through the junction, i.e. green was already in effect for the Plan/Execute
+    // that produced it).
+    private double RedLightConstraint(VehicleRuntime v, Lane lane, double time, double dt, double actionStepLengthSecs)
+    {
+        if (!_network!.TryGetTlControlledConnection(lane.EdgeId, lane.Index, out var connection))
+        {
+            return double.PositiveInfinity;
+        }
+
+        var tlLogic = _network.TlLogicsById[connection.Tl!];
+        var linkIndex = connection.LinkIndex!.Value;
+        var evalTime = time + dt;
+        var state = TrafficLightState.GetLinkState(tlLogic, linkIndex, evalTime);
+
+        if (!TrafficLightState.IsRedOrYellow(state))
+        {
+            return double.PositiveInfinity;
+        }
+
+        var seen = lane.Length - v.Kinematics.Pos;
+
+        // stopDecel (MSVehicle.cpp:2645): yellowOrRed => MAX2(MIN2(gTLSYellowMinDecel,
+        // emergencyDecel), maxDecel) -- since MAX2 floors it at maxDecel and this vType's
+        // gTLSYellowMinDecel default (3.0) < emergencyDecel (9.0) < ... is always dominated by
+        // that floor, stopDecel collapses to exactly vType.Decel for every vType reachable here
+        // (see the rung-10 briefing); ported as the resolved constant rather than the unreached
+        // MIN2/MAX2 machinery.
+        var stopDecel = v.VType.Decel;
+        var brakeDist = KraussModel.BrakeGap(v.Kinematics.Speed, stopDecel, headwayTime: 0.0, dt);
+        var canBrakeBeforeLaneEnd = seen >= brakeDist;
+
+        // majorStopOffset (MSVehicle.cpp:2642): MAX2(jmStoplineGap default
+        // DIST_TO_STOPLINE_EXPECT_PRIORITY=1.0, lane.getVehicleStopOffset(this)=0 -- no
+        // vClass-specific stop offset modeled) = 1.0.
+        const double majorStopOffset = 1.0;
+        const double positionEps = 0.1;
+
+        var laneStopOffset = majorStopOffset;
+        if (canBrakeBeforeLaneEnd)
+        {
+            // MSVehicle.cpp:2661: avoid emergency braking if possible.
+            laneStopOffset = Math.Min(laneStopOffset, seen - brakeDist);
+        }
+
+        laneStopOffset = Math.Max(positionEps, laneStopOffset);
+        var stopDist = Math.Max(0.0, seen - laneStopOffset);
+
+        return KraussModel.StopSpeed(stopDist, v.Kinematics.Speed, v.VType, dt, actionStepLengthSecs);
     }
 
     // Ported from MSVehicle::processNextStop (sumo/src/microsim/MSVehicle.cpp:1613-1897),

@@ -27,21 +27,67 @@ public sealed record Edge(
 // normal edge, but all connections are parsed uniformly here since the source file does not
 // distinguish them either). `Via` is the internal lane traversed between `from`/`to` at a
 // junction; absent (null) when the connection crosses no junction interior (not exercised by
-// this scenario, but tolerated).
+// this scenario, but tolerated). Rung 10: `Tl` is the controlling <tlLogic> id (null when the
+// connection is uncontrolled, e.g. minor/major priority-only links) and `LinkIndex` is this
+// connection's index into that tlLogic's per-phase state string (MSLink::getTLLinkIndex).
 public sealed record Connection(
     string From,
     int FromLane,
     string To,
     int ToLane,
-    string? Via);
+    string? Via,
+    string? Tl,
+    int? LinkIndex);
+
+// Rung 10: one <phase> of a <tlLogic>, ported from sumo/src/microsim/traffic_lights/
+// MSSimpleTrafficLightLogic.cpp's MSPhaseDefinition -- only `duration` and `state` are needed
+// for a 'static' program's link-state lookup (min/max duration, next-phase overrides, etc. are
+// actuated/adaptive-only concerns, out of scope per the briefing).
+public sealed record TlPhase(double Duration, string State);
+
+// Rung 10: a parsed <tlLogic id=".." type="static" offset=".."> -- only `type="static"` is
+// supported (see scope note in Sim.Core.TrafficLightState); `Offset` shifts the cycle start
+// (MSSimpleTrafficLightLogic's constructor: myStep 0 begins at simulation time `offset`, not 0,
+// in the general case -- always 0 in this scenario, but threaded through rather than assumed).
+public sealed record TlLogic(string Id, double Offset, IReadOnlyList<TlPhase> Phases)
+{
+    // MSSimpleTrafficLightLogic::computeCycleTime: sum of every phase's duration.
+    public double CycleLength => Phases.Sum(p => p.Duration);
+}
 
 public sealed record NetworkModel(
     IReadOnlyList<Edge> Edges,
     IReadOnlyDictionary<string, Edge> EdgesById,
     IReadOnlyDictionary<string, Lane> LanesById,
     IReadOnlyList<Connection> Connections,
-    IReadOnlyDictionary<(string FromEdge, int FromLane, string ToEdge), Connection> ConnectionsByFromLaneTo)
+    IReadOnlyDictionary<(string FromEdge, int FromLane, string ToEdge), Connection> ConnectionsByFromLaneTo,
+    IReadOnlyDictionary<string, TlLogic> TlLogicsById,
+    IReadOnlyDictionary<(string FromEdge, int FromLane), IReadOnlyList<Connection>> ConnectionsByFromEdgeLane)
 {
+    // Rung 10: find the (at most one, in this rung's scope) TL-controlled connection leaving a
+    // given lane -- i.e. the connection a vehicle currently on this lane would use to exit it,
+    // irrespective of which specific destination edge its route picks (this scenario has only
+    // one outgoing connection per lane at all, so there is no ambiguity to resolve; a network
+    // with multiple turn choices, only some of which are TL-controlled, is out of scope -- see
+    // the briefing's scope note on "multi-link/multi-lane TL states").
+    public bool TryGetTlControlledConnection(string edgeId, int laneIndex, out Connection connection)
+    {
+        if (ConnectionsByFromEdgeLane.TryGetValue((edgeId, laneIndex), out var candidates))
+        {
+            foreach (var candidate in candidates)
+            {
+                if (candidate.Tl is not null)
+                {
+                    connection = candidate;
+                    return true;
+                }
+            }
+        }
+
+        connection = null!;
+        return false;
+    }
+
     // Rung 9a: resolves the ordered lane-id sequence a vehicle traverses along `routeEdges`,
     // starting at `departLaneIndex` on the first edge -- ported from how SUMO's route/lane
     // machinery expands a route's edge sequence through each junction's connection/via lane

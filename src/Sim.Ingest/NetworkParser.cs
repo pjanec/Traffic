@@ -57,27 +57,71 @@ public static class NetworkParser
 
         var connections = new List<Connection>();
         var connectionsByFromLaneTo = new Dictionary<(string, int, string), Connection>();
+        var connectionsByFromEdgeLane = new Dictionary<(string, int), List<Connection>>();
 
         foreach (var connEl in root.Elements("connection"))
         {
             // A <connection>'s from/to are always present in netconvert output; fromLane/toLane
             // default to "0" only for parser robustness (every connection in scope for this
             // rung specifies them explicitly). `via` (the internal lane traversed at a
-            // junction) is absent for connections that cross no junction interior.
+            // junction) is absent for connections that cross no junction interior. Rung 10:
+            // `tl`/`linkIndex` are present together only on connections controlled by a
+            // <tlLogic> (e.g. this scenario's WJ->JE connection); absent (null) otherwise.
             var from = RequireAttribute(connEl, "from");
             var to = RequireAttribute(connEl, "to");
             var fromLane = int.Parse(connEl.Attribute("fromLane")?.Value ?? "0", CultureInfo.InvariantCulture);
             var toLane = int.Parse(connEl.Attribute("toLane")?.Value ?? "0", CultureInfo.InvariantCulture);
             var via = connEl.Attribute("via")?.Value;
+            var tl = connEl.Attribute("tl")?.Value;
+            var linkIndex = connEl.Attribute("linkIndex") is { } linkIndexAttr
+                ? int.Parse(linkIndexAttr.Value, CultureInfo.InvariantCulture)
+                : (int?)null;
 
-            var connection = new Connection(from, fromLane, to, toLane, via);
+            var connection = new Connection(from, fromLane, to, toLane, via, tl, linkIndex);
             connections.Add(connection);
             // Last-wins on a duplicate key is a non-issue for this rung's straight-through,
             // single-connection-per-(fromEdge,fromLane,toEdge) network.
             connectionsByFromLaneTo[(from, fromLane, to)] = connection;
+
+            if (!connectionsByFromEdgeLane.TryGetValue((from, fromLane), out var list))
+            {
+                list = new List<Connection>();
+                connectionsByFromEdgeLane[(from, fromLane)] = list;
+            }
+
+            list.Add(connection);
         }
 
-        return new NetworkModel(edges, edgesById, lanesById, connections, connectionsByFromLaneTo);
+        var tlLogicsById = new Dictionary<string, TlLogic>();
+        foreach (var tlLogicEl in root.Elements("tlLogic"))
+        {
+            var id = RequireAttribute(tlLogicEl, "id");
+            var offset = double.Parse(tlLogicEl.Attribute("offset")?.Value ?? "0", CultureInfo.InvariantCulture);
+
+            var phases = new List<TlPhase>();
+            foreach (var phaseEl in tlLogicEl.Elements("phase"))
+            {
+                var duration = double.Parse(RequireAttribute(phaseEl, "duration"), CultureInfo.InvariantCulture);
+                var state = RequireAttribute(phaseEl, "state");
+                phases.Add(new TlPhase(duration, state));
+            }
+
+            // Last-wins on a duplicate id (multiple <tlLogic> programs for the same junction id,
+            // e.g. an alternate programID) is a non-issue for this rung's single-program network.
+            tlLogicsById[id] = new TlLogic(id, offset, phases);
+        }
+
+        var connectionsByFromEdgeLaneReadOnly = connectionsByFromEdgeLane
+            .ToDictionary(kvp => kvp.Key, kvp => (IReadOnlyList<Connection>)kvp.Value);
+
+        return new NetworkModel(
+            edges,
+            edgesById,
+            lanesById,
+            connections,
+            connectionsByFromLaneTo,
+            tlLogicsById,
+            connectionsByFromEdgeLaneReadOnly);
     }
 
     private static IReadOnlyList<(double X, double Y)> ParseShape(string shape)
