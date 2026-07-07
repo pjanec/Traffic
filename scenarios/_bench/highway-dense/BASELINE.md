@@ -136,6 +136,43 @@ buffer)/D7 (the FDP-shaped seam) build on, not a hot-path allocation reduction (
 job). Trajectory hash and `dotnet test` (62/62 green) are both unchanged, confirming the
 refactor is behavior-preserving.
 
+## D5 (Entity + command buffer)
+Captured on the same reference VM, same command, 500 steps, immediately after the D5 refactor:
+a new `Entity` handle (`Index`+`Generation`, `Generation` reserved/0-for-now — see
+`src/Sim.Core/Entity.cs`) was added to `VehicleRuntime`, and the engine's three existing
+deferred structural mutations were routed through a new, reusable `CommandBuffer`
+(`src/Sim.Core/CommandBuffer.cs`, modeled on FDP's `view.GetCommandBuffer()` ->
+`AddComponent`/`DestroyEntity`): the speed-gain lane swap (`DecideSpeedGainChanges`, flushed at
+that method's end), the reroute lane-sequence-slice swap (`UpdateReroutes`, flushed at that
+method's end), and vehicle arrival (`ExecuteMoves`'s `v.Arrived = true`, flushed at that
+method's end) all now RECORD instead of writing inline, applied at the SAME phase-barrier point
+they always took effect at. One exception stayed inline (documented in place, per the
+briefing's own escape hatch): the keep-right lane swap in `ApplyKeepRightDecision`, because
+`DecideSpeedGainChanges` re-reads the SAME vehicle's `v.LaneHandle` immediately afterward, in
+the SAME iteration, to pick its left-neighbor lane for the speed-gain decision — a genuine
+same-vehicle/same-phase read-after-write a barrier-flushed buffer cannot honor without changing
+which lane that decision runs against (verified needed by rung A2/scenario 12's existing
+CORRECTED-ORDERING note). This is purely a representation refactor — no mutation's timing
+changed:
+
+| metric | value |
+|---|---|
+| peak concurrent vehicles | 378 |
+| veh-steps emitted | 115,141 |
+| wall time | 0.260–0.469 s (run-to-run range on this shared VM) |
+| throughput | **1065–1926 steps/s** (0.519–0.939 ms/step) |
+| alloc total | **22.6 MiB** |
+| alloc / step | 46.3 KiB |
+| alloc / veh-step | **205.9 B** (essentially unchanged from D3/D4's 205.8–207.1 B) |
+| GC gen0/1/2 | 3 / 3 / 1 |
+| deterministic (2 runs identical) | **True** (hash unchanged: `909605E965BFFE59`, same as D1–D4) |
+
+As expected — this is a structural/representational change (an `Entity` handle field + routing
+three already-deferred mutations through a reusable, pre-allocated `List<Command>` that is
+`Clear()`ed every flush, never reallocated in steady state) — alloc/veh-step does not move
+beyond noise. `dotnet test` (62/62 green) and the trajectory hash are both unchanged, confirming
+the refactor is behavior-preserving.
+
 ## What the numbers say (targets for D2–D8)
 - **~736 B allocated per vehicle-step** is the headline: this is the AoS `class` entities +
   `LaneNeighborQuery`'s per-step `Dictionary`/`List` (built twice/step) + the reducer's

@@ -62,6 +62,14 @@ public sealed class Engine : IEngine
     // is safe even though it is refilled twice per step.
     private LaneNeighborQuery? _neighborQuery;
 
+    // D5 (FastDataPlane ECS readiness): ONE reusable command buffer for structural mutations
+    // (lane swap / route replacement / arrival), matching FDP's `view.GetCommandBuffer()`.
+    // Recorded during a phase, `Flush()`ed at that phase's own barrier (see UpdateReroutes/
+    // ExecuteMoves/DecideSpeedGainChanges) -- each phase flushes before the next phase starts
+    // recording, so one shared instance is safe to reuse sequentially all step long (Flush()
+    // clears it). Pure representation refactor: WHEN each mutation applies is unchanged.
+    private readonly CommandBuffer _commandBuffer = new();
+
     public void AddObstacle(string id, string laneId, double frontPos, double length,
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity)
     {
@@ -105,7 +113,9 @@ public sealed class Engine : IEngine
             // D3: EntityIndex is this vehicle's stable index in _vehicles, set once here -- see
             // VehicleRuntime.EntityIndex's own comment.
             var entityIndex = _vehicles.Count;
-            var runtime = new VehicleRuntime { Def = def, VType = vType, EntityIndex = entityIndex };
+            // D5: the FDP-shaped handle, set once here alongside EntityIndex -- Generation
+            // stays 0 (see Entity.cs / VehicleRuntime.Entity's own comments).
+            var runtime = new VehicleRuntime { Def = def, VType = vType, EntityIndex = entityIndex, Entity = new Entity(entityIndex, 0) };
 
             // Rung 5 (D3: side table): seed this vehicle's own stop queue (StopRuntime) from its
             // immutable Def, ONLY when it actually has stops. Reached/RemainingDuration start at
@@ -473,12 +483,17 @@ public sealed class Engine : IEngine
             // stays physically where it is), only the REMAINING route changes -- append the newly
             // resolved handle sequence to the shared pool as a NEW slice (the old slice is simply
             // abandoned in the pool; it only grows).
+            // D5: the pool append is engine-owned (not per-vehicle deferred state) and stays
+            // inline; only the vehicle's own [LaneSeqStart, LaneSeqLen) slice (+ the LaneSeqIndex
+            // reset ReplaceRoute's Flush always applies) goes through the command buffer, flushed
+            // at the end of this method (matching today's timing exactly -- nothing later in
+            // THIS SAME iteration or any other vehicle's iteration this loop reads v's
+            // LaneSeqStart/Len/Index after this point, see UpdateReroutes' own D5 comment below).
             var laneIndex = _network.LanesByHandle[v.LaneHandle].Index;
             var newHandleSeq = _network.ResolveLaneSequenceHandles(newEdges, laneIndex);
-            v.LaneSeqStart = _laneSeqPool.Count;
-            v.LaneSeqLen = newHandleSeq.Length;
+            var newLaneSeqStart = _laneSeqPool.Count;
             _laneSeqPool.AddRange(newHandleSeq);
-            v.LaneSeqIndex = 0;
+            _commandBuffer.ReplaceRoute(v, newLaneSeqStart, newHandleSeq.Length);
 
             if (!_avoidedByEntity.TryGetValue(v.EntityIndex, out var avoidedEdges))
             {
@@ -489,6 +504,11 @@ public sealed class Engine : IEngine
             avoidedEdges.Add(blockedEdge);
             v.BlockedByObstacleSeconds = 0.0;
         }
+
+        // D5: apply every ReplaceRoute recorded above, in record order, at this method's end --
+        // the SAME point v.LaneSeqStart/Len/Index took effect at before this rung, still strictly
+        // before PlanMovements (called next, in Run()) reads them.
+        _commandBuffer.Flush();
     }
 
     // Plan phase (seam 1, parallel-safe): reads start-of-step world state (including the frozen
@@ -1201,7 +1221,16 @@ public sealed class Engine : IEngine
 
                 if (v.LaneSeqIndex + 1 >= v.LaneSeqLen)
                 {
-                    v.Arrived = true;
+                    // D5: deferred through the command buffer, flushed at the END of this
+                    // method's outer foreach (see below) -- safe because the `break` right
+                    // after this, not the `while (!v.Arrived)` condition, is what exits this
+                    // loop (the condition is never RE-evaluated after this assignment within
+                    // this same call), and nothing later in this vehicle's own iteration or any
+                    // OTHER vehicle's iteration this SAME ExecuteMoves pass reads v.Arrived
+                    // (the outer foreach's own `if (!v.Inserted || v.Arrived) continue;` guard
+                    // only ever reads a vehicle's OWN Arrived value, set at the top of ITS OWN
+                    // iteration, never another vehicle's just-this-step arrival).
+                    _commandBuffer.Destroy(v);
                     break;
                 }
 
@@ -1217,6 +1246,12 @@ public sealed class Engine : IEngine
             // both now run in the post-move DecideSpeedGainChanges phase (see Run()'s comment and
             // that method's header comment for why keep-right moved out of Plan/MoveIntent).
         }
+
+        // D5: apply every Destroy recorded above, in record order, at this method's end -- the
+        // SAME point v.Arrived took effect at before this rung, still strictly before
+        // DecideSpeedGainChanges (called next, in Run()) reads it via its own postMoveNeighbors
+        // Refill / `!v.Inserted || v.Arrived` guard.
+        _commandBuffer.Flush();
     }
 
     // Rung A2 (+ rung 8b, moved here -- see the CORRECTED-ORDERING note below): the two LC2013
@@ -1370,17 +1405,30 @@ public sealed class Engine : IEngine
             v.SpeedGainProbability = speedGainProbability;
 
             // Structural change: instant lane-index snap (lanechange.duration=0), exactly like
-            // rung 8b's keep-right swap in ExecuteMoves -- applied here, after this phase's own
-            // frozen snapshot (postMoveNeighbors) was already built and is no longer read by any
-            // other vehicle this step, so mutating v.LaneId now cannot affect another vehicle's
-            // decision this same step (CLAUDE.md rule 2/3).
+            // rung 8b's keep-right swap in ExecuteMoves. D5: recorded through the command
+            // buffer rather than applied inline -- safe to DEFER to this method's end because
+            // (a) this is already the LAST thing this vehicle's own iteration does this phase
+            // (nothing later in THIS iteration re-reads v.LaneId/LaneHandle), and (b) no OTHER
+            // vehicle's decision this same phase reads it either -- every vehicle's
+            // keep-right/speed-gain lookups go through the ONE frozen `postMoveNeighbors`
+            // snapshot built once at the top of this method, never a live read of another
+            // vehicle's current LaneId (see this method's own header comment). Contrast with
+            // ApplyKeepRightDecision's swap below, which stays INLINE precisely because THIS
+            // SAME vehicle's THIS SAME iteration re-reads v.LaneHandle right after calling it
+            // (the "may have just changed v.LaneHandle; re-read" comment above) -- deferring
+            // that one would change which lane the speed-gain decision runs against.
             if (targetLaneId is not null)
             {
-                v.LaneId = targetLaneId;
-                // D2: keep LaneHandle in lockstep -- leftLane's own Handle field, no lookup.
-                v.LaneHandle = targetLaneHandle;
+                _commandBuffer.ChangeLane(v, targetLaneHandle, targetLaneId);
             }
         }
+
+        // D5: apply every ChangeLane recorded above, in record order, at this method's end --
+        // the SAME point v.LaneId/LaneHandle took effect at before this rung (DecideSpeedGain-
+        // Changes is the LAST phase in Run()'s per-step loop, so this flush lands exactly where
+        // the inline writes used to, before EmitTrajectory reads LaneId at the top of next
+        // step's iteration).
+        _commandBuffer.Flush();
     }
 
     // MSLCM_LC2013's keep-right sub-block ONLY (see CLAUDE.md briefing's scope note): strategic/
@@ -1467,6 +1515,21 @@ public sealed class Engine : IEngine
             // scenario reaching this fire has an empty target (right) lane; a real blocker veto
             // wants its own scenario with target-lane traffic on the RIGHT side (mirrors A2-iii's
             // scope note for the LEFT side).
+            //
+            // D5: deliberately kept INLINE, NOT routed through the command buffer. The caller
+            // (DecideSpeedGainChanges) re-reads `v.LaneHandle` immediately after this call
+            // returns ("ApplyKeepRightDecision above may have just changed v.LaneHandle;
+            // re-read") to pick the left-neighbor lane for THIS SAME vehicle's speed-gain
+            // decision this SAME phase -- a genuine same-vehicle, same-iteration
+            // read-after-write. A command buffer flushed at the phase barrier (end of
+            // DecideSpeedGainChanges) would leave that re-read seeing the STALE pre-swap lane,
+            // changing which lane the speed-gain decision runs against (verified needed by rung
+            // A2's scenario 12, see DecideSpeedGainChanges' CORRECTED-ORDERING comment) --
+            // exactly the CLAUDE.md rule 4 / this rung's briefing exception: "a command buffer
+            // flushed at a phase barrier is only valid where no same-phase reader depends on the
+            // write". This write does NOT cross vehicles (every other vehicle's neighbor lookups
+            // this phase go through the frozen `postMoveNeighbors` snapshot, never a live read of
+            // `v`'s LaneId), so it stays safe/deterministic despite being applied immediately.
             v.LaneId = rightLane.Id;
             // D2: keep LaneHandle in lockstep -- rightLane's own Handle field, no lookup.
             v.LaneHandle = rightLane.Handle;

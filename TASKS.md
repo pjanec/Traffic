@@ -577,11 +577,17 @@ and determinism (no RNG/wallclock). **The gap is representation, not architectur
   ~207 B is the `TrajectorySet`/FCD emit (a `TrajectoryPoint` + `SortedDictionary` insert per veh-step)
   — an output-contract allocator, out of D4 scope; it moves to a reusable buffer when the emit becomes
   an Export-phase system (D6). Benchmark row in BASELINE.md.
-- **D5. Entity lifecycle via the command buffer.** Route insertion (`CreateEntity` + `AddComponent`s)
-  and arrival (`DestroyEntity`) through a deferred command buffer applied at a barrier point, matching
-  FDP's `GetCommandBuffer()`. Generalize the existing seam-4 buffer (lane swaps/reroute) to entity
-  create/destroy + component add/remove. Use generation-checked handles; gate stored handles on an
-  `IsAlive`-equivalent. Parity unchanged (insertion order/timing must match — the FIFO gap-gate stays).
+- **D5. Entity handle + command-buffer structural mutations. DONE.** `Entity(int Index, int
+  Generation)` (FDP's handle shape; `Generation` reserved at 0) on every `VehicleRuntime`; a reusable
+  `CommandBuffer` (`ChangeLane`/`ReplaceRoute`/`Destroy`/`Flush`, zero steady-state alloc). The deferred
+  structural mutations now record into the buffer and flush at their existing phase barriers — reroute
+  route-replacement (end of `UpdateReroutes`), arrival = `Destroy` (end of `ExecuteMoves`), and the
+  speed-gain lane swap (end of the post-move LC phase). The **keep-right** swap was deliberately kept
+  INLINE (documented): the speed-gain decision re-reads that same vehicle's lane in the same iteration
+  right after it — a genuine same-phase read-after-write a barrier flush can't honor, so correctness
+  beats FDP-purity there. Pure refactor — hash UNCHANGED (`909605E965BFFE59`), `dotnet test` = 62 green,
+  alloc unchanged (~206 B/veh-step). Index-recycling / generation-bumping deferred to D7's store
+  boundary. Benchmark row in BASELINE.md.
 - **D6. Restructure the step loop into phased systems over queries.** Recast Insert/Emit/Plan(CF +
   multi-constraint reducer)/Execute/DecideLaneChanges/UpdateReroutes as ordered systems mapped to
   `SystemPhase` (Input=insert/emit, Simulation=plan+decide, PostSimulation=execute/structural,

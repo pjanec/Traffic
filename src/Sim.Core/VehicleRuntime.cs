@@ -24,10 +24,18 @@ internal sealed class VehicleRuntime
 
     // D3: this vehicle's stable index in Engine._vehicles, set once at creation (LoadScenario).
     // Vehicles are never removed from that list -- only flagged Arrived -- so the list index is
-    // a stable entity id, the pre-`Entity`-handle stand-in D5 upgrades to a generational handle.
-    // Used to key the engine's side storage (lane-sequence pool slice owner id is implicit via
-    // LaneSeqStart/LaneSeqLen below; Stops/AvoidedEdges side tables are keyed by this directly).
+    // a stable entity id. D5 adds `Entity` (below) as the actual FDP-shaped handle; EntityIndex
+    // remains the plain int key the engine's side storage uses directly (lane-sequence pool
+    // slice owner id is implicit via LaneSeqStart/LaneSeqLen below; Stops/AvoidedEdges side
+    // tables are keyed by this directly) -- always equal to Entity.Index.
     public int EntityIndex;
+
+    // D5 (FastDataPlane ECS readiness): the FDP-shaped handle for this vehicle -- `new
+    // Entity(EntityIndex, 0)`, set once at creation alongside EntityIndex (LoadScenario).
+    // Generation stays 0 (no recycling yet, see Entity.cs's header comment); nothing in the
+    // engine keys off this yet (EntityIndex/side tables are unchanged), it exists so callers
+    // can start holding the FDP-shaped handle instead of a raw int.
+    public Entity Entity;
 
     public bool Inserted;
 
