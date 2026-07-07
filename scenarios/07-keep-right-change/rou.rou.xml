@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Keep-right lane change (rung 8b). One passenger vehicle (sigma=0) departs on the LEFT
+         lane (index 1) of an empty 2-lane edge. With no reason to stay left, LC2013's keep-right
+         (Rechtsfahrgebot) incentive accumulates and, once at free-flow speed, the vehicle changes
+         to the right lane e0_0 at t=6. lanechange.duration=0 makes the change instantaneous (a
+         discrete lane-index snap), matching DESIGN.md seam 4's phase-1 semantics. Longitudinal
+         motion is identical to rung 1; only the lane index changes. -->
+    <vType id="passenger0" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="veh0" type="passenger0" route="r0" depart="0" departPos="0" departSpeed="0" departLane="1"/>
+</routes>
