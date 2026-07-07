@@ -173,6 +173,40 @@ three already-deferred mutations through a reusable, pre-allocated `List<Command
 beyond noise. `dotnet test` (62/62 green) and the trajectory hash are both unchanged, confirming
 the refactor is behavior-preserving.
 
+## D6 (phased systems + query)
+Captured on the same reference VM, same command, 500 steps, immediately after the D6 refactor:
+added `src/Sim.Core/SystemPhase.cs` (`Input`/`Simulation`/`PostSimulation`/`Export`, FDP's phase
+names scoped to this engine) and `src/Sim.Core/VehicleQuery.cs` (`ActiveVehicleQuery`, a
+`readonly struct` with a hand-written `struct Enumerator` over `Engine._vehicles`, yielding only
+`Inserted && !Arrived` vehicles — the `Query()` analog). Every hot-path pass that used to
+re-type `foreach (var v in _vehicles) { if (!v.Inserted || v.Arrived) continue; ... }`
+(`PlanMovements`, `ExecuteMoves`, `EmitTrajectory`, `DecideSpeedGainChanges`, the
+`TryInsertOnLane`/`UpdateReroutes`/`FindFoeVehicle` scans, `LaneNeighborQuery.Refill`) now reads
+`foreach (var v in ActiveVehicles())` instead. `Run()`'s per-step body is unchanged in ORDER —
+only re-labeled with `// [SystemPhase.X]` comments naming which phase each existing pass belongs
+to (Input: `InsertDepartingVehicles`, `UpdateReroutes`; Simulation: `PlanMovements`;
+PostSimulation: `ExecuteMoves`, `DecideSpeedGainChanges`; Export: `EmitTrajectory`, still at the
+top of the loop emitting the prior step's settled state — NOT moved). `InsertDepartingVehicles`'s
+own not-yet-inserted candidate scan is a different predicate and was left as a direct `_vehicles`
+walk, per the briefing:
+
+| metric | value |
+|---|---|
+| peak concurrent vehicles | 378 |
+| veh-steps emitted | 115,141 |
+| wall time | 0.241–0.369 s (run-to-run range on this shared VM) |
+| throughput | **1354–2071 steps/s** (0.483–0.738 ms/step) |
+| alloc total | **22.6 MiB** |
+| alloc / step | 46.3 KiB |
+| alloc / veh-step | **205.9 B** (unchanged from D5's 205.9 B — the query is verified zero-alloc) |
+| GC gen0/1/2 | 2–3 / 2–3 / 1 |
+| deterministic (2 runs identical) | **True** (hash unchanged: `909605E965BFFE59`, same as D1–D5) |
+
+Pure representation refactor, as expected: `ActiveVehicleQuery` is a `readonly struct` with a
+non-boxing `struct Enumerator` (no `IEnumerable<T>`/iterator block/LINQ), so alloc/veh-step does
+not move beyond noise. `dotnet test` (62/62 green) and the trajectory hash are both unchanged,
+confirming the phase/query restructuring changed no calculation order and no visited-vehicle set.
+
 ## What the numbers say (targets for D2–D8)
 - **~736 B allocated per vehicle-step** is the headline: this is the AoS `class` entities +
   `LaneNeighborQuery`'s per-step `Dictionary`/`List` (built twice/step) + the reducer's

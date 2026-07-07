@@ -588,12 +588,18 @@ and determinism (no RNG/wallclock). **The gap is representation, not architectur
   beats FDP-purity there. Pure refactor — hash UNCHANGED (`909605E965BFFE59`), `dotnet test` = 62 green,
   alloc unchanged (~206 B/veh-step). Index-recycling / generation-bumping deferred to D7's store
   boundary. Benchmark row in BASELINE.md.
-- **D6. Restructure the step loop into phased systems over queries.** Recast Insert/Emit/Plan(CF +
-  multi-constraint reducer)/Execute/DecideLaneChanges/UpdateReroutes as ordered systems mapped to
-  `SystemPhase` (Input=insert/emit, Simulation=plan+decide, PostSimulation=execute/structural,
-  Export=FCD emit), each iterating a `Query().With<…>()`. Preserve the plan/execute contract (plan =
-  RO reads + own RW; structural = command buffer) — it maps 1:1 onto FDP async `Simulation` modules.
-  Parity unchanged; this is the shape D7 plugs FDP into.
+- **D6. Restructure the step loop into phased systems over queries. DONE.** `SystemPhase.cs`
+  (`Input`/`Simulation`/`PostSimulation`/`Export`) + `VehicleQuery.cs` (`ActiveVehicleQuery`, a
+  zero-alloc hand-written struct enumerator yielding `Inserted && !Arrived` vehicles — the FDP
+  `Query()` analog). Every hot-path `foreach(_vehicles){if(!Inserted||Arrived)continue;…}` now reads
+  `foreach (var v in ActiveVehicles())`. `Run()`'s per-step body keeps its exact order with
+  `// [SystemPhase.X]` tags: Input=`InsertDepartingVehicles`,`UpdateReroutes`; Export=`EmitTrajectory`
+  (stays between Insert and Simulation — emits the prior step's settled result; the emit-before-plan
+  `time+dt` timing is load-bearing, NOT moved); Simulation=`PlanMovements` (RO frozen-snapshot reads,
+  own-`MoveIntent` writes); PostSimulation=`ExecuteMoves`,`DecideSpeedGainChanges`. Pure refactor —
+  hash UNCHANGED (`909605E965BFFE59`), `dotnet test` = 62 green, query is zero-alloc (bench 205.9 B/
+  veh-step, no GC increase). The `TrajectorySet` emit alloc is left for D9's export seam. Baseline row
+  appended.
 - **D7. The FDP-shaped seam / adapter (READINESS — NO `Fdp.Core` dependency).** Introduce a thin,
   in-house `IWorld`/`IQuery`/`ICommandBuffer` abstraction (mirroring FDP's `World.CreateEntity`/
   `AddComponent`/`GetComponentRW<T>`/`Query().With<T>()`/`GetCommandBuffer()` surface) that the

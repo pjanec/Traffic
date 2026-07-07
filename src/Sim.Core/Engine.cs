@@ -70,6 +70,16 @@ public sealed class Engine : IEngine
     // clears it). Pure representation refactor: WHEN each mutation applies is unchanged.
     private readonly CommandBuffer _commandBuffer = new();
 
+    // D6 (FastDataPlane ECS readiness -- phased systems over queries): the `Query()` analog.
+    // Every hot-path system below (PlanMovements, ExecuteMoves, EmitTrajectory,
+    // DecideSpeedGainChanges, the junction-foe scan, LaneNeighborQuery.Refill's snapshot builds)
+    // iterates exactly this filter -- "inserted, not yet arrived" -- so it is expressed ONCE here
+    // as a reusable, zero-alloc struct-enumerator query (see VehicleQuery.cs) instead of a
+    // repeated inline `if (!v.Inserted || v.Arrived) continue;` guard at each call site.
+    // Insertion's own not-yet-inserted candidate scan (InsertDepartingVehicles) is a DIFFERENT
+    // predicate (the complement) and is left as a direct `_vehicles` walk, per the briefing.
+    private ActiveVehicleQuery ActiveVehicles() => new(_vehicles);
+
     public void AddObstacle(string id, string laneId, double frontPos, double length,
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity)
     {
@@ -163,33 +173,61 @@ public sealed class Engine : IEngine
         {
             var time = _config.Begin + step * dt;
 
+            // D6 (FastDataPlane ECS readiness -- phased systems over queries, matching FDP's
+            // `SystemPhase`-ordered systems): the per-step body below is the SAME sequence of
+            // passes as before this rung, now labeled by the `SystemPhase` each belongs to
+            // (SystemPhase.cs). CLAUDE.md rule 2 / the D6 briefing: preserve calculation order
+            // EXACTLY -- this reorganizes how the loop reads, never what runs or when.
+
+            // [SystemPhase.Input] Newly-departed vehicles enter the simulation. Runs before this
+            // step's Export so a vehicle inserted THIS step is immediately included in the
+            // trajectory point emitted below (matching golden.fcd.xml's presence set: a vehicle
+            // is present starting at its own depart-time row, not one step late).
             InsertDepartingVehicles(time);
+
+            // [SystemPhase.Export] Export of the previous frame. This emits the SETTLED state
+            // produced by the PRIOR step's PostSimulation phase (plus any vehicle just inserted
+            // above) -- it must stay at the TOP of the loop, BEFORE this step's
+            // Simulation/PostSimulation run. Moving it to the bottom would change the
+            // traffic-light `time+dt` sampling semantics (RedLightConstraint's own comment) and
+            // desync the trajectory from the golden. See EmitTrajectory's header comment (also:
+            // the `TrajectorySet`/emit allocation and the `Run(int)->TrajectorySet` return
+            // contract are untouched here -- that streaming/zero-alloc-export concern belongs to
+            // D9's export seam, not D6).
             EmitTrajectory(trajectory, time);
 
-            // B3: reroute-around-prolonged-blockage. Runs ONCE per step, BEFORE PlanMovements,
-            // so a vehicle that reroutes this step immediately plans against its NEW route this
-            // same step (see UpdateReroutes' own header comment for why this ordering, and why it
-            // is still a seam-4 structural mutation rather than a Plan-phase concern).
+            // [SystemPhase.Input] Reroute-around-prolonged-blockage. Runs ONCE per step, BEFORE
+            // Simulation/PlanMovements, so a vehicle that reroutes this step immediately plans
+            // against its NEW route this same step (see UpdateReroutes' own header comment for
+            // why this ordering, and why it is still a seam-4 structural mutation rather than a
+            // Simulation-phase concern).
             UpdateReroutes(time, dt);
 
-            // Plan/execute contract (DESIGN.md): plan reads start-of-step state and writes
-            // only MoveIntent; execute applies all intents afterward. A follower must never
-            // see a leader's updated position within the same step. The neighbor query is
-            // refilled ONCE per step, here, from the same frozen start-of-step snapshot every
-            // vehicle's plan phase reads (Seam 1: neighbor discovery behind an interface). D4:
-            // `_neighborQuery` is the ONE reusable instance built in LoadScenario -- Refill
-            // clears/re-adds/re-sorts its pre-allocated per-lane buckets, no per-step allocation.
+            // [SystemPhase.Simulation] Plan/execute contract (DESIGN.md): plan reads
+            // start-of-step state and writes only MoveIntent; execute applies all intents
+            // afterward. A follower must never see a leader's updated position within the same
+            // step. The neighbor query is refilled ONCE per step, here, from the same frozen
+            // start-of-step snapshot every vehicle's plan phase reads (Seam 1: neighbor discovery
+            // behind an interface). D4: `_neighborQuery` is the ONE reusable instance built in
+            // LoadScenario -- Refill clears/re-adds/re-sorts its pre-allocated per-lane buckets,
+            // no per-step allocation. This is the async-module analog in FDP terms: RO reads of
+            // the frozen snapshot + immutable network/vType data, writing only each vehicle's own
+            // MoveIntent (CLAUDE.md rule 3).
             var neighbors = _neighborQuery!;
-            neighbors.Refill(_vehicles);
+            neighbors.Refill(ActiveVehicles());
             PlanMovements(neighbors, time);
+
+            // [SystemPhase.PostSimulation] Apply every vehicle's own MoveIntent, integrate
+            // position, flush arrival through the command buffer.
             ExecuteMoves(dt);
 
-            // Rung A2 (speed-gain/overtaking lane change): SUMO's own per-step order is
-            // planMovements -> executeMovements -> changeLanes (MSNet.cpp:784/790/796) -- the
-            // lane-change decision (MSLCM_LC2013::_wantsChange's speed-gain block) runs AFTER
-            // this step's longitudinal move, so it sees POST-move gaps (unlike keep-right, which
-            // has no leader-gap dependence and stays entirely in the pre-move Plan phase per
-            // rung 8b). This is a NEW phase, not a change to PlanMovements/ExecuteMoves above.
+            // [SystemPhase.PostSimulation] Rung A2 (speed-gain/overtaking lane change): SUMO's
+            // own per-step order is planMovements -> executeMovements -> changeLanes
+            // (MSNet.cpp:784/790/796) -- the lane-change decision (MSLCM_LC2013::_wantsChange's
+            // speed-gain block) runs AFTER this step's longitudinal move, so it sees POST-move
+            // gaps (unlike keep-right, which has no leader-gap dependence and stays entirely in
+            // the pre-move Plan phase per rung 8b). This is its own PostSimulation pass, not a
+            // change to PlanMovements/ExecuteMoves above.
             DecideSpeedGainChanges(dt);
         }
 
@@ -281,9 +319,12 @@ public sealed class Engine : IEngine
         // vehicle inserted earlier THIS SAME step, since this re-scans _vehicles (the engine's
         // authoritative list) on every call rather than a stale snapshot.
         VehicleRuntime? leader = null;
-        foreach (var other in _vehicles)
+        // D6: the "inserted, not arrived" half of the guard is now the ActiveVehicles() query;
+        // the lane filter stays inline (it is specific to this call site, not the reusable
+        // predicate).
+        foreach (var other in ActiveVehicles())
         {
-            if (!other.Inserted || other.Arrived || other.LaneId != laneId)
+            if (other.LaneId != laneId)
             {
                 continue;
             }
@@ -369,15 +410,16 @@ public sealed class Engine : IEngine
 
         _router ??= new NetworkRouter(_network!);
 
-        foreach (var v in _vehicles)
+        // D6: "inserted, not arrived" via the reusable ActiveVehicles() query; the
+        // mid-junction/internal-lane skip stays inline (specific to this pass).
+        foreach (var v in ActiveVehicles())
         {
-            if (!v.Inserted || v.Arrived || v.LaneId.StartsWith(':'))
+            if (v.LaneId.StartsWith(':'))
             {
-                // Not yet inserted/already arrived, or mid-junction on an internal lane -- a
-                // reroute mid-junction has nowhere sensible to redirect from (ego is already
-                // committed to the connection it is traversing), so this vehicle is simply
-                // skipped this step; it will be reconsidered once it lands on its next normal
-                // lane.
+                // Mid-junction on an internal lane -- a reroute mid-junction has nowhere
+                // sensible to redirect from (ego is already committed to the connection it is
+                // traversing), so this vehicle is simply skipped this step; it will be
+                // reconsidered once it lands on its next normal lane.
                 continue;
             }
 
@@ -518,12 +560,9 @@ public sealed class Engine : IEngine
     // holds even though a vehicle's own stop bookkeeping "changes" every step it is stopped.
     private void PlanMovements(LaneNeighborQuery neighbors, double time)
     {
-        foreach (var v in _vehicles)
+        // D6: the Query() analog -- see ActiveVehicles()'s own comment.
+        foreach (var v in ActiveVehicles())
         {
-            if (!v.Inserted || v.Arrived)
-            {
-                continue;
-            }
 
             v.Intent = ComputeMoveIntent(v, neighbors, time);
         }
@@ -592,7 +631,10 @@ public sealed class Engine : IEngine
         // +infinity (non-binding) whenever ego has no upcoming/current junction link, or
         // that link's foes are all cleared/absent -- see JunctionYieldConstraint's own
         // comment for the full derivation and its determinism note.
-        vPos = Math.Min(vPos, JunctionYieldConstraint(v, _vehicles, dt, actionStepLengthSecs));
+        // D6: pass the reusable ActiveVehicles() query (rather than the raw `_vehicles` list) so
+        // the foe scan below (FindFoeVehicle) walks the same "inserted, not arrived" filter as
+        // every other pass, instead of re-checking it inline.
+        vPos = Math.Min(vPos, JunctionYieldConstraint(v, ActiveVehicles(), dt, actionStepLengthSecs));
 
         // B1: external obstacle (DESIGN.md "Two futures" -- a live, non-SUMO input, not a
         // ported SUMO code path). Modeled as one more virtual stopped leader reusing the same
@@ -763,7 +805,7 @@ public sealed class Engine : IEngine
     // LaneSequence (already past its own junction, or its route crosses none), that link has
     // no <request> row, or every foe link it must yield to either has no geometric conflict
     // recorded (JunctionConflict) or no actual foe vehicle present/still relevant.
-    private double JunctionYieldConstraint(VehicleRuntime v, IReadOnlyList<VehicleRuntime> allVehicles, double dt, double actionStepLengthSecs)
+    private double JunctionYieldConstraint(VehicleRuntime v, ActiveVehicleQuery allVehicles, double dt, double actionStepLengthSecs)
     {
         // Step 1: ego's own upcoming/current junction link -- the first internal lane in
         // the pool slice at or after LaneSeqIndex. A lane already passed is simply never found
@@ -968,11 +1010,13 @@ public sealed class Engine : IEngine
     // vehicle not yet inserted or already arrived (frozen `allVehicles` snapshot).
     // D3: takes the foe internal lane's HANDLE (resolved once by the caller) instead of its
     // string id, and scans the candidate's pool slice instead of an IReadOnlyList<string>.
-    private VehicleRuntime? FindFoeVehicle(VehicleRuntime ego, IReadOnlyList<VehicleRuntime> allVehicles, int foeInternalLaneHandle)
+    private VehicleRuntime? FindFoeVehicle(VehicleRuntime ego, ActiveVehicleQuery allVehicles, int foeInternalLaneHandle)
     {
+        // D6: "inserted, not arrived" via the reusable ActiveVehicleQuery passed in; only the
+        // ego-exclusion check stays inline (specific to this call site).
         foreach (var other in allVehicles)
         {
-            if (ReferenceEquals(other, ego) || !other.Inserted || other.Arrived)
+            if (ReferenceEquals(other, ego))
             {
                 continue;
             }
@@ -1162,13 +1206,9 @@ public sealed class Engine : IEngine
     // is a config flag per DESIGN.md, not hard-coded -- Ballistic support is a later task).
     private void ExecuteMoves(double dt)
     {
-        foreach (var v in _vehicles)
+        // D6: the Query() analog -- see ActiveVehicles()'s own comment.
+        foreach (var v in ActiveVehicles())
         {
-            if (!v.Inserted || v.Arrived)
-            {
-                continue;
-            }
-
             v.Kinematics.Speed = v.Intent.NewSpeed;
             v.Kinematics.Pos += v.Intent.NewSpeed * dt;
             v.Kinematics.LatOffset = v.Intent.LatOffset;
@@ -1300,15 +1340,11 @@ public sealed class Engine : IEngine
         // already fully completed by the time this Refill overwrites it (see LaneNeighborQuery's
         // header comment).
         var postMoveNeighbors = _neighborQuery!;
-        postMoveNeighbors.Refill(_vehicles);
+        postMoveNeighbors.Refill(ActiveVehicles());
 
-        foreach (var v in _vehicles)
+        // D6: the Query() analog -- see ActiveVehicles()'s own comment.
+        foreach (var v in ActiveVehicles())
         {
-            if (!v.Inserted || v.Arrived)
-            {
-                continue;
-            }
-
             // Keep-right (rung 8b) evaluated FIRST, against this iteration's starting lane; may
             // update v.LaneId/v.KeepRightProbability directly (own comment: same reasoning as the
             // speed-gain veto below for why a direct write here still honors CLAUDE.md rule 3).
@@ -1633,15 +1669,17 @@ public sealed class Engine : IEngine
     // low-precision golden: that would silently cap parity sensitivity at ~0.5*10^-precision
     // regardless of tolerance.json, masking genuine sub-0.01 trajectory drift. Lane-relative
     // Pos/Speed are the source of truth; x/y/angle are derived from the lane polyline.
+    //
+    // D6: this is the [SystemPhase.Export] system (see Run()'s phase-tagged call site for the
+    // load-bearing "top of loop" timing note). D9 note (out of D6's scope, per the briefing):
+    // the `trajectory.Add`/`TrajectorySet` allocation here and the `Run(int)->TrajectorySet`
+    // return contract are untouched by this rung -- turning this into a reusable, zero-alloc
+    // streaming export buffer is D9's job (the info/replication export seam), not D6's.
     private void EmitTrajectory(TrajectorySet trajectory, double time)
     {
-        foreach (var v in _vehicles)
+        // D6: the Query() analog -- see ActiveVehicles()'s own comment.
+        foreach (var v in ActiveVehicles())
         {
-            if (!v.Inserted || v.Arrived)
-            {
-                continue;
-            }
-
             var lane = _network!.LanesById[v.LaneId];
             var (x, y, angle) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos);
 

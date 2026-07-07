@@ -46,14 +46,18 @@ internal sealed class LaneNeighborQuery
         }
     }
 
-    // D4: replaces the old per-step `Build` factory. `vehicles` is typed as the engine's own
-    // concrete `List<VehicleRuntime>` (not `IEnumerable<VehicleRuntime>`) so `foreach` below
-    // binds to `List<T>`'s non-boxing struct enumerator rather than boxing an `IEnumerable<T>`
-    // enumerator on every call. `List<T>.Clear()` keeps each bucket's backing array, so once
-    // every bucket's capacity has grown to its steady peak occupancy, this method allocates
-    // nothing (the sort delegate below is a static, non-capturing lambda -- cached by the
-    // compiler, not re-allocated per call).
-    public void Refill(List<VehicleRuntime> vehicles)
+    // D4: replaces the old per-step `Build` factory. `List<T>.Clear()` keeps each bucket's
+    // backing array, so once every bucket's capacity has grown to its steady peak occupancy,
+    // this method allocates nothing (the sort delegate below is a static, non-capturing lambda
+    // -- cached by the compiler, not re-allocated per call).
+    //
+    // D6 (FastDataPlane ECS readiness -- phased systems over queries): `vehicles` is now the
+    // engine's reusable `ActiveVehicleQuery` (the Query() analog, see VehicleQuery.cs) rather
+    // than the raw `List<VehicleRuntime>` -- the "inserted, not arrived" filter this loop used
+    // to re-check inline is now the query's own predicate, applied once, centrally. Still
+    // zero-alloc: `ActiveVehicleQuery` is a `readonly struct` with a hand-written `struct
+    // Enumerator`, so `foreach` below compiles the same non-boxing way it did over `List<T>`.
+    public void Refill(ActiveVehicleQuery vehicles)
     {
         foreach (var list in _byLaneHandle)
         {
@@ -62,11 +66,6 @@ internal sealed class LaneNeighborQuery
 
         foreach (var v in vehicles)
         {
-            if (!v.Inserted || v.Arrived)
-            {
-                continue;
-            }
-
             _byLaneHandle[v.LaneHandle].Add(v);
         }
 
