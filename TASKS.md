@@ -364,13 +364,18 @@ in the fixed offline SUMO run the goldens come from. Consequences:
   (`scenarios/_fixtures/routing-diamond/`: top path AB/BD beats bottom AC/CD; golden routes
   `SA→DE`/`SA→CD`/`AB→DE` reproduced exactly) + trivial/unreachable/turn-permission cases. `dotnet
   test` = 55 green. Gated ACCEPT. Ready for B3 to consume (`Sim.Core` references `Sim.Ingest`).
-- **B3. Reroute-around on prolonged blockage.** When an external obstacle (B1) blocks the vehicle's
-  path for longer than a threshold, recompute a route (B2) that avoids the blocked edge/lane and
-  switch to it (route replacement flushed through the command buffer at step end — same seam-4
-  structural-mutation discipline as a lane change). SUMO analog: rerouting devices reacting to a
-  closed edge (`<rerouter>` / `rerouteTraveltime`). Validation: behavioral (vehicle leaves the
-  blocked edge within the threshold and reaches its destination via a valid alternate path); parity
-  only against a matched SUMO `<rerouter>` scenario if one is constructed.
+- **B3. Reroute-around on prolonged blockage. DONE.** When an active B1 obstacle sits on a FUTURE
+  edge of a vehicle's route and persists past `Engine.RerouteThresholdSeconds`, the engine recomputes
+  a route via the B2 `NetworkRouter.Route(currentEdge, destEdge, avoid={blockedEdge})` and replaces
+  the vehicle's `LaneSequence` (seam-4 structural mutation, run once per step before plan; keeps Pos
+  since `newEdges[0]==currentEdge`; `AvoidedEdges` prevents re-triggering). INERT by default
+  (`RerouteThresholdSeconds` = +inf → `UpdateReroutes` returns immediately), so no parity scenario is
+  perturbed. `NetworkRouter` gained a `Route(from,to,avoidEdges)` overload. Validation is behavioral
+  (Group-B): `RungB3RerouteTests` on `scenarios/15-reroute` (diamond net, vehicle routed top path
+  SA AB BD DE) — (1) persistent obstacle on BD + threshold 5 → diverts to the bottom path
+  SA AC CD DE, never enters BD, reaches DE; (2) obstacle clears before the threshold → keeps the top
+  path; (3) disabled by default → inert even with an obstacle present. `dotnet test` = 59 green.
+  Gated ACCEPT. (Optional future: a matched SUMO `<rerouter>` parity scenario.)
 - **B4. U-turn when no route around exists.** When B3 finds no alternate route (dead-end / fully
   blocked), the vehicle reverses direction — a new structural maneuver (turn onto the opposing edge
   if one exists, else stop). This is the most exotic: it needs the opposing edge / bidi-lane

@@ -57,4 +57,15 @@ internal sealed class VehicleRuntime
     // it is written once, after all vehicles' moves are settled, from a single frozen post-move
     // snapshot built at the top of that phase -- not a mid-query shared-state write).
     public double SpeedGainProbability;
+
+    // B3: live reroute-around-blockage bookkeeping (DESIGN.md "Two futures" -- not a SUMO
+    // field). BlockedByObstacleSeconds accumulates dt while a FUTURE edge of this vehicle's
+    // remaining route is sitting under an active external obstacle; reset to 0 the moment no
+    // future edge is blocked. AvoidedEdges is the set of edges this vehicle has already routed
+    // around once (so a blockage it has already detoured past never re-triggers a reroute of the
+    // same edge). Both start at their zero values (0 / empty), which is exactly the inert-when-
+    // absent case: with RerouteThresholdSeconds left at its default (+infinity), Engine.
+    // UpdateReroutes returns immediately every step and neither field is ever touched.
+    public double BlockedByObstacleSeconds;
+    public HashSet<string> AvoidedEdges { get; } = new(StringComparer.Ordinal);
 }

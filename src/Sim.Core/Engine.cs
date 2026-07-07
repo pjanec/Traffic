@@ -20,6 +20,18 @@ public sealed class Engine : IEngine
     // trivial +infinity no-op and every parity scenario's constraints list is unaffected.
     private readonly Dictionary<string, ExternalObstacle> _obstacles = new();
 
+    // B3: reroute-around-prolonged-blockage (DESIGN.md "Two futures" -- live-reactivity, not a
+    // ported SUMO code path; SUMO's analog is a rerouting device / <rerouter> reacting to a
+    // closed edge). Left at +infinity by default, which makes UpdateReroutes below an immediate
+    // no-op every step -- the inert-when-absent guard: reroute is strictly opt-in, so no existing
+    // (obstacle-free or obstacle-present-but-untested) parity scenario is ever affected.
+    public double RerouteThresholdSeconds { get; set; } = double.PositiveInfinity;
+
+    // B2 router, built once lazily from the loaded (immutable) network and cached -- cheap to
+    // construct, but there is no reason to rebuild it every step. Null until first needed (either
+    // LoadScenario has not run yet, or UpdateReroutes never actually reroutes anything).
+    private NetworkRouter? _router;
+
     public void AddObstacle(string id, string laneId, double frontPos, double length,
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity)
     {
@@ -35,6 +47,11 @@ public sealed class Engine : IEngine
         _network = NetworkParser.Parse(netXmlPath);
         _demand = DemandParser.Parse(rouXmlPath);
         _config = ScenarioConfigParser.Parse(sumocfgPath);
+
+        // B3: the cached router is built from the network being replaced above -- invalidate it
+        // here so UpdateReroutes lazily rebuilds against the NEW network the next time it is
+        // actually needed (never eagerly, since most scenarios never reroute at all).
+        _router = null;
 
         _vehicles.Clear();
         foreach (var def in _demand.Vehicles)
@@ -80,6 +97,12 @@ public sealed class Engine : IEngine
 
             InsertDepartingVehicles(time);
             EmitTrajectory(trajectory, time);
+
+            // B3: reroute-around-prolonged-blockage. Runs ONCE per step, BEFORE PlanMovements,
+            // so a vehicle that reroutes this step immediately plans against its NEW route this
+            // same step (see UpdateReroutes' own header comment for why this ordering, and why it
+            // is still a seam-4 structural mutation rather than a Plan-phase concern).
+            UpdateReroutes(time, dt);
 
             // Plan/execute contract (DESIGN.md): plan reads start-of-step state and writes
             // only MoveIntent; execute applies all intents afterward. A follower must never
@@ -240,6 +263,140 @@ public sealed class Engine : IEngine
 
         v.Inserted = true;
         return true;
+    }
+
+    // B3: reroute-around-prolonged-blockage (DESIGN.md "Two futures" -- live-reactivity, seam-4
+    // structural mutation, same discipline as a lane change: reads only start-of-step state (this
+    // vehicle's own LaneSequence/LaneSeqIndex/kinematics, the immutable network, and the frozen
+    // B1 obstacle store) plus the immutable network router, and mutates only THIS vehicle's own
+    // LaneSequence/LaneSeqIndex/BlockedByObstacleSeconds/AvoidedEdges -- never another vehicle's
+    // state, so this loop's outcome for one vehicle can never depend on another vehicle's
+    // processing order this same step (order-independent, deterministic, parallel-ready even
+    // though it runs as a plain sequential loop here). Called once per step, before
+    // PlanMovements, so a vehicle that reroutes this step plans this SAME step against its new
+    // route (see Run()'s comment).
+    //
+    // Inert-when-disabled (CLAUDE.md/DESIGN.md "keep every live-reactivity feature optional and
+    // inert-when-absent"): returns immediately while RerouteThresholdSeconds is +infinity (the
+    // default), so this method costs nothing and changes nothing for any scenario that does not
+    // explicitly opt in.
+    private void UpdateReroutes(double time, double dt)
+    {
+        if (double.IsInfinity(RerouteThresholdSeconds))
+        {
+            return;
+        }
+
+        _router ??= new NetworkRouter(_network!);
+
+        foreach (var v in _vehicles)
+        {
+            if (!v.Inserted || v.Arrived || v.LaneId.StartsWith(':'))
+            {
+                // Not yet inserted/already arrived, or mid-junction on an internal lane -- a
+                // reroute mid-junction has nowhere sensible to redirect from (ego is already
+                // committed to the connection it is traversing), so this vehicle is simply
+                // skipped this step; it will be reconsidered once it lands on its next normal
+                // lane.
+                continue;
+            }
+
+            var currentEdge = _network!.LanesById[v.LaneId].EdgeId;
+
+            // Distinct FUTURE normal edges (route order, deduplicated), i.e. every normal edge
+            // this vehicle's route still has left to traverse AFTER its current position,
+            // excluding currentEdge itself and any internal/junction lane's edge id.
+            var futureEdges = new List<string>();
+            var futureEdgesSeen = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = v.LaneSeqIndex + 1; i < v.LaneSequence.Count; i++)
+            {
+                var seqLaneId = v.LaneSequence[i];
+                if (seqLaneId.StartsWith(':'))
+                {
+                    continue;
+                }
+
+                var seqEdgeId = _network.LanesById[seqLaneId].EdgeId;
+                if (seqEdgeId == currentEdge)
+                {
+                    continue;
+                }
+
+                if (futureEdgesSeen.Add(seqEdgeId))
+                {
+                    futureEdges.Add(seqEdgeId);
+                }
+            }
+
+            // An active obstacle (StartTime <= time < EndTime) sitting on one of those future
+            // edges -- reusing the B1 store exactly as ObstacleConstraint does, just asking "is
+            // its edge one I still have to cross" instead of "is it ahead of me on my CURRENT
+            // lane".
+            string? blockedEdge = null;
+            foreach (var obstacle in _obstacles.Values)
+            {
+                if (obstacle.StartTime > time || time >= obstacle.EndTime)
+                {
+                    continue;
+                }
+
+                var obstacleEdge = _network.LanesById[obstacle.LaneId].EdgeId;
+                if (futureEdges.Contains(obstacleEdge))
+                {
+                    blockedEdge = obstacleEdge;
+                    break;
+                }
+            }
+
+            if (blockedEdge is null)
+            {
+                v.BlockedByObstacleSeconds = 0.0;
+                continue;
+            }
+
+            v.BlockedByObstacleSeconds += dt;
+            if (v.BlockedByObstacleSeconds < RerouteThresholdSeconds)
+            {
+                continue;
+            }
+
+            // Threshold reached -- recompute a route from HERE to the destination, avoiding this
+            // blockage plus every edge already routed around earlier (so a blockage this vehicle
+            // has already detoured past can never re-trigger a second reroute of the same edge).
+            var destEdge = _network.LanesById[v.LaneSequence[^1]].EdgeId;
+            var avoid = new HashSet<string>(v.AvoidedEdges, StringComparer.Ordinal) { blockedEdge };
+            var newEdges = _router.Route(currentEdge, destEdge, avoid);
+
+            if (newEdges is null)
+            {
+                // No alternate route exists (B4's dead-end/u-turn case, out of this rung's scope)
+                // -- leave the vehicle on its current route; it will stop behind the obstacle via
+                // the B1 ObstacleConstraint if/when it actually reaches the blocked edge.
+                continue;
+            }
+
+            var currentRemainingEdges = new List<string>(futureEdges.Count + 1) { currentEdge };
+            currentRemainingEdges.AddRange(futureEdges);
+            if (newEdges.SequenceEqual(currentRemainingEdges))
+            {
+                // Router found no actual detour (cannot happen once blockedEdge is confirmed to
+                // be one of currentRemainingEdges, but guarded per the briefing regardless).
+                continue;
+            }
+
+            // newEdges[0] == currentEdge, and v is already on it at v.Kinematics.Pos -- resetting
+            // LaneSeqIndex to 0 on the newly resolved sequence keeps the vehicle exactly where it
+            // physically is (Kinematics.Pos untouched), just re-pointed at the new remaining lane
+            // sequence from here onward. Structural mutation (route/LaneSequence replacement),
+            // applied directly here rather than staged through MoveIntent -- this runs in its own
+            // once-per-step phase outside Plan/Execute, exactly like DecideSpeedGainChanges' own
+            // direct LaneId/accumulator writes, not mid-query shared state.
+            var laneIndex = _network.LanesById[v.LaneId].Index;
+            v.LaneSequence = _network.ResolveLaneSequence(newEdges, laneIndex);
+            v.LaneSeqIndex = 0;
+            v.AvoidedEdges.Add(blockedEdge);
+            v.BlockedByObstacleSeconds = 0.0;
+        }
     }
 
     // Plan phase (seam 1, parallel-safe): reads start-of-step world state (including the frozen

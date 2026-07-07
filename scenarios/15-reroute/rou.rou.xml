@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- B3 behavioral fixture: a vehicle routed the TOP path (SA AB BD DE). A test injects a
+         persistent external obstacle on BD; after a reroute threshold the vehicle must recompute a
+         route avoiding BD (the B2 router) and divert at the A junction to the BOTTOM path
+         (SA AC CD DE), reaching DE without ever entering BD. No SUMO golden (live obstacle input). -->
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="top" edges="SA AB BD DE"/>
+    <vehicle id="veh" type="car" route="top" depart="0" departPos="0" departSpeed="0" departLane="0"/>
+</routes>

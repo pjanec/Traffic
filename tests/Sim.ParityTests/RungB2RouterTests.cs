@@ -100,6 +100,22 @@ public class RungB2RouterTests
         Assert.DoesNotContain("CD", top);
     }
 
+    // B3 prerequisite: the avoid-edges overload must force the detour (bottom path) when the
+    // top path's BD edge is excluded, while the plain 2-arg overload is untouched (still picks
+    // the shorter top path) -- proves the new overload is additive, not a behavior change to the
+    // existing Route(from, to) call every other B2 test above exercises.
+    [Fact]
+    public void Route_WithAvoidSet_DetoursAroundExcludedEdge()
+    {
+        var router = LoadRouter();
+
+        var avoiding = router.Route("SA", "DE", new HashSet<string> { "BD" });
+        Assert.Equal(new[] { "SA", "AC", "CD", "DE" }, avoiding);
+
+        var unavoided = router.Route("SA", "DE");
+        Assert.Equal(new[] { "SA", "AB", "BD", "DE" }, unavoided);
+    }
+
     // Mirrors EngineRung1PlumbingTests.RepoRoot(): resolve the repo root by walking up from the
     // test assembly's output directory to find Traffic.sln.
     private static string RepoRoot()

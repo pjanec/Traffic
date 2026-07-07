@@ -72,7 +72,19 @@ public sealed class NetworkRouter
     // depend on iteration/dictionary order (SUMO's own tie-break is by edge numerical id, which
     // is assignment order; we use lexicographic edge id instead -- the golden net has no ties,
     // so this difference is never exercised, but the tie-break itself is still deterministic).
-    public IReadOnlyList<string>? Route(string fromEdge, string toEdge)
+    public IReadOnlyList<string>? Route(string fromEdge, string toEdge) =>
+        Route(fromEdge, toEdge, EmptyAvoidSet);
+
+    private static readonly HashSet<string> EmptyAvoidSet = new(StringComparer.Ordinal);
+
+    // B3: same Dijkstra as above, but never relaxes into (or starts/ends at) any edge in
+    // `avoidEdges` -- the live reroute-around-blockage trigger's core query ("find me a path to
+    // my destination that does not use this blocked edge"). SUMO's own live-rerouting device
+    // achieves the same effect by giving a closed edge's effort +infinity for the closure's
+    // duration (MSDevice_Routing / <rerouter> closingReroute) rather than removing it from the
+    // graph -- behaviorally equivalent (a closed/avoided edge can never be the argmin of any
+    // relaxation), and simpler to express directly as a skip here.
+    public IReadOnlyList<string>? Route(string fromEdge, string toEdge, IReadOnlySet<string> avoidEdges)
     {
         if (IsInternal(fromEdge) || IsInternal(toEdge))
         {
@@ -80,6 +92,11 @@ public sealed class NetworkRouter
         }
 
         if (!_network.EdgesById.ContainsKey(fromEdge) || !_network.EdgesById.ContainsKey(toEdge))
+        {
+            return null;
+        }
+
+        if (avoidEdges.Contains(fromEdge) || avoidEdges.Contains(toEdge))
         {
             return null;
         }
@@ -124,7 +141,7 @@ public sealed class NetworkRouter
 
             foreach (var next in successors)
             {
-                if (visited.Contains(next))
+                if (visited.Contains(next) || avoidEdges.Contains(next))
                 {
                     continue;
                 }
