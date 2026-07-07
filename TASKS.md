@@ -385,12 +385,110 @@ in the fixed offline SUMO run the goldens come from. Consequences:
   SA AC CD DE, never enters BD, reaches DE; (2) obstacle clears before the threshold → keeps the top
   path; (3) disabled by default → inert even with an obstacle present. `dotnet test` = 59 green.
   Gated ACCEPT. (Optional future: a matched SUMO `<rerouter>` parity scenario.)
-- **B4. U-turn when no route around exists.** When B3 finds no alternate route (dead-end / fully
-  blocked), the vehicle reverses direction — a new structural maneuver (turn onto the opposing edge
-  if one exists, else stop). This is the most exotic: it needs the opposing edge / bidi-lane
-  topology and a reversal move (SUMO has `<neigh>`/opposite-direction driving and `--allow-uturn`;
-  ref `MSVehicle::checkReversal` and opposite-lane handling — but faithful parity here is a stretch,
-  so scope it as behavior-first). Do last; depends on B2/B3.
+- **B4. U-turn when no route around exists. SKIPPED — superseded by navmesh/RVO movement.** A
+  free-form reversal maneuver is a poor fit for SUMO's lane-based car-following (opposite-edge/bidi
+  topology + a reversal that has no clean golden). Decision (session): defer this to a
+  continuous/agent-based movement layer (navmesh path + RVO collision avoidance), where a U-turn is
+  natural and the validation bar is behavioral/plausibility, not golden-FCD parity. See the
+  navmesh/RVO note under Group C (C10 sublane/continuous is the bridge) and the external-agent interop
+  (B5). Not planned as a lane-based rung.
 
-**Suggested order overall:** A1 (quick, unblocks much) → 9b (RUNG9B.md) → A2 → B1 → B2 → B3 → A3 →
-B4. A1 and B1 are the two cheapest high-value items and are independent of the hard 9b work.
+**Suggested order (Groups A/B, done this session):** A1 → 9b (RUNG9B.md) → A2 → B1 → B2 → B3 → A3.
+All committed green. Below is the realism roadmap that extends the engine toward believable ground
+traffic; it is characterized (not yet briefed), same as the original "next batch" was.
+
+---
+
+## Realism roadmap (Group C + external-agent interop) — characterized, not yet briefed
+
+Grounded in a session-end gap analysis. Two organizing facts drive the order:
+
+1. **The determinism ladder.** Phase 1 is `sigma=0`/Euler/`actionStepLength=1` for EXACT parity.
+   Almost everything realistic (stop-and-go waves, capacity, heterogeneous speeds, gap acceptance)
+   needs `sigma>0` and per-entity RNG → a **statistical parity** bar (aggregate/ensemble, not 1e-3).
+   `tolerance.json` already carries a `parityMode` field for exactly this. C1 is the gate.
+2. **Lane-plan vs edge-plan.** Routing (B2) and LC so far are EDGE-level. Correct multi-lane traffic
+   needs a LANE plan (which lane reaches the next connection). C2 is the gate for that.
+
+Keep every new feature **inert-when-absent** so the deterministic parity scenarios (rungs 1–11, A1–
+A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/B1–B3/A3).
+
+### The external-agent interop (the "SUMO respects non-SUMO agents" direction — HIGH PRIORITY)
+
+- **B5. Moving external agents as dynamic obstacles / foes (generalizes B1).** B1 already lets SUMO
+  lane-based vehicles STOP behind a STATIC external obstacle (a virtual stopped leader on one lane).
+  Generalize to **moving** external agents driven OUTSIDE SUMO (navmesh + RVO, a pedestrian crowd, a
+  real detection): SUMO vehicles must *respect* them as (a) a dynamic **leader/follower on a lane**
+  (obstacle carries a velocity → `FollowSpeed` with `predSpeed≠0`, and a `predMaxDecel`), (b) a
+  **cross-lane blocker** vetoing lane changes (feed into A2's `IsTargetLaneSafe`/neighbor query), and
+  (c) a **junction foe** the reducer yields to (feed the external agent's position/arrival into 9b's
+  `JunctionYieldConstraint` as an approaching foe). The external agent's motion is NOT SUMO's model,
+  so there is NO golden — validate **behaviorally** (no overlap; SUMO vehicle yields/brakes/avoids
+  correctly; resumes when clear). This is the core two-way-sharing interop the project is aiming at:
+  the navmesh/RVO agents move freely; the lane-based traffic reacts. Reuse the B1 `_obstacles` surface
+  (extend `ExternalObstacle` with velocity/heading + a per-step update). Depends on B1 + 9b + A2.
+  Inert-when-absent.
+
+### Group C — realism beyond the deterministic phase-1 core
+
+- **C1. Statistical parity / driver imperfection (`sigma>0`). THE determinism-ladder shift; do
+  first — unblocks most of the rest.** Port Krauss dawdling (`MSCFModel_Krauss::dawdle`) and the
+  per-vehicle SEEDED RNG (CLAUDE.md rule: no `System.Random`; seed per entity so results are
+  independent of thread order). Add a **statistical** `parityMode` to the harness: either reproduce
+  SUMO's RNG stream for trajectory-exact parity (hard — needs SUMO's `RandHelper`/per-vehicle seeding
+  reproduced), or, more realistically, an **ensemble/aggregate** tolerance (mean + spread of
+  speed/flow over N seeds, or the fundamental diagram). Produces stop-and-go waves and realistic
+  capacity. Prereq for C7 and for believable everything.
+- **C2. Strategic (route-driven) lane changes + lane-to-lane continuity. The #1 lane-based realism
+  gap.** Today a vehicle can sit in a lane that cannot reach its route. Port LC2013's STRATEGIC block
+  (`LCA_STRATEGIC`/`LCA_URGENT`, `getBestLanes`/`bestLaneOffset` — `MSLCM_LC2013::_wantsChange` +
+  `MSLane::getBestLanes`) so a vehicle moves into a lane that continues its route. Requires
+  **lane-level** routing: honor `<connection fromLane/toLane>` turn permissions (B2 is edge-level).
+  Parity axis. Scenario: a multi-lane approach where a vehicle must reach a dedicated turn lane before
+  the junction. Reuses A2's neighbor query + the post-move LC phase.
+- **C3. Merging / on-ramp / zipper.** Gap-acceptance merging where two lanes join (`sameTarget`
+  links). Extends 9b's foe machinery + A2's neighbor leader/follower. Parity axis. Scenario: an
+  on-ramp merging onto a mainline; the ramp vehicle accepts a gap or waits.
+- **C4. Remaining right-of-way: right-before-left, roundabouts, stop signs.** 9b did PRIORITY
+  junctions only. Right-before-left (uncontrolled symmetric), roundabout yielding (+
+  `myRoundaboutBonus`/cooperative), all-way-stop (`LINKSTATE_ALLWAY_STOP`). Reuses 9b's `<request>`
+  response/foe matrix + `opened()`. Parity axis. One scenario per RoW type.
+- **C5. Junction-blocking avoidance (`keepClear` / don't-block-the-box).** `MSLink::keepClear` + jam
+  detection so a vehicle does not enter a junction it cannot clear. Prevents artificial gridlock /
+  spillback across intersections. Parity axis; also a property test (junction never deadlocks).
+- **C6. Actuated / adaptive traffic lights + yellow decision.** Rung 10 did STATIC `tlLogic` only.
+  Add actuated/`delay_based` programs (`MSActuatedTrafficLightLogic` — gap-based phase extension) and
+  the yellow "stop if you can brake, else go" decision (the rung-10 deferred note; `MSLink::haveYellow`
+  + the `canBrake` branch). Parity axis (actuated needs detector state).
+- **C7. `speedFactor` distribution (heterogeneous desired speeds).** Per-vehicle desired-speed
+  variation (`speedFactor` = `normc(1.0, dev)`, `default.speeddev`); today everyone wants exactly the
+  limit (mean 1.0, dev forced 0). Depends on C1 (seeded RNG). Statistical parity. Produces realistic
+  speed spread and overtaking pressure.
+- **C8. Ballistic integration + `actionStepLength > 1` (reaction time).** SUMO's ballistic update
+  (more accurate than Euler) and sub-second/multi-second reaction time. The integration method is
+  already a config flag (DESIGN.md seam); this ports the ballistic `finalizeSpeed`/position update and
+  the action-step sub-sampling. Parity axis — effectively a config variant of every scenario, so it
+  needs its own goldens (ballistic on).
+- **C9. Cooperative lane changes.** LC2013's COOPERATIVE block (`LCA_COOPERATIVE` — make room for a
+  blocked/merging neighbor). Depends on A2's neighbor query + C3 (merging pressure). Parity axis.
+- **C10. Sublane / continuous lateral (SL2015). The lateral axis and the BRIDGE to navmesh/RVO.**
+  Continuous lateral position (`minGapLat`, lateral speed, `latAlignment`), movement within and across
+  lanes without discrete index snaps (`lanechange.duration>0` is the first step). Seam 2 (the lateral
+  field, always-written-0 today) and seam 1 (neighbor query → spatial hash) were built precisely for
+  this. Where it leaves SUMO's lane model it moves to a **behavioral** bar — and it is the natural
+  meeting point with the navmesh/RVO continuous-movement layer (B4's U-turn, free-form avoidance).
+  Large; its own phase. Ref `MSLCM_SL2015`, `MSLaneChangerSublane`.
+- **C11. Alternative car-following models (IDM, ACC/CACC).** `MSCFModel_IDM`, `MSCFModel_ACC`,
+  `MSCFModel_CACC` for modern / automated traffic. Each is a resolver dispatch (`carFollowModel`
+  attribute) + a model port behind the same `KraussModel`-style constraint interface. Parity axis, one
+  scenario per model.
+- **C12. Pedestrians & crossings; public transport.** Pedestrians already appear as junction foes in
+  the ported `getLeaderInfo` (the `leader==nullptr` ped branch); add vehicles yielding at crosswalks,
+  and bus stops / dwell times / schedules. Breadth; behavioral, with parity where a SUMO analog exists
+  (`MSPModel`, `<busStop>`).
+
+**Suggested realism order:** **C1** (unblocks realism) → **C2** (correct multi-lane routing) →
+**B5** (external-agent interop, the project's stated direction) → C3/C4 (merges + the rest of RoW) →
+C5/C6 (junction blocking + actuated TLs) → C7/C9 (speed spread + cooperative LC) → C8/C11 (integration
++ CF models) → C10 (sublane/continuous → navmesh bridge) → C12 (peds/PT). C1 and C2 are the two
+highest-leverage items; B5 is the one that directly serves "lane traffic respects navmesh/RVO agents."
