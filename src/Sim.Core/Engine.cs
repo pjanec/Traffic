@@ -140,6 +140,21 @@ public sealed class Engine : IEngine
     // partitionable) is race-free here.
     public bool UseParallelPlan { get; set; } = false;
 
+    // D9 (FastDataPlane ECS readiness -- info/replication export SEAM, TASKS.md line ~651):
+    // the registered `ISimExportObserver`s notified once per active vehicle, once per
+    // Export-phase frame, from EmitTrajectory below. Empty by default -- with no observer
+    // registered, the notify loop in EmitTrajectory is a no-op `foreach` over an empty list
+    // (no virtual call, no allocation), which is exactly the byte-identical/zero-alloc
+    // guarantee the briefing requires for every existing scenario/test/benchmark that never
+    // calls AddExportObserver.
+    private readonly List<ISimExportObserver> _exportObservers = new();
+
+    // D9: the registration point a later FDP `IDescriptorTranslator`-style consumer would call
+    // to attach WITHOUT touching any system in this file -- mirrors AddObstacle's add-style
+    // idiom just below (a plain public setter method, no structural/command-buffer machinery
+    // needed since observers are not simulated entities).
+    public void AddExportObserver(ISimExportObserver observer) => _exportObservers.Add(observer);
+
     public void AddObstacle(string id, string laneId, double frontPos, double length,
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity)
     {
@@ -1750,28 +1765,69 @@ public sealed class Engine : IEngine
     // Pos/Speed are the source of truth; x/y/angle are derived from the lane polyline.
     //
     // D6: this is the [SystemPhase.Export] system (see Run()'s phase-tagged call site for the
-    // load-bearing "top of loop" timing note). D9 note (out of D6's scope, per the briefing):
-    // the `trajectory.Add`/`TrajectorySet` allocation here and the `Run(int)->TrajectorySet`
-    // return contract are untouched by this rung -- turning this into a reusable, zero-alloc
-    // streaming export buffer is D9's job (the info/replication export seam), not D6's.
+    // load-bearing "top of loop" timing note). D9 (FastDataPlane ECS readiness -- info/
+    // replication export SEAM, TASKS.md line ~651): the per-vehicle `TrajectoryPoint` this
+    // method emits now flows FROM a single `VehicleExportSnapshot` built once per vehicle --
+    // the `TrajectorySet` is the engine's own default, always-present consumer of that snapshot
+    // (see VehicleExportSnapshot.cs/ISimExportObserver.cs's own header comments), and any
+    // OTHER registered `ISimExportObserver` is notified with the SAME snapshot value right
+    // after. This does not change what is computed or emitted: same one
+    // `LaneGeometry.PositionAtOffset` call per vehicle, same fields, same order, same
+    // `trajectory.Add(...)`, same null `Acceleration` -- the snapshot is purely a stack-local
+    // struct wrapping values EmitTrajectory already computed before this rung. With
+    // `_exportObservers` empty (the default), the notify loop below is an empty `foreach`: no
+    // virtual call, no allocation -- byte-identical output and allocation to the pre-D9 body.
     private void EmitTrajectory(TrajectorySet trajectory, double time)
     {
+        // D9: frame-bracket hooks -- empty loop bodies when `_exportObservers` is empty (the
+        // default), so this costs nothing beyond the `Count` check for every existing scenario/
+        // test/benchmark.
+        for (var i = 0; i < _exportObservers.Count; i++)
+        {
+            _exportObservers[i].OnFrameBegin(time);
+        }
+
         // D6: the Query() analog -- see ActiveVehicles()'s own comment.
         foreach (var v in ActiveVehicles())
         {
             var lane = _network!.LanesById[v.LaneId];
             var (x, y, angle) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos);
 
+            var snapshot = new VehicleExportSnapshot(
+                entity: v.Entity,
+                entityIndex: v.EntityIndex,
+                vehicleId: v.Def.Id,
+                time: time,
+                lane: v.LaneId,
+                pos: v.Kinematics.Pos,
+                speed: v.Kinematics.Speed,
+                x: x,
+                y: y,
+                angle: angle);
+
             trajectory.Add(new TrajectoryPoint(
-                VehicleId: v.Def.Id,
-                Time: time,
-                Lane: v.LaneId,
-                Pos: v.Kinematics.Pos,
-                Speed: v.Kinematics.Speed,
-                X: x,
-                Y: y,
-                Angle: angle,
+                VehicleId: snapshot.VehicleId,
+                Time: snapshot.Time,
+                Lane: snapshot.Lane,
+                Pos: snapshot.Pos,
+                Speed: snapshot.Speed,
+                X: snapshot.X,
+                Y: snapshot.Y,
+                Angle: snapshot.Angle,
                 Acceleration: null));
+
+            // D9: notify every registered observer with the SAME snapshot -- empty list by
+            // default, so this is a zero-iteration `foreach` (no allocation, no virtual call)
+            // for every existing scenario/test/benchmark that never calls AddExportObserver.
+            for (var i = 0; i < _exportObservers.Count; i++)
+            {
+                _exportObservers[i].OnVehicleExported(in snapshot);
+            }
+        }
+
+        for (var i = 0; i < _exportObservers.Count; i++)
+        {
+            _exportObservers[i].OnFrameEnd(time);
         }
     }
 }

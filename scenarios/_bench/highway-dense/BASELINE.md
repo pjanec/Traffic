@@ -276,6 +276,42 @@ both trajectory hashes (`hashA`/`hashPar`) are unchanged from D1–D8, confirmin
 introduces no behavioral difference — only an extra (non-allocating) indirection between `Engine`
 and the store it already owned.
 
+## D9 (info/replication export seam)
+Captured on the same reference VM, same command, 500 steps, immediately after the D9 refactor:
+added `src/Sim.Core/VehicleExportSnapshot.cs` (a `readonly struct` — the "ECS component →
+external descriptor" source shape FDP's `IDescriptorTranslator` consumes: D5's `Entity` handle +
+`EntityIndex` + the same `VehicleId`/`Time`/`Lane`/`Pos`/`Speed`/`X`/`Y`/`Angle` fields
+`TrajectoryPoint` already carries) and `src/Sim.Core/ISimExportObserver.cs` (the observer seam a
+later translator-style consumer would implement: `OnVehicleExported(in VehicleExportSnapshot)`
+plus optional no-op-by-default `OnFrameBegin`/`OnFrameEnd` bracket hooks). `EmitTrajectory`
+(the `[SystemPhase.Export]` system) now builds ONE snapshot per active vehicle per frame and (a)
+produces the exact same `TrajectoryPoint`/`trajectory.Add(...)` from it and (b) notifies every
+`Engine.AddExportObserver`-registered observer with that same snapshot; `_exportObservers` is
+empty by default, so this run (no observer registered, matching every existing scenario/test/
+benchmark) exercises the empty-list `foreach` path:
+
+| metric | single (`UseParallelPlan=false`) | parallel (`UseParallelPlan=true`) |
+|---|---|---|
+| peak concurrent vehicles | 378 | 378 |
+| veh-steps emitted | 115,141 | 115,141 |
+| wall time | 0.266–0.316 s (run-to-run range on this shared VM) | — |
+| throughput | 1582–1880 steps/s (0.532–0.632 ms/step) | 1856–1965 steps/s (0.509–0.539 ms/step) |
+| alloc / veh-step | **206.1 B** (unchanged from D7's 206.1 B) | **214.3–214.4 B** (unchanged from D7's 214.4 B) |
+| GC gen0/1/2 | 3 / 3 / 1 | 1 / 1 / 0 |
+| deterministic (2 runs identical) | **True** | **True** |
+| **trajectory hash** | **`909605E965BFFE59`** (`hashA`) | **`909605E965BFFE59`** (`hashPar`, byte-identical to single-threaded) |
+
+Pure representation refactor, as expected: `VehicleExportSnapshot` is a `readonly struct` passed
+`in` (never by value/boxed), and `_exportObservers` is empty by default, so the notify/bracket
+loops in `EmitTrajectory` are zero-iteration `foreach`es — no virtual call, no allocation. New
+test `RungD9ExportObserverTests` registers an in-house recording `ISimExportObserver` on a
+120-step slice of this same scenario (peak concurrent >= 50) and asserts the observer's
+(VehicleId, Time) set EQUALS the returned `TrajectorySet`'s and every observed
+Lane/Pos/Speed/X/Y/Angle matches exactly — the "faithful mirror" property this rung's briefing
+asks for. `dotnet test` (64/64 green) and both trajectory hashes (`hashA`/`hashPar`) are
+unchanged from D1–D8, confirming the seam introduces no behavioral or allocation difference when
+unused, while genuinely routing the engine's own FCD emit through it (not a dead interface).
+
 ## What the numbers say (targets for D2–D8)
 - **~736 B allocated per vehicle-step** is the headline: this is the AoS `class` entities +
   `LaneNeighborQuery`'s per-step `Dictionary`/`List` (built twice/step) + the reducer's

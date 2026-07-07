@@ -648,12 +648,35 @@ and determinism (no RNG/wallclock). **The gap is representation, not architectur
   own scheduling overhead competes with the parallelism dividend) — the byte-identical hash, not
   the speedup, is this rung's point. `dotnet test` = 63 green (62 + this rung's new test).
   Benchmark row appended to `scenarios/_bench/highway-dense/BASELINE.md`.
-- **D9. Info/replication export SEAM (READINESS — NO FDP network wiring).** Expose a clean,
-  per-frame component-snapshot / observer API shaped for later `IDescriptorTranslator`-style
-  consumption (ECS component → external descriptor), so an info/replication layer *could* attach
-  without touching the sim. In-house only: define the export surface + a property test that a
-  subscriber sees a faithful mirror of the sim state; do NOT wire `NetworkEntityMap`/
-  `INetworkIdAllocator` or any `FastDataPlane` network transport. Depends on D3/D7.
+- **D9. Info/replication export SEAM (READINESS — NO FDP network wiring). DONE.**
+  `VehicleExportSnapshot` (`src/Sim.Core/VehicleExportSnapshot.cs`, a `readonly struct`) — the
+  "ECS component → external descriptor" SOURCE shape FDP's `IDescriptorTranslator` consumes:
+  D5's `Entity` handle (the id a translator would key its external descriptor off) +
+  `EntityIndex` (the plain side-table key) + the same `VehicleId`/`Time`/`Lane`/`Pos`/`Speed`/
+  `X`/`Y`/`Angle` fields `TrajectoryPoint` already carries. `ISimExportObserver`
+  (`src/Sim.Core/ISimExportObserver.cs`) — the observer seam a later `IDescriptorTranslator`-
+  style consumer would implement: `OnVehicleExported(in VehicleExportSnapshot snapshot)` (passed
+  `in`, never by value/boxed) plus optional no-op-by-default `OnFrameBegin(double time)`/
+  `OnFrameEnd(double time)` bracket hooks. `Engine.AddExportObserver(ISimExportObserver)`
+  registers into a new `_exportObservers` list, empty by default. `EmitTrajectory` (the
+  `[SystemPhase.Export]` system) now builds ONE `VehicleExportSnapshot` per active vehicle per
+  frame and (a) produces the exact same `TrajectoryPoint`/`trajectory.Add(...)` from it — same
+  one `LaneGeometry.PositionAtOffset` call, same fields, same order, same null `Acceleration` —
+  and (b) notifies every registered observer with that same snapshot (`in snapshot`); the
+  `TrajectorySet` is the engine's own default, always-present consumer of the snapshot. With
+  ZERO observers registered (the default — no existing scenario/test/benchmark calls
+  `AddExportObserver`), the notify loop and the frame-bracket loops are empty `foreach`es over
+  an empty list: no virtual call, no allocation, byte-identical to the pre-D9 `EmitTrajectory`
+  body. New test `RungD9ExportObserverTests` registers an in-house recording
+  `ISimExportObserver` on `scenarios/_bench/highway-dense` (120 steps, peak concurrent ≥ 50) and
+  asserts the observer's (VehicleId, Time) set EQUALS the returned `TrajectorySet`'s (no
+  vehicle/frame missing or extra) and every observed Lane/Pos/Speed/X/Y/Angle matches exactly —
+  the "faithful mirror" property test the briefing asks for. No `FastDataPlane`/`Fdp.Core`
+  reference, no `NetworkEntityMap`/`INetworkIdAllocator`, no network transport added anywhere —
+  READINESS ONLY. `dotnet test` = 64 green (63 + this rung's new test). Trajectory hash
+  UNCHANGED (`909605E965BFFE59` in both `hashA`/`hashPar`), alloc/veh-step unchanged (206.1 B
+  single / 214.3–214.4 B parallel, matching D7's own 206.1 B/214.4 B exactly). Benchmark row
+  appended to `scenarios/_bench/highway-dense/BASELINE.md`. Depends on D3/D7.
 
 **Suggested Group-D order:** **D1** ✅ (measure) → **D2** ✅ (int handles) → **D3** (component structs +
 move managed state out) → **D4** (zero-alloc hot path) → **D5** (entity lifecycle via command buffer)
