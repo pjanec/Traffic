@@ -160,7 +160,11 @@ its own `/sumo/` references and scenario when we reach it:
      rather than `getMaxDecel()` for the leader term (`MSCFModel::maximumSafeFollowSpeed`).
    - Also: `maximumSafeFollowSpeed`'s emergency-decel correction (`decel!=emergencyDecel`) is
      ported but was unexercised by rung 4 — rung 5's hard stop is the first real test of it.
-6. **Insertion spacing** — departure FIFO + gap-gated insertion.
+6. **Insertion spacing** — departure FIFO + gap-gated insertion. DONE.
+   - Note from rung 6 review: `TryInsertOnLane`'s per-lane break-on-first-failure assumes a
+     blocked earlier departure blocks all later ones — exact when all departures share one
+     insertion point (as here). If a future scenario puts vehicles at DIFFERENT departPos on
+     the same lane, revisit (SUMO retries each pending vehicle independently).
 7. **Platoon shockwave** — still `sigma=0`, deterministic; multi-vehicle propagation.
 8. **Two lanes + LC2013** — first structural change via command buffer; first real use of
    the multi-constraint reducer with a lateral intent. Ref: `MSLCM_LC2013`.
