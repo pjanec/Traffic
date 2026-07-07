@@ -225,3 +225,52 @@ Hand-matched with the engine's own `KraussModel` — the first two yield values 
 `sumo/` (vendored) = `src/` + `docs/` only. `netconvert`/`sumo` binaries are available via
 `pip install eclipse-sumo==1.20.0` (already used to regen the goldens), but they are release builds
 with the `DEBUG_*` prints compiled out. Getting the prints = clone the full repo + build headless.
+
+### 9b-ii + 9b-iii — DONE (41 tests: was 39, +1 extended `Rung9biJunctionGeometryTests` fact
+for conflict size/lengthBehindCrossing, +1 `Rung9bParityTests`)
+The blocker above (`foeCrossingWidth`/conflict WIDTH) is resolved: `NetworkModel.Lane` now
+carries `Width` (parsed `width` attribute, default `SUMO_const_laneWidth=3.2` when absent --
+this net omits it on every lane) and `JunctionConflict` now carries `EgoConflictSize`/
+`FoeConflictSize`/`EgoLengthBehindCrossing`/`FoeLengthBehindCrossing`, computed at parse time
+in `NetworkParser` exactly per `MSLink::setRequestInformation` (`MSLink.cpp:354-382`): for the
+link1<->link2 crossing the two internal lanes meet perpendicularly (`angleDiff=90 -> sin=1 ->
+widthFactor=1`), so both `ConflictSize`s collapse to `3.2` and both `LengthBehindCrossing`s to
+`7.20` (raw crossing arc 5.60, shifted back by half the 3.2m conflict size) -- asserted in
+`Rung9biJunctionGeometryTests.Conflicts_HaveExpectedConflictSizeAndLengthBehindCrossing`.
+
+`Engine.JunctionYieldConstraint` (new constraint slotted into `ComputeMoveIntent`'s reducer,
+same +inf-when-non-binding pattern as `RedLightConstraint`) implements the two mutually-
+exclusive phases exactly as hand-verified in `scratch-verify9b.py`:
+- **Foe on its approach lane** -> stop-line brake: `stopSpeed(approachLen - pos - POSITION_EPS)`.
+  Reproduces `9.433` (t15->t16) and `4.933` (t16->t17) to 1e-3.
+- **Foe on its own internal lane** -> `MSVehicle::adaptToJunctionLeader`
+  (`Engine.AdaptToJunctionLeader`, ported from `MSVehicle.cpp:3205-3307` Euler branch + the gap
+  formula from `MSLink::getLeaderInfo`, `MSLink.cpp:1647`). Reproduces `2.033` (t17->t18) to
+  1e-3 -- this was the previously-blocked step; it now closes exactly once `FoeConflictSize`/
+  `FoeLengthBehindCrossing` are real numbers instead of missing inputs.
+- **Foe cleared** (past its internal lane) -> `+infinity`, matching the golden's free
+  `+2.6`/step re-acceleration `2.033 -> 4.633 -> 7.233 -> 9.833 -> 12.433 -> 13.89`.
+
+**Determinism policy decided (RUNG9B.md item 4, "you probably cannot have both"): we chose
+"deterministic," and it happens to also be exact-parity for every scenario built so far.** The
+yield decision reads ONLY the STATIC `<request>` priority matrix (`JunctionRequest.RespondsTo`,
+parsed once from `net.xml`, immutable at runtime) plus a FROZEN start-of-step snapshot of every
+vehicle's lane/position (the same `_vehicles` list `LaneNeighborQuery.Build` already reads --
+no per-step mutation happens before `JunctionYieldConstraint` runs, per the plan/execute
+contract). There is no `setApproaching`/`getApproaching` arrival-time race, no "first to
+register wins," and no dependency on `_vehicles`' iteration/processing order -- a foe's
+approaching/on-junction/cleared classification is a pure function of its frozen `LaneId`/
+`LaneSeqIndex`, so results are bit-identical regardless of thread/processing order. This
+sufficed for the reference scenario's priority (not 4-way-stop/right-before-left) rules; a
+network requiring real arrival-time tie-breaking between two vehicles of EQUAL priority is
+still out of scope (no such scenario exists yet).
+
+`vMajor` (route WJ->JE, priority=10, `Requests[2].RespondsTo(*)` all false) never gets a
+foe-link to yield to at all (the `for` loop over `junction.IntLanes` finds no `j` with
+`request.RespondsTo(j)`), so `JunctionYieldConstraint` returns `+infinity` for it on every
+step -- confirmed by the golden comparison: vMajor cruises `0 -> 13.89` and holds `13.89`
+through the whole run, byte-for-byte with `golden.fcd.xml`.
+
+All 41 tests green (`dotnet test`), including every prior rung's scenario unchanged (the new
+constraint's guard -- "no upcoming/current internal-lane link in LaneSequence" -- is inert for
+every single-lane/no-request-row network, same pattern as rungs 8b/9a/10's own guards).

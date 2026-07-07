@@ -10,6 +10,10 @@ namespace Sim.Ingest;
 // signals a parser-subset gap, not a legitimate omission.
 public static class NetworkParser
 {
+    // sumo/src/utils/common/StdDefs.h:48 -- #define SUMO_const_laneWidth 3.2. Default lane
+    // width when a <lane>'s `width` attribute is absent (rung 9b-ii).
+    private const double SumoConstLaneWidth = 3.2;
+
     public static NetworkModel Parse(string path)
     {
         using var stream = File.OpenRead(path);
@@ -38,13 +42,20 @@ public static class NetworkParser
             var lanes = new List<Lane>();
             foreach (var laneEl in edgeEl.Elements("lane"))
             {
+                // Rung 9b-ii: `width` defaults to SUMO_const_laneWidth (3.2, StdDefs.h:48) when
+                // absent -- this net's <lane> elements never specify it.
+                var width = laneEl.Attribute("width") is { } widthAttr
+                    ? double.Parse(widthAttr.Value, CultureInfo.InvariantCulture)
+                    : SumoConstLaneWidth;
+
                 var lane = new Lane(
                     Id: RequireAttribute(laneEl, "id"),
                     EdgeId: edgeId,
                     Index: int.Parse(RequireAttribute(laneEl, "index"), CultureInfo.InvariantCulture),
                     Speed: double.Parse(RequireAttribute(laneEl, "speed"), CultureInfo.InvariantCulture),
                     Length: double.Parse(RequireAttribute(laneEl, "length"), CultureInfo.InvariantCulture),
-                    Shape: ParseShape(RequireAttribute(laneEl, "shape")));
+                    Shape: ParseShape(RequireAttribute(laneEl, "shape")),
+                    Width: width);
 
                 lanes.Add(lane);
                 lanesById[lane.Id] = lane;
@@ -224,21 +235,71 @@ public static class NetworkParser
                     continue;
                 }
 
-                var egoShape = lanesById[egoLink.InternalLaneId].Shape;
-                var foeShape = lanesById[foeLink.InternalLaneId].Shape;
+                var egoLane = lanesById[egoLink.InternalLaneId];
+                var foeLane = lanesById[foeLink.InternalLaneId];
 
-                if (PolylineGeometry.TryIntersect(egoShape, foeShape, out var intersection))
+                if (PolylineGeometry.TryIntersect(egoLane.Shape, foeLane.Shape, out var intersection))
                 {
+                    // Rung 9b-ii: MSLink.cpp:358-366 -- widthFactor widens (or leaves unchanged)
+                    // the conflict size for shallow-angle crossings; angleDiff is the acute angle
+                    // between the two internal lanes' travel DIRECTIONS at the crossing
+                    // (GeomHelper::getMinAngleDiff, folded to [0,90] for these straight lanes).
+                    var egoDirection = LaneDirection(egoLane.Shape);
+                    var foeDirection = LaneDirection(foeLane.Shape);
+                    var angleDiffDeg = MinAngleDiffDegrees(egoDirection, foeDirection);
+                    var widthFactor = (1.0 / Math.Max(Math.Sin(DegToRad(angleDiffDeg)), 0.2) * 2.0) - 1.0;
+
+                    // MSLink.cpp:365-366/380-382: conflictSize = MIN2(foeLane->getWidth() *
+                    // widthFactor, lane->getLength()); myConflicts.push_back(ConflictInfo(
+                    // lane->getLength() - MAX2(0, crossingArc - conflictSize/2), conflictSize)).
+                    // Each conflict record here is built once per (ego, foe) ordered pair, so the
+                    // "ego" / "foe" roles below always match this record's own EgoLink/FoeLink.
+                    var egoConflictSize = Math.Min(foeLane.Width * widthFactor, egoLane.Length);
+                    var foeConflictSize = Math.Min(egoLane.Width * widthFactor, foeLane.Length);
+                    var egoLengthBehindCrossing = egoLane.Length - Math.Max(0.0, intersection.ArcA - (egoConflictSize / 2.0));
+                    var foeLengthBehindCrossing = foeLane.Length - Math.Max(0.0, intersection.ArcB - (foeConflictSize / 2.0));
+
                     conflicts.Add(new JunctionConflict(
                         egoLink.Index, foeLink.Index,
                         intersection.ArcA, intersection.ArcB,
-                        intersection.Point));
+                        intersection.Point,
+                        egoConflictSize, foeConflictSize,
+                        egoLengthBehindCrossing, foeLengthBehindCrossing));
                 }
             }
         }
 
         return new Junction(id, type, intLanes, links, requests, conflicts);
     }
+
+    // Rung 9b-ii: a straight 2-point internal lane's travel direction, normalized -- ported
+    // from the (unit-vector) reading of GeomHelper::naviDegree(shape.rotationAtOffset(...)) for
+    // the straight-through internal lanes this scenario has (no curved internal-lane shapes are
+    // in scope here).
+    private static (double X, double Y) LaneDirection(IReadOnlyList<(double X, double Y)> shape)
+    {
+        var first = shape[0];
+        var last = shape[^1];
+        var dx = last.X - first.X;
+        var dy = last.Y - first.Y;
+        var length = Math.Sqrt((dx * dx) + (dy * dy));
+        return (dx / length, dy / length);
+    }
+
+    // Ported from GeomHelper::getMinAngleDiff (sumo/src/utils/geom/GeomHelper.cpp) for the two
+    // straight lanes this rung's net has: the acute angle between two direction vectors, folded
+    // to [0, 90] degrees via acos(|dot|/(|a||b|)) -- equivalent to getMinAngleDiff's own
+    // fmod/180-wrap for this scenario's perpendicular/straight crossing.
+    private static double MinAngleDiffDegrees((double X, double Y) a, (double X, double Y) b)
+    {
+        var dot = (a.X * b.X) + (a.Y * b.Y);
+        var magA = Math.Sqrt((a.X * a.X) + (a.Y * a.Y));
+        var magB = Math.Sqrt((b.X * b.X) + (b.Y * b.Y));
+        var cos = Math.Clamp(Math.Abs(dot) / (magA * magB), -1.0, 1.0);
+        return Math.Acos(cos) * 180.0 / Math.PI;
+    }
+
+    private static double DegToRad(double degrees) => degrees * Math.PI / 180.0;
 
     private static IReadOnlyList<(double X, double Y)> ParseShape(string shape)
     {

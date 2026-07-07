@@ -7,13 +7,19 @@ namespace Sim.Ingest;
 // is a polyline in global x/y. A vehicle's authoritative position is lane-relative arc-length
 // (MSVehicle::myState.myPos) along that polyline; global x/y is *derived* by walking the shape
 // (MSLane::geometryPositionAtOffset), never the other way around.
+// Rung 9b-ii: `Width` is ported from a <lane>'s optional `width` attribute -- defaults to
+// SUMO_const_laneWidth (sumo/src/utils/common/StdDefs.h:48, 3.2m) when absent, exactly like
+// MSLane's own default (this net's <lane> elements omit `width` entirely). Only consumed by
+// the junction-conflict geometry (MSLink::setRequestInformation) below; every prior rung's
+// lane-following/stop-line/TL math never reads it.
 public sealed record Lane(
     string Id,
     string EdgeId,
     int Index,
     double Speed,
     double Length,
-    IReadOnlyList<(double X, double Y)> Shape);
+    IReadOnlyList<(double X, double Y)> Shape,
+    double Width);
 
 public sealed record Edge(
     string Id,
@@ -89,10 +95,20 @@ public sealed record JunctionRequest(int Index, string Response, string Foes, bo
 // lane's start) + EgoCrossingArc; FoeCrossingArc is the same measured along the foe's internal
 // lane. Only links that geometrically cross (not links that merely merge at a shared endpoint)
 // get a JunctionConflict -- see PolylineGeometry's doc comment for the exact rule.
+//
+// Rung 9b-ii: EgoConflictSize/FoeConflictSize/EgoLengthBehindCrossing/FoeLengthBehindCrossing
+// are ported from MSLink::setRequestInformation's crossing-width computation
+// (sumo/src/microsim/MSLink.cpp:354-382) -- the raw arc-length crossing point above is shifted
+// back by half the conflict's width to account for the two lanes' physical extent, and the
+// conflict "size" (how much of the foe/ego lane's width actually overlaps the crossing,
+// widened for shallow-angle crossings) is precomputed once at network-load time exactly as
+// MSLink does, rather than re-derived per constraint evaluation.
 public sealed record JunctionConflict(
     int EgoLink, int FoeLink,
     double EgoCrossingArc, double FoeCrossingArc,
-    (double X, double Y) CrossingPoint);
+    (double X, double Y) CrossingPoint,
+    double EgoConflictSize, double FoeConflictSize,
+    double EgoLengthBehindCrossing, double FoeLengthBehindCrossing);
 
 // Rung 9b-i: a parsed <junction> -- `IntLanes` is the link-index-ordered list of internal lane
 // ids (IntLanes[i] is link i's internal lane, ported from the order netconvert emits

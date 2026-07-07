@@ -187,16 +187,20 @@ its own `/sumo/` references and scenario when we reach it:
    - 9a (scenario `08-junction-straight`): multi-edge routing + internal-lane traversal
      (route expands to a lane sequence via each `<connection>`'s `via`; pos carries over across
      lane boundaries). A major-road vehicle drives straight through, no yielding. Green.
-   - **9b — priority yielding — IN PROGRESS.** Scenario committed as `scenarios/11-priority-junction/`
-     (not `10-`; A1 took `10-`). **9b-i DONE** (junction `<request>` + conflict geometry in
-     `NetworkModel`; crossing 5.60 m into each of `:J_1_0`/`:J_2_0`; `dotnet test` = 39 green).
-     Reverse-engineered (no debug build): the yield is TWO phases — a stop-line brake
-     `stopSpeed(seen − POSITION_EPS=0.1)` while the priority major approaches (reproduces `9.433`/`4.933`
-     EXACTLY), then `adaptToJunctionLeader` once the major is on `:J_2_0` (the `2.033`, BLOCKED on the
-     conflict WIDTH `foeCrossingWidth` that 9b-i does not yet compute). 9b-ii (reducer stop-line
-     constraint + release + determinism policy) and 9b-iii (`adaptToJunctionLeader` + conflict width)
-     remain. **See `RUNG9B.md` "Progress log" for the full per-step breakdown and the sticking point.**
-     Summary characterization below.
+   - **9b — priority yielding — DONE.** Scenario `scenarios/11-priority-junction/` (not `10-`; A1 took
+     `10-`); `Rung9bParityTests` green within 1e-3. The whole hard rung was cracked WITHOUT a SUMO
+     debug build by hand-matching the golden with the engine's own `KraussModel`. Mechanism (two
+     phases, keyed on the foe's location): while the priority major is APPROACHING on its normal lane
+     the minor does a stop-line brake `stopSpeed(approachLen − pos − POSITION_EPS=0.1)` (→ `9.433`/
+     `4.933`); once the major is on its internal lane `:J_2_0` the minor runs `adaptToJunctionLeader`
+     (→ `2.033`), whose `distToCrossing` uses the conflict-WIDTH shift `conflictSize = foeWidth(3.2) ×
+     widthFactor(1)` (perpendicular) → crossing shifted back 1.6 m so `vStop = stopSpeed(distToCrossing
+     − minGap) = 2.033`; once the major clears, no constraint (free `+2.6`/step). 9b-i (junction
+     `<request>` + conflict geometry) and 9b-ii/iii (the reducer constraint + `adaptToJunctionLeader`
+     port) are committed; `dotnet test` = 41 green. Determinism policy: static `<request>` priority
+     matrix + frozen start-of-step foe snapshot → order-independent (no arrival-time race). Ported
+     from `MSLink::setRequestInformation`/`getLeaderInfo` + `MSVehicle::adaptToJunctionLeader`. **Full
+     per-step breakdown in `RUNG9B.md` "Progress log".** Summary characterization below.
      Scenario probed: major `WJ JE` (priority),
      minor `SJ JN` (yields); the minor brakes 13.89→9.433→4.933→2.033 as the major approaches,
      threads through just behind it, then accelerates.

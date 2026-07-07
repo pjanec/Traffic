@@ -76,6 +76,31 @@ public class Rung9biJunctionGeometryTests
         Assert.Equal(198.40, backward.CrossingPoint.Y, Tolerance);
     }
 
+    // Rung 9b-ii: MSLink::setRequestInformation's crossing-width computation
+    // (sumo/src/microsim/MSLink.cpp:354-382) for the link1<->link2 (:J_1_0 <-> :J_2_0)
+    // crossing -- both internal lanes are 3.2m wide (default, no `width` attribute in this
+    // net's <lane>s) and cross at a perpendicular (90 degree) angle, so widthFactor == 1 and
+    // the conflict size collapses to exactly each lane's own width: EgoConflictSize ==
+    // FoeConflictSize == 3.2, and both lanes' LengthBehindCrossing == 11.20 - (5.60 - 1.6) ==
+    // 7.20 (raw crossing arc 5.60, shifted back by half the 3.2m conflict size).
+    [Fact]
+    public void Conflicts_HaveExpectedConflictSizeAndLengthBehindCrossing()
+    {
+        var junction = LoadNetwork().JunctionsById["J"];
+
+        var forward = Assert.Single(junction.Conflicts, c => c.EgoLink == 1 && c.FoeLink == 2);
+        Assert.Equal(3.2, forward.EgoConflictSize, Tolerance);
+        Assert.Equal(3.2, forward.FoeConflictSize, Tolerance);
+        Assert.Equal(7.20, forward.EgoLengthBehindCrossing, Tolerance);
+        Assert.Equal(7.20, forward.FoeLengthBehindCrossing, Tolerance);
+
+        var backward = Assert.Single(junction.Conflicts, c => c.EgoLink == 2 && c.FoeLink == 1);
+        Assert.Equal(3.2, backward.EgoConflictSize, Tolerance);
+        Assert.Equal(3.2, backward.FoeConflictSize, Tolerance);
+        Assert.Equal(7.20, backward.EgoLengthBehindCrossing, Tolerance);
+        Assert.Equal(7.20, backward.FoeLengthBehindCrossing, Tolerance);
+    }
+
     [Fact]
     public void LinkByInternalLane_FindsLink1()
     {

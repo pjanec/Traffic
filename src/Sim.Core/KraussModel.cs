@@ -45,8 +45,11 @@ public static class KraussModel
     // sumo/src/utils/common/StdDefs.h:58 -- #define SUMO_const_haltingSpeed 0.1. Used by the
     // rung-5 stop-reached test (MSVehicle.cpp:1805's `currentVelocity <= stop.getSpeed() +
     // SUMO_const_haltingSpeed`) and by keepStopping's speed>=haltingSpeed check (not exercised
-    // here since our only stop is non-waypoint).
-    internal const double HaltingSpeed = 0.1;
+    // here since our only stop is non-waypoint). Rung 9b-ii: also the MAX2(leaderSpeed,
+    // SUMO_const_haltingSpeed) divisor in MSVehicle::adaptToJunctionLeader
+    // (MSVehicle.cpp:3263) -- widened to public rather than re-declared, so both call sites
+    // stay the same constant.
+    public const double HaltingSpeed = 0.1;
 
     // MSCFModel.cpp:75-96 brakeGap/brakeGapEuler (Euler branch only -- ballistic is a later
     // task per CLAUDE.md/DESIGN.md). Called from maximumSafeFollowSpeed with headwayTime=0.

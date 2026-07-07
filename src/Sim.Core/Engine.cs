@@ -285,6 +285,14 @@ public sealed class Engine : IEngine
             // Execute cycle's result will be observed (see RedLightConstraint's own comment on
             // why that is `time + dt`, not `time`).
             RedLightConstraint(v, lane, time, dt, actionStepLengthSecs),
+
+            // Priority-junction yielding (rung 9b-ii/iii): MSLink's right-of-way gate (stop-line
+            // brake while a higher-priority foe still approaches) plus MSVehicle::
+            // adaptToJunctionLeader (car-following against a foe already on the junction).
+            // +infinity (non-binding) whenever ego has no upcoming/current junction link, or
+            // that link's foes are all cleared/absent -- see JunctionYieldConstraint's own
+            // comment for the full derivation and its determinism note.
+            JunctionYieldConstraint(v, _vehicles, dt, actionStepLengthSecs),
         };
 
         var vPos = constraints.Min();
@@ -471,7 +479,238 @@ public sealed class Engine : IEngine
         return KraussModel.StopSpeed(stopDist, v.Kinematics.Speed, v.VType, dt, actionStepLengthSecs);
     }
 
-    // Ported from MSVehicle::processNextStop (sumo/src/microsim/MSVehicle.cpp:1613-1897),
+    // sumo/src/microsim/MSLink.cpp's POSITION_EPS (used throughout its getLeaderInfo/
+    // adaptToJunctionLeader call chain, e.g. MSVehicle.cpp:3228's `seen - lane->getLength() -
+    // POSITION_EPS`) -- distinct from KraussModel.NumericalEps (0.001, a different constant).
+    private const double PositionEps = 0.1;
+
+    // Rung 9b-ii/iii: priority-junction yielding. Ported from two SUMO call sites that only
+    // ever fire for a link this vehicle's own request row must yield to
+    // (JunctionRequest.RespondsTo, MSLink::myResponse / "myHasFoes"):
+    //   - MSLink::opened()'s stop-line gate (approaching foe still on its own approach lane:
+    //     the ego link is not yet "open", so ego must be able to stop at the stop line) --
+    //     modeled here as a straight stopSpeed brake to the approach lane's end
+    //     (approachLen - pos - POSITION_EPS), matching the verified 9.433/4.933 trajectory.
+    //   - MSVehicle::adaptToJunctionLeader (MSVehicle.cpp:3205-3307, Euler branch): once the
+    //     foe has actually entered its own internal lane, MSLink's opened() check no longer
+    //     blocks entry (foe becomes a link-leader instead) -- ego treats it as a car-following
+    //     leader superimposed at the junction's crossing point.
+    // These are mutually exclusive per foe link (never MIN'd together for the same foe): a
+    // foe is classified as exactly one of on-junction / approaching / cleared from its FROZEN
+    // start-of-step lane/position (the same `allVehicles` snapshot LaneNeighborQuery.Build
+    // reads -- CLAUDE.md rule 2, never a foe's already-updated position this step).
+    //
+    // Determinism (CLAUDE.md rule 5 / this rung's briefing): the yield decision is derived
+    // purely from the STATIC <request> priority matrix (parsed once from net.xml, unaffected
+    // by runtime state) plus this frozen start-of-step snapshot -- there is no "first to
+    // arrive wins" race and no dependency on _vehicles' iteration/processing order, so the
+    // result is identical regardless of parallel/thread scheduling.
+    //
+    // +infinity (non-binding) when ego has no upcoming/current internal-lane link in its
+    // LaneSequence (already past its own junction, or its route crosses none), that link has
+    // no <request> row, or every foe link it must yield to either has no geometric conflict
+    // recorded (JunctionConflict) or no actual foe vehicle present/still relevant.
+    private double JunctionYieldConstraint(VehicleRuntime v, IReadOnlyList<VehicleRuntime> allVehicles, double dt, double actionStepLengthSecs)
+    {
+        // Step 1: ego's own upcoming/current junction link -- the first internal lane in
+        // v.LaneSequence at or after LaneSeqIndex. A lane already passed is simply never found
+        // by this forward-only scan (LaneSeqIndex has already advanced beyond it), which is
+        // exactly the "already passed -> +infinity" case the briefing calls for.
+        var egoLinkSeqIndex = -1;
+        string? egoInternalLaneId = null;
+        for (var i = v.LaneSeqIndex; i < v.LaneSequence.Count; i++)
+        {
+            if (_network!.LinkByInternalLane.ContainsKey(v.LaneSequence[i]))
+            {
+                egoLinkSeqIndex = i;
+                egoInternalLaneId = v.LaneSequence[i];
+                break;
+            }
+        }
+
+        if (egoInternalLaneId is null)
+        {
+            return double.PositiveInfinity;
+        }
+
+        var (junction, egoLink) = _network!.LinkByInternalLane[egoInternalLaneId];
+        var request = junction.Requests.FirstOrDefault(r => r.Index == egoLink.Index);
+        if (request is null)
+        {
+            return double.PositiveInfinity;
+        }
+
+        var egoLane = _network.LanesById[egoInternalLaneId];
+        // The lane immediately before ego's internal lane in its route. Null only if the
+        // internal lane is the very first element of LaneSequence -- which cannot happen for a
+        // vehicle inserted on a normal lane (egoLinkSeqIndex >= 1 then), so it is used only in
+        // the !egoOnInternal branches below, where it is always non-null. Guarded so a future
+        // laneless/mid-junction insertion can't index -1 here.
+        var approachLane = egoLinkSeqIndex >= 1
+            ? _network.LanesById[v.LaneSequence[egoLinkSeqIndex - 1]]
+            : null;
+        var egoOnInternal = v.LaneId == egoInternalLaneId;
+
+        var constraint = double.PositiveInfinity;
+        for (var j = 0; j < junction.IntLanes.Count; j++)
+        {
+            if (j == egoLink.Index || !request.RespondsTo(j))
+            {
+                continue;
+            }
+
+            var conflict = junction.Conflicts.FirstOrDefault(c => c.EgoLink == egoLink.Index && c.FoeLink == j);
+            if (conflict is null)
+            {
+                // No geometric crossing recorded for this foe link -- nothing to yield to.
+                continue;
+            }
+
+            var foeInternalLaneId = junction.IntLanes[j];
+            var foe = FindFoeVehicle(v, allVehicles, foeInternalLaneId);
+            if (foe is null)
+            {
+                continue;
+            }
+
+            var foeInternalSeqIndex = IndexOfLane(foe.LaneSequence, foeInternalLaneId);
+
+            double thisConstraint;
+            if (foe.LaneId == foeInternalLaneId)
+            {
+                // On-junction: MSVehicle::adaptToJunctionLeader.
+                thisConstraint = AdaptToJunctionLeader(v, egoLane, approachLane, egoOnInternal, conflict, foe, dt, actionStepLengthSecs);
+            }
+            else if (foeInternalSeqIndex > foe.LaneSeqIndex)
+            {
+                // Approaching (foe hasn't reached its own internal lane yet): the stop-line
+                // yield only guards ENTRY onto ego's own internal lane -- once ego has already
+                // been granted entry (egoOnInternal), it is no longer gated by this foe's
+                // approach state.
+                thisConstraint = egoOnInternal
+                    ? double.PositiveInfinity
+                    : KraussModel.StopSpeed(
+                        approachLane!.Length - v.Kinematics.Pos - PositionEps,
+                        v.Kinematics.Speed, v.VType, dt, actionStepLengthSecs);
+            }
+            else
+            {
+                // Cleared: foe already past its internal lane.
+                thisConstraint = double.PositiveInfinity;
+            }
+
+            constraint = Math.Min(constraint, thisConstraint);
+        }
+
+        return constraint;
+    }
+
+    // MSVehicle::adaptToJunctionLeader (sumo/src/microsim/MSVehicle.cpp:3205-3307), Euler
+    // branch only, and the gap formula it is fed (MSLink::getLeaderInfo, MSLink.cpp:1647).
+    // `egoLane` is ego's own upcoming/current internal lane (the link this constraint was
+    // raised for); `approachLane` is the lane immediately before it in ego's LaneSequence.
+    // `foe` is already confirmed to be ON its own internal lane (foe.LaneId equals the
+    // conflict's foe internal lane, i.e. `_network.LanesById[foe.LaneId]` below IS that lane)
+    // by JunctionYieldConstraint before calling in.
+    private double AdaptToJunctionLeader(
+        VehicleRuntime ego,
+        Lane egoLane,
+        Lane? approachLane,
+        bool egoOnInternal,
+        JunctionConflict conflict,
+        VehicleRuntime foe,
+        double dt,
+        double actionStepLengthSecs)
+    {
+        var foeLane = _network!.LanesById[foe.LaneId];
+
+        // MSVehicle.cpp:3428/3473's `seen`: distance from ego's front to the end of the exit
+        // link it is currently driving toward -- ego's OWN internal lane (egoLane) is that
+        // exit link, whether ego is still approaching it or already on it.
+        var seen = egoOnInternal
+            ? egoLane.Length - ego.Kinematics.Pos
+            : (approachLane!.Length - ego.Kinematics.Pos) + egoLane.Length;
+
+        var distToCrossing = seen - conflict.EgoLengthBehindCrossing;
+        var foeDistToCrossing = foeLane.Length - conflict.FoeLengthBehindCrossing;
+
+        var leaderBack = foe.Kinematics.Pos - foe.VType.Length;
+        var leaderBackDist = foeDistToCrossing - leaderBack;
+        var foeCrossingWidth = conflict.FoeConflictSize;
+
+        var gap = distToCrossing - ego.VType.MinGap - leaderBackDist - foeCrossingWidth;
+
+        // MSVehicle.cpp:3219-3222: Euler (gSemiImplicitEulerUpdate=true, phase 1's only
+        // integration mode) initializes vsafeLeader to 0, not -DBL_MAX.
+        var vsafeLeader = 0.0;
+        if (gap >= 0)
+        {
+            vsafeLeader = KraussModel.FollowSpeed(ego.Kinematics.Speed, gap, foe.Kinematics.Speed, foe.VType.Decel, ego.VType, dt);
+        }
+        else
+        {
+            // MSVehicle.cpp:3225-3228: leaderInfo.first != this is always true here (foe is a
+            // distinct vehicle, never the ego "pedestrian" self-reference).
+            vsafeLeader = KraussModel.StopSpeed(seen - egoLane.Length - PositionEps, ego.Kinematics.Speed, ego.VType, dt, actionStepLengthSecs);
+        }
+
+        if (distToCrossing >= 0)
+        {
+            // MSVehicle.cpp:3240-3280. leaderInfo.first == this (pedestrian) and
+            // leaderInfo.second == -DBL_MAX (continuation-lane/opposite-direction foe) never
+            // occur for this rung's foe-vehicle-on-a-plain-internal-lane case, so only the
+            // final "else" branch (lines 3260-3280) is reachable here.
+            var vStop = KraussModel.StopSpeed(distToCrossing - ego.VType.MinGap, ego.Kinematics.Speed, ego.VType, dt, actionStepLengthSecs);
+            var leaderDistToCrossing = distToCrossing - gap;
+            var leaderPastCPTime = leaderDistToCrossing / Math.Max(foe.Kinematics.Speed, KraussModel.HaltingSpeed);
+            var vFinal = Math.Max(ego.Kinematics.Speed, (2.0 * (distToCrossing - ego.VType.MinGap) / leaderPastCPTime) - ego.Kinematics.Speed);
+            var v2 = ego.Kinematics.Speed + KraussModel.Accel2Speed((vFinal - ego.Kinematics.Speed) / leaderPastCPTime, dt);
+            vsafeLeader = Math.Max(vsafeLeader, Math.Min(v2, vStop));
+        }
+
+        return vsafeLeader;
+    }
+
+    // MSLane::getInternalFollowingLane-adjacent lookup: the (at most one, in this rung's
+    // scope) OTHER vehicle whose route crosses the given internal lane -- ported from
+    // MSLink::getLeaderInfo's foeLane vehicle scan (MSLink.cpp's per-foeLane loop), simplified
+    // to this rung's single-foe-vehicle-per-link scenario (no queueing/multiple-foes
+    // tie-break is modeled; see the briefing's scope note). Excludes ego itself, and any
+    // vehicle not yet inserted or already arrived (frozen `allVehicles` snapshot).
+    private static VehicleRuntime? FindFoeVehicle(VehicleRuntime ego, IReadOnlyList<VehicleRuntime> allVehicles, string foeInternalLaneId)
+    {
+        foreach (var other in allVehicles)
+        {
+            if (ReferenceEquals(other, ego) || !other.Inserted || other.Arrived)
+            {
+                continue;
+            }
+
+            if (other.LaneSequence.Contains(foeInternalLaneId))
+            {
+                return other;
+            }
+        }
+
+        return null;
+    }
+
+    // IReadOnlyList<string> has no IndexOf overload -- a tiny manual scan avoids materializing
+    // a copy just to find the internal lane's position in a vehicle's LaneSequence.
+    private static int IndexOfLane(IReadOnlyList<string> laneSequence, string laneId)
+    {
+        for (var i = 0; i < laneSequence.Count; i++)
+        {
+            if (laneSequence[i] == laneId)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    // MSVehicle::processNextStop (sumo/src/microsim/MSVehicle.cpp:1613-1897),
     // non-waypoint (stop.getSpeed()==0) arm only, Euler branch only (the ballistic
     // `getSpeed() - getMaxDecel()` arm is dead per phase-1 CLAUDE.md/DESIGN.md). Reads only the
     // front stop's START-OF-STEP snapshot; returns (the value processNextStop would have
