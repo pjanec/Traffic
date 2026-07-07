@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+
+# NuGet
+*.nupkg
+.nuget/
+packages/
+
+# Local SUMO install (network-side, never committed — see CLAUDE.md)
+.sumo/
+sumo-local/
+
+# IDE / OS
+.vs/
+.vscode/
+*.user
+.DS_Store
