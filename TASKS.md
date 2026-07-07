@@ -533,12 +533,14 @@ inert-when-absent discipline used throughout.
 passes, order-independent frozen-snapshot plan/execute, value-type components, immutable blueprints,
 and determinism (no RNG/wallclock). **The gap is representation, not architecture.**
 
-- **D1. Many-vehicle benchmark scenario + baseline harness.** Do FIRST — you cannot measure zero-alloc
-  / SoA / parallelism wins on today's 1–2-vehicle scenarios. A committed high-density scenario (e.g.
-  a long multi-lane road or a grid with hundreds of vehicles) + a `dotnet` benchmark (BenchmarkDotNet
-  or a simple stopwatch-free step-count harness) reporting steps/sec, allocations/step (GC), and
-  determinism (same output N runs). Behavioral (no SUMO golden needed) — it measures, it doesn't
-  assert parity. Baseline the current AoS/LINQ engine so every later D-rung shows its delta.
+- **D1. Many-vehicle benchmark scenario + baseline harness. DONE.** `scenarios/_bench/highway-dense`
+  (3-lane, 5 km, 420 vehicles, ~20 % slow so LC/neighbor/reducer hot paths fire; NO golden) +
+  `src/Sim.Bench` console harness (steps/sec, alloc/step, GC, peak concurrency, determinism hash — NOT
+  in `dotnet test`) + `RungD1BenchmarkDeterminismTests` (a fast offline guard that two dense runs are
+  byte-identical). **Baseline (current AoS/LINQ engine, 500 steps, 378 peak concurrent): 1284 steps/s
+  (0.779 ms/step), 80.9 MiB total, ~736 B/veh-step, deterministic=True.** See
+  `scenarios/_bench/highway-dense/BASELINE.md`. The ~736 B/veh-step is the D2–D4 target; the
+  deterministic=True at load is the invariant D8 parallelization relies on. `dotnet test` = 62 green.
 - **D2. Int-handle identity (strings → dense indices). The biggest single enabler.** FDP components are
   unmanaged — string ids cannot be component fields. Intern lane/edge/junction/vType ids to dense
   `int` handles at ingest; `NetworkModel` exposes arrays indexed by handle (it already stores arrays);
