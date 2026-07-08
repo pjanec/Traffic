@@ -636,12 +636,26 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     `exact` JSON still loads unchanged and `MeanToleranceFor` throws on it (no `Statistical` block).
     Full suite: 86 passed, 0 failed (up from 78) — all prior exact-mode tests (`TrajectoryComparatorTests`,
     every `Rung*ParityTests` real-golden test) verified unchanged and green.
-  - **C1-iii ([net], needs SUMO). Statistical golden + parity test.** Generate N SUMO runs with
-    `sigma>0` (different seeds) → an aggregate/ensemble golden; wire the statistical parity test for a
-    `sigma>0` scenario. Requires the network-enabled golden-regen loop (SUMO install) — a `[net]`
-    step, NOT part of the offline `dotnet test` loop.
+  - **C1-iii. DONE ([net] golden regen, offline test). Statistical golden + parity test.** New
+    scenario `scenarios/17-dawdle-freeflow` (single vehicle, `sigma=0.5`, free flow on a 2000m single
+    lane so it never reaches the end within `end=80` → all runs fully present for clean pooling).
+    Golden = a 24-run SUMO ENSEMBLE (`golden.ensemble/seed01..24.fcd.xml`, `sumo --seed 1..24
+    --precision 6`), committed with `provenance.txt`. `tolerance.json` is `parityMode="statistical"`,
+    `comparedAttributes=["speed"]` (pos excluded — a cumulative, non-stationary quantity), with
+    `statistical.speed.mean=0.05`/`std=0.05`. Test `RungC1iiiStatisticalParityTests` parses the 24
+    golden FCDs as the expected ensemble, runs the engine over 24 seeds as the actual ensemble, and
+    asserts `TrajectoryComparator.CompareEnsemble` (C1-ii) `IsMatch`. **This is a real, tight test,
+    not a loose one:** because C1-i ported SUMO's `dawdle2` ALGORITHM faithfully, the two ensembles
+    (different RNG streams, same formula) converge to the same pooled speed distribution — observed
+    at authoring **meanΔ=0.001140, stdΔ=0.003687 m/s**, so the committed 0.05 band is ~13–40× that
+    noise floor yet far tighter than any real dawdle bug (a `sigma` factor-of-2 shifts the mean
+    ~0.65 m/s). The RNG stream is NOT compared (the ensemble-not-RNG-exact decision). Golden regen
+    (SUMO) was a deliberate `[net]` step; the committed goldens make the test run in the offline
+    `dotnet test` loop with no SUMO. Full suite: 87 passed, 0 failed.
 
   Produces stop-and-go waves and realistic capacity. Prereq for C7 and for believable everything.
+  **C1 (all three sub-rungs) is now DONE — the determinism-ladder gate is open; the statistical bar
+  (ensemble/aggregate) is built and validated against SUMO.**
 - **C2. Strategic (route-driven) lane changes + lane-to-lane continuity. The #1 lane-based realism
   gap.** Today a vehicle can sit in a lane that cannot reach its route. Port LC2013's STRATEGIC block
   (`LCA_STRATEGIC`/`LCA_URGENT`, `getBestLanes`/`bestLaneOffset` — `MSLCM_LC2013::_wantsChange` +

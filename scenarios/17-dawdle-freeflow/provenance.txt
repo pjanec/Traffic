@@ -1,0 +1,15 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+parity_mode=statistical (ensemble/aggregate — see TASKS.md C1 owner decision)
+ensemble_size=24
+ensemble_seeds=1..24 (SUMO --seed)
+command_per_seed=sumo -c config.sumocfg --seed <N> --fcd-output golden.ensemble/seed<NN>.fcd.xml --precision 6 --no-step-log true
+fcd_precision=6
+# scenario: single vehicle, sigma=0.5 (Krauss dawdling ON), free flow on a 2000m single lane,
+#   Euler, teleport off, action-step 1, speeddev 0. end=80 (vehicle never reaches the 2000m end,
+#   so all 24 runs are fully present for the whole window -> clean pooled statistics).
+# statistical bar: pooled speed mean/std of the 24-run SUMO ensemble is the golden; an engine
+#   ensemble of 24 seeds must match it within tolerance.json's speed.mean/std bands. Observed at
+#   authoring (engine seeds 1..24 vs this golden): meanΔ=0.001140, stdΔ=0.003687 m/s -- the
+#   committed 0.05 band is ~13-40x that noise floor yet far tighter than any real dawdle-formula
+#   bug would produce (a sigma factor-of-2 error shifts the mean ~0.65 m/s).
