@@ -795,8 +795,29 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     before the accumulator decrement) instead of the commit-gate veto, and re-anchor 07/12
     byte-identical.
 - **C3. Merging / on-ramp / zipper.** Gap-acceptance merging where two lanes join (`sameTarget`
-  links). Extends 9b's foe machinery + A2's neighbor leader/follower. Parity axis. Scenario: an
-  on-ramp merging onto a mainline; the ramp vehicle accepts a gap or waits.
+  links). Extends 9b's foe machinery + A2's neighbor leader/follower. Parity axis.
+
+  **`[net]` anchor DONE: `scenarios/19-onramp-merge`** (committed golden). Mainline `M` (A→J, 500m,
+  priority 10) + ramp `R` (B→J, ~104m, priority 1) BOTH feed the same downstream lane `D_0`
+  (`sameTarget` merge via `:J_1_0`/`:J_0_0`); junction J makes link 1 (M→D) major, link 0 (R→D) minor
+  (`request index=0 response="10"`). `mA` (mainline, depart 0) + `rA` (ramp, depart 2), both at 13.89,
+  `sigma=0`. SUMO: `rA` cruises `R` at 13.89, then DECELERATES near the junction (t=8: 11.91, t=9:
+  7.41) at the stop line, enters `:J_0_0` at t=10, merges to `D_0` at t=11 and re-accelerates.
+
+  **KEY FINDING (this session): our 9b engine FAILS this (firstDiv=t=8, `rA` cruises straight through
+  at 13.89 with no yield).** Diagnosis: `mA` is ~390 m away (pos 111 at t=8) when `rA` reaches the
+  merge — a HUGE gap, so `rA` is NOT gap-blocked. The golden's slowdown is SUMO's **minor-road
+  CAUTIOUS APPROACH**: a minor-link vehicle decelerates to be able to yield as it nears a priority
+  junction (so it *could* stop if a major appeared), confirms the gap is safe, then proceeds. Our
+  `JunctionYieldConstraint` only yields to a foe PRESENT on / immediately approaching the junction
+  (`FindFoeVehicle` on the foe internal lane) and has NO approach-speed term when the major is
+  distant-but-visible — so `rA` never slows. **C3 must port SUMO's `MSLink` minor-link approach-speed
+  / `getLeaderInfo` arrival-time logic** (`sumo/src/microsim/MSLink.cpp` `getLeaderInfo`/`opened`,
+  and `MSVehicle`'s junction-approach `adaptToLeaders`/`checkLinkLeader`) — the "slow to the stop
+  line, then go when the gap is safe" mechanism, of which 9b ported only the yield-to-present-foe
+  half. Reverse-engineer the exact approach speed (HANDOFF method step 3) so the t=8-9 decel matches
+  to 1e-3. Own scoped rung, likely worth a focused session. `tolerance.json` exact,
+  `["lane","pos","speed"]` @1e-3.
 - **C4. Remaining right-of-way: right-before-left, roundabouts, stop signs.** 9b did PRIORITY
   junctions only. Right-before-left (uncontrolled symmetric), roundabout yielding (+
   `myRoundaboutBonus`/cooperative), all-way-stop (`LINKSTATE_ALLWAY_STOP`). Reuses 9b's `<request>`

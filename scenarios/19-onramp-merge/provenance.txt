@@ -1,0 +1,21 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# C3 anchor: on-ramp merge (sameTarget). net from nodes/edges/connections via netconvert.
+# geometry: mainline M (A->J, 500m, priority 10) + ramp R (B->J, ~104m, priority 1) BOTH feed the
+#   SAME downstream lane D_0 (sameTarget merge, via :J_1_0 / :J_0_0). Junction J: link 1 (M->D) is
+#   major (state M); link 0 (R->D) is minor (state m) and yields (request index=0 response="10").
+# vehicles: mA (mainline, depart 0, speed 13.89) + rA (ramp, depart 2, speed 13.89). sigma=0.
+# OBSERVED SUMO behavior: rA cruises R at 13.89 until it nears the junction, then DECELERATES
+#   (t=8: 11.91, t=9: 7.41) at the stop line, enters :J_0_0 at t=10 (10.01), merges to D_0 at t=11
+#   and re-accelerates. Crucially mA is ~390m away (pos 111 at t=8) -- a HUGE gap -- so rA is NOT
+#   gap-blocked; the slowdown is SUMO's minor-road CAUTIOUS-APPROACH (decelerate to be able to
+#   yield near a priority junction, confirm the gap, then proceed).
+# C3 FINDING (why our 9b engine fails this, firstDiv=t=8): JunctionYieldConstraint only yields to a
+#   foe PRESENT on / immediately approaching the junction (FindFoeVehicle on the foe internal lane);
+#   it has NO minor-road cautious-approach speed (slow to the stop line when the major is
+#   distant-but-visible). So our rA cruises through at 13.89 (no decel, wrong arrival, presence
+#   mismatch downstream). C3 must port SUMO's MSLink minor-link approach-speed / getLeaderInfo
+#   arrival-time logic (the "approach cautiously, then go when the gap is safe" mechanism).
