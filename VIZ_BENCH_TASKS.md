@@ -266,6 +266,17 @@ compare against SUMO (255 arrived, mean duration 67.6s vs engine 63.7s, mean spe
 m/s, KS distribution distance 0.22 — all within a 0.35 relative/KS tolerance). Rungs 2-4
 (~300/~3,000/~15,000) are NOT built yet — see the correction below before attempting `-L 2+`.
 
+**`-L 2+` STILL BLOCKED after C2-iii (`main@40e53f4`).** C2-iii landed (route-wide best-lanes
+backward pass) and its anchor `scenarios/36-multihop-lanes` passes, but a general `netgenerate
+-L 2` city **still throws** `No <connection> found …` at insertion — verified against a CLEAN
+scenario (no `duarouter --ignore-errors`) that SUMO runs to completion. Remaining gap: C2-iii
+redirects onto the best lane only at the DEPARTURE edge; a vehicle forced onto the "wrong" lane of
+a MIDDLE edge (arrival lane fixed by the incoming connection, but the onward turn leaves from a
+different lane) needs an INTRA-EDGE lane change mid-route, which `ResolveLaneSequence` doesn't model
+— it hard-throws instead. Full characterization + repro + parity done-condition in
+`NEED-C2iii-followup-intraedge-lanechange.md` (hand to the parity session). The benchmark generator
+stays pinned to `-L 1` until that lands.
+
 **Correction to "Dependency status — C2 gate CLEARED" below:** that note's claim that "all rungs
 (30 → 15k) are engine-capability-unblocked" is **too strong** for multi-LANE nets specifically.
 Empirically reproduced during VB-8: a `netgenerate -L 2 --tls.guess` grid + multi-edge
