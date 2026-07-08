@@ -1,0 +1,17 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T08:14:39Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# net built with: netconvert --node-files nodes.nod.xml --edge-files edges.edg.xml --connection-files connections.con.xml --output-file net.net.xml --no-turnarounds true --junctions.corner-detail 0
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# C4-ii anchor: allway_stop junction. Mutual <request> (link 0 SJ->JN response=10, link 1
+#   WJ->JE response=01), state 'w'. vSouth (depart 0) and vWest (depart 3) each brake to a FULL
+#   STOP at the stop line (must-stop-first), then proceed in arrival order: vSouth stops at
+#   t=19 and goes at t=20; vWest stops at t=22 and goes at t=23 once vSouth has cleared. sigma=0,
+#   Euler, teleport off, collision.action=none, seed 42.
+# input file hashes (sha256):
+input=net.net.xml sha256=6bf79cf5ef78b99fdd2b43387c104fa8f93b8d7d3bfad7d6b746ed1fbecb6066
+input=rou.rou.xml sha256=4e13cded06edde2c85f8adf5d678a51a85263712fc8e0676c2fcf8ee9b76efef
+input=config.sumocfg sha256=91cd5c9623d7001df654310f48925ead16db777fe8bc8926af6d64cae502fabe

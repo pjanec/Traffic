@@ -183,6 +183,19 @@ internal sealed class VehicleRuntime
     // AccLastUpdateTime above are for every non-ACC/non-CACC vType.
     public double Acceleration;
 
+    // C4-ii: accumulated waiting time (MSVehicle::myWaitingTime), in seconds -- the running count
+    // of consecutive time the vehicle has been effectively halted. Ported from
+    // MSVehicle::updateWaitingTime (MSVehicle.cpp:4081-4088): each Execute step, `+= dt` while the
+    // new speed is <= SUMO_const_haltingSpeed (0.1) AND this step's acceleration is <=
+    // accelThresholdForWaiting (0.5*maxAccel); otherwise reset to 0 (the vehicle is moving/
+    // accelerating away). Written ONLY in Engine.ExecuteMoves (the EXECUTE phase) and read ONLY in
+    // the FOLLOWING step's PLAN phase by JunctionYieldConstraint's all-way-stop arm (the
+    // arrival-order tie-break: whoever has waited longer goes first) -- consistent with the
+    // frozen-start-of-step-snapshot invariant (CLAUDE.md rule 2), never a foe's mid-step value.
+    // Default 0.0. Read by nothing except the all-way-stop arm, so byte-identical-inert for every
+    // junction that is not `type="allway_stop"` (and thus for every pre-C4-ii scenario).
+    public double WaitingTime;
+
     // B3: live reroute-around-blockage bookkeeping (DESIGN.md "Two futures" -- not a SUMO
     // field). BlockedByObstacleSeconds accumulates dt while a FUTURE edge of this vehicle's
     // remaining route is sitting under an active external obstacle; reset to 0 the moment no

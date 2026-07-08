@@ -1291,6 +1291,17 @@ public sealed class Engine : IEngine
             : null;
         var egoOnInternal = v.LaneId == egoInternalLaneId;
 
+        // C4-ii: an all-way-stop junction uses a DISTINCT right-of-way rule from priority/RBL
+        // junctions -- every approach must fully STOP first, then proceed in arrival order (longest
+        // waiter first) -- so it takes its own arm and skips the priority-junction cautious-approach
+        // + present-foe-yield logic below (which, being mutual at an all-way-stop, would deadlock).
+        if (junction.Type == "allway_stop")
+        {
+            return AllwayStopConstraint(
+                v, junction, egoLink, request, approachLane, egoOnInternal,
+                allVehicles, dt, actionStepLengthSecs, laneVehicleMaxSpeed);
+        }
+
         var constraint = double.PositiveInfinity;
 
         // C3 (TASKS.md "on-ramp merge" / minor-link CAUTIOUS APPROACH): ported from
@@ -1442,6 +1453,110 @@ public sealed class Engine : IEngine
             }
 
             constraint = Math.Min(constraint, thisConstraint);
+        }
+
+        return constraint;
+    }
+
+    // C4-ii (TASKS.md "Remaining right-of-way" -- the ALL-WAY-STOP sub-rung). A distinct
+    // right-of-way rule from priority/RBL: at an `type="allway_stop"` junction (netconvert emits
+    // link state 'w', and a MUTUAL <request> response matrix -- each approach yields to the other)
+    // every vehicle must come to a FULL STOP at the stop line, then proceed in arrival order --
+    // the vehicle that started waiting earliest goes first. Ported from MSLink::opened /
+    // blockedByFoe (sumo/src/microsim/MSLink.cpp:841 the must-stop-first gate, :938-945 the
+    // arrival-order tie-break). Replaces the priority-junction cautious-approach + present-foe
+    // yield for such junctions (which, being mutual here, would deadlock -- each yields to the
+    // other forever; verified: the pre-C4-ii engine leaves BOTH vehicles halted at scenario 27's
+    // junction indefinitely).
+    //
+    // Determinism/parallel-safety: reads only the FROZEN start-of-step snapshot -- ego's own
+    // Pos/Speed/WaitingTime and each foe's WaitingTime/lane/LaneSeqIndex (WaitingTime is written
+    // only in ExecuteMoves, each vehicle its own) plus the static <request>/conflict matrix -- and
+    // writes nothing; the result is independent of vehicle processing order (CLAUDE.md rule 2/5).
+    private double AllwayStopConstraint(
+        VehicleRuntime v, Junction junction, JunctionLink egoLink, JunctionRequest request,
+        Lane? approachLane, bool egoOnInternal, ActiveVehicleQuery allVehicles,
+        double dt, double actionStepLengthSecs, double laneVehicleMaxSpeed)
+    {
+        // Once ego is on its own internal lane it has already been granted entry -- no longer
+        // gated (same short-circuit as JunctionYieldConstraint's approaching-foe branch).
+        if (egoOnInternal || approachLane is null)
+        {
+            return double.PositiveInfinity;
+        }
+
+        var egoSeen = approachLane.Length - v.Kinematics.Pos;
+        var stopLineBrake = StopSpeedFor(
+            v.VType, v.Kinematics.Speed, egoSeen - PositionEps,
+            laneVehicleMaxSpeed, dt, actionStepLengthSecs, v.LevelOfService);
+
+        // MSLink::opened (MSLink.cpp:841): `(myState == LINKSTATE_ALLWAY_STOP) && waitingTime == 0
+        // => return false` -- until the vehicle has actually halted (WaitingTime > 0) the link is
+        // NEVER open, so it must brake to the stop line and stop. This is what drives the full
+        // stop (and, unlike the priority-junction cautious approach, it does NOT release once
+        // within a visibility distance -- an all-way-stop vehicle always stops).
+        if (v.WaitingTime <= 0.0)
+        {
+            return stopLineBrake;
+        }
+
+        // Has stopped: proceed unless a foe outranks ego by arrival order. For each responded-to
+        // foe link with a geometric crossing (MSLink::blockedByFoe, MSLink.cpp:938-945):
+        var constraint = double.PositiveInfinity;
+        for (var j = 0; j < junction.IntLanes.Count; j++)
+        {
+            if (j == egoLink.Index || !request.RespondsTo(j))
+            {
+                continue;
+            }
+
+            JunctionConflict? conflict = null;
+            foreach (var c in junction.Conflicts)
+            {
+                if (c.EgoLink == egoLink.Index && c.FoeLink == j)
+                {
+                    conflict = c;
+                    break;
+                }
+            }
+
+            if (conflict is null)
+            {
+                continue;
+            }
+
+            var foeInternalLaneId = junction.IntLanes[j];
+            var foeInternalLaneHandle = _network!.LaneHandleById[foeInternalLaneId];
+            var foe = FindFoeVehicle(v, allVehicles, foeInternalLaneHandle);
+            if (foe is null)
+            {
+                continue;
+            }
+
+            var foeInternalSeqIndex = IndexOfLaneHandle(foe, foeInternalLaneHandle);
+            if (foe.LaneId == foeInternalLaneId)
+            {
+                // Foe is crossing the junction right now -- ego cannot enter into/behind it,
+                // regardless of who has waited longer.
+                constraint = Math.Min(constraint, stopLineBrake);
+            }
+            else if (foeInternalSeqIndex > foe.LaneSeqIndex)
+            {
+                // Foe still approaching: yield ONLY if it outranks ego by arrival order --
+                // MSLink::blockedByFoe's `waitingTime > avi.waitingTime` (foe waited strictly
+                // longer), or the equal-wait `arrivalTime < avi.arrivalTime` tie-break. The exact
+                // registered-arrivalTime path is out of scope (no committed scenario produces an
+                // equal-wait tie -- scenario 27's two vehicles' waits differ by 3s); for
+                // determinism the equal-wait case falls back to the fixed link-index order (lower
+                // index first), which can never let both proceed at once.
+                var foeOutranks = foe.WaitingTime > v.WaitingTime
+                    || (foe.WaitingTime == v.WaitingTime && j < egoLink.Index);
+                if (foeOutranks)
+                {
+                    constraint = Math.Min(constraint, stopLineBrake);
+                }
+            }
+            // else: foe already cleared its internal lane -> no constraint from it.
         }
 
         return constraint;
@@ -1828,6 +1943,17 @@ public sealed class Engine : IEngine
             // Written for every vehicle, unconditionally -- read by nothing except CACC.
             v.Acceleration = (v.Intent.NewSpeed - oldSpeed) / dt;
             v.Kinematics.Speed = v.Intent.NewSpeed;
+
+            // C4-ii: waiting-time accumulation (MSVehicle::updateWaitingTime, MSVehicle.cpp:4081-4088).
+            // `+= dt` while halted (speed <= SUMO_const_haltingSpeed 0.1) and not accelerating away
+            // (this step's acceleration <= accelThresholdForWaiting = 0.5*maxAccel, MSVehicle.h:2059);
+            // else reset. isStopped()/isIdling() (scheduled <stop>s) and the influencer branch are
+            // out of scope (no scenario here schedules a stop), so `!isStopped()` is constant-true
+            // and omitted. Written unconditionally for every vehicle; read only by the all-way-stop
+            // arm of JunctionYieldConstraint.
+            v.WaitingTime = v.Intent.NewSpeed <= KraussModel.HaltingSpeed && v.Acceleration <= 0.5 * v.VType.Accel
+                ? v.WaitingTime + dt
+                : 0.0;
             v.Kinematics.Pos += _config!.Ballistic
                 ? 0.5 * (oldSpeed + v.Intent.NewSpeed) * dt
                 : v.Intent.NewSpeed * dt;
