@@ -792,16 +792,21 @@ public sealed class Engine : IEngine
         // why that is `time + dt`, not `time`).
         vPos = Math.Min(vPos, RedLightConstraint(v, lane, time, dt, actionStepLengthSecs));
 
-        // Priority-junction yielding (rung 9b-ii/iii): MSLink's right-of-way gate (stop-line
-        // brake while a higher-priority foe still approaches) plus MSVehicle::
-        // adaptToJunctionLeader (car-following against a foe already on the junction).
+        // Priority-junction yielding (rung 9b-ii/iii, plus B5-iii's external-agent foe): MSLink's
+        // right-of-way gate (stop-line brake while a higher-priority foe still approaches) plus
+        // MSVehicle::adaptToJunctionLeader (car-following against a foe already on the junction).
         // +infinity (non-binding) whenever ego has no upcoming/current junction link, or
         // that link's foes are all cleared/absent -- see JunctionYieldConstraint's own
         // comment for the full derivation and its determinism note.
         // D6: pass the reusable ActiveVehicles() query (rather than the raw `_vehicles` list) so
         // the foe scan below (FindFoeVehicle) walks the same "inserted, not arrived" filter as
         // every other pass, instead of re-checking it inline.
-        vPos = Math.Min(vPos, JunctionYieldConstraint(v, ActiveVehicles(), dt, actionStepLengthSecs));
+        // B5-iii: `time` is threaded through purely so ExternalAgentOnFoeLane (called from inside
+        // JunctionYieldConstraint's foe-link loop) can evaluate an ExternalObstacle's own
+        // [StartTime, EndTime) active window at the SAME instant every other obstacle read this
+        // step uses (ObstacleConstraint/TargetLaneBlockedByObstacle's own convention) -- nothing
+        // about the pre-existing 9b-ii/iii SUMO-foe machinery reads `time` at all.
+        vPos = Math.Min(vPos, JunctionYieldConstraint(v, ActiveVehicles(), time, dt, actionStepLengthSecs));
 
         // B1: external obstacle (DESIGN.md "Two futures" -- a live, non-SUMO input, not a
         // ported SUMO code path). Modeled as one more virtual stopped leader reusing the same
@@ -972,7 +977,12 @@ public sealed class Engine : IEngine
     // LaneSequence (already past its own junction, or its route crosses none), that link has
     // no <request> row, or every foe link it must yield to either has no geometric conflict
     // recorded (JunctionConflict) or no actual foe vehicle present/still relevant.
-    private double JunctionYieldConstraint(VehicleRuntime v, ActiveVehicleQuery allVehicles, double dt, double actionStepLengthSecs)
+    //
+    // B5-iii: `time` (threaded in purely for ExternalAgentOnFoeLane's obstacle active-window
+    // check below -- see this method's foe-link loop) is the only change to this method's
+    // pre-existing 9b-ii/iii signature/logic; every SUMO-foe code path above and below is
+    // untouched.
+    private double JunctionYieldConstraint(VehicleRuntime v, ActiveVehicleQuery allVehicles, double time, double dt, double actionStepLengthSecs)
     {
         // Step 1: ego's own upcoming/current junction link -- the first internal lane in
         // the pool slice at or after LaneSeqIndex. A lane already passed is simply never found
@@ -1064,6 +1074,32 @@ public sealed class Engine : IEngine
             // the sequence-index lookup below search the pool by handle, not by re-hashing the
             // string per candidate.
             var foeInternalLaneHandle = _network.LaneHandleById[foeInternalLaneId];
+
+            // B5-iii: external-agent foe check, INDEPENDENT of FindFoeVehicle below -- this must
+            // fire even when NO SUMO VehicleRuntime occupies/approaches this foe internal lane,
+            // which is the pure-external-agent case (a navmesh/RVO agent is never a
+            // VehicleRuntime FindFoeVehicle could find). It reuses the EXACT approaching-foe
+            // stop-line yield the SUMO-foe branch below uses (the same KraussModel.StopSpeed call
+            // against the approach lane's end) -- the only facts it needs are already established
+            // above (ego responds to link `j`, and a geometric `conflict` is recorded for it).
+            // Unlike a SUMO foe, an external agent has no lane-sequence index to compare against
+            // an "approaching vs. on-junction vs. cleared" three-way split -- see
+            // ExternalAgentOnFoeLane's own comment: an agent "clears" the junction purely by its
+            // owner deactivating (EndTime) or removing it, never by a position-derived state
+            // change, so lane membership alone is the complete signal and this always applies the
+            // approaching-foe formula while the agent occupies the lane. Once ego itself has
+            // already been granted entry (egoOnInternal) it is no longer gated, identical to the
+            // SUMO-foe approaching branch's own egoOnInternal short-circuit.
+            if (ExternalAgentOnFoeLane(foeInternalLaneId, time))
+            {
+                var extConstraint = egoOnInternal
+                    ? double.PositiveInfinity
+                    : KraussModel.StopSpeed(
+                        approachLane!.Length - v.Kinematics.Pos - PositionEps,
+                        v.Kinematics.Speed, v.VType, dt, actionStepLengthSecs);
+                constraint = Math.Min(constraint, extConstraint);
+            }
+
             var foe = FindFoeVehicle(v, allVehicles, foeInternalLaneHandle);
             if (foe is null)
             {
@@ -1100,6 +1136,56 @@ public sealed class Engine : IEngine
         }
 
         return constraint;
+    }
+
+    // B5-iii (TASKS.md "Junction foe the reducer yields to" -- the THIRD and final B5 sub-rung):
+    // is any external, non-SUMO agent (navmesh/RVO agent, pedestrian, live detection -- the same
+    // `_obstacles` store B1/B5-i/B5-ii already share) currently occupying the given foe internal
+    // lane? This is the DESIGN.md "Two futures" live-input analog of FindFoeVehicle just below --
+    // FindFoeVehicle answers the same question for a SUMO VehicleRuntime foe; this answers it for
+    // an ExternalObstacle foe, and the two are checked independently (an external agent is never
+    // wrapped as a VehicleRuntime, so FindFoeVehicle can never see it).
+    //
+    // Inert-when-absent (CLAUDE.md rule 3 / this rung's byte-identical-9b constraint):
+    // `_obstacles.Count == 0` returns false immediately -- the SAME empty-store fast path
+    // ObstacleConstraint/TargetLaneBlockedByObstacle's own header comments document -- so for
+    // scenarios 11/08 and every other obstacle-free scenario/test this helper is a no-op and
+    // JunctionYieldConstraint's foe-link loop is byte-identical to 9b-ii/iii's pre-existing logic
+    // (the `if (ExternalAgentOnFoeLane(...))` guard is simply never entered, so the `Math.Min`
+    // beside it never executes and `constraint` is only ever touched by the untouched SUMO-foe
+    // path).
+    //
+    // Active-window/lane filter: identical to ObstacleConstraint's own (`StartTime <= time <
+    // EndTime` and a lane-id match), evaluated at the SAME `time` this whole Plan phase reads
+    // every other piece of frozen start-of-step state at (CLAUDE.md rule 2 -- reads `_obstacles`
+    // only, exactly as AdvanceObstacles's own header comment requires; the Input phase already
+    // dead-reckoned FrontPos for this step before Plan ever runs).
+    //
+    // "Clearing" the junction (documented, not modeled here as a position check): an external
+    // agent's dead-reckoned `FrontPos` (AdvanceObstacles) never by itself changes its `LaneId` --
+    // exactly like B5-i/B5-ii, the owning external layer is the sole authority on lane membership,
+    // signaling a clearance by calling `RemoveObstacle` or letting the obstacle's own `EndTime`
+    // elapse (UpdateObstacle only ever moves FrontPos/Speed, never LaneId). So lane-membership
+    // alone (not a crossing-point/arc-length comparison the way a SUMO foe's on-junction/
+    // approaching/cleared three-way split works) is the complete, correct signal here; a future
+    // refinement that lets an agent's own reported position (rather than deactivation/removal)
+    // signal "physically past the conflict point" is explicitly out of this rung's scope.
+    private bool ExternalAgentOnFoeLane(string foeInternalLaneId, double time)
+    {
+        if (_obstacles.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var obstacle in _obstacles.Values)
+        {
+            if (obstacle.StartTime <= time && time < obstacle.EndTime && obstacle.LaneId == foeInternalLaneId)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // MSVehicle::adaptToJunctionLeader (sumo/src/microsim/MSVehicle.cpp:3205-3307), Euler

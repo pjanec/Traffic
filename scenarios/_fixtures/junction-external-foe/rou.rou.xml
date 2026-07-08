@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- B5-iii behavioral fixture (TASKS.md "Junction foe the reducer yields to"). NOT a golden
+     scenario: the external agent is never a SUMO run, so this fixture (mirrors
+     scenarios/_fixtures/routing-diamond for B2) has no golden.fcd.xml/golden.state.xml/
+     tolerance.json/provenance.txt, only inputs, and is validated purely behaviorally by
+     tests/Sim.ParityTests/RungB5JunctionFoeTests.cs against the engine's own TrajectorySet.
+
+     net.net.xml is copied verbatim from scenarios/11-priority-junction (junction J: minor route
+     SJ->JN is link 1/internal :J_1_0, responds to links 2 and 3 per request index=1
+     response="1100"; major route WJ->JE is link 2/internal :J_2_0). This rou.rou.xml differs from
+     11's: a SINGLE vehicle on the minor route only (no vMajor); with no SUMO foe on the
+     junction, the ONLY thing that can make vMinor yield is an external agent the test injects on
+     a foe internal lane via Engine.AddObstacle/AddMovingObstacle. -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="minor" edges="SJ JN"/>
+    <vehicle id="vMinor" type="car" route="minor" depart="0" departPos="0" departSpeed="0" departLane="0"/>
+</routes>

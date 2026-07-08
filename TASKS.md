@@ -415,7 +415,8 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
 
 ### The external-agent interop (the "SUMO respects non-SUMO agents" direction — HIGH PRIORITY)
 
-- **B5. Moving external agents as dynamic obstacles / foes (generalizes B1).** B1 already lets SUMO
+- **B5. DONE (all three sub-rungs B5-i/B5-ii/B5-iii). Moving external agents as dynamic obstacles /
+  foes (generalizes B1).** B1 already lets SUMO
   lane-based vehicles STOP behind a STATIC external obstacle (a virtual stopped leader on one lane).
   Generalize to **moving** external agents driven OUTSIDE SUMO (navmesh + RVO, a pedestrian crowd, a
   real detection): SUMO vehicles must *respect* them as (a) a dynamic **leader/follower on a lane**
@@ -496,10 +497,55 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     separate `ObstacleConstraint` leader-follow check) does not affect the change at all — same t=11->12
     timing as baseline, proving the veto is target-lane-scoped. Full suite: 70 green (67 baseline + 3
     new Facts), 0 failed.
-  - **B5-iii. Junction foe the reducer yields to.** Feed an external agent approaching/occupying a
-    junction (its position + `Speed` → arrival time) into 9b's `JunctionYieldConstraint` as an
-    approaching foe, so a SUMO vehicle yields to a crossing navmesh/RVO agent. Behavioral test: ego
-    brakes at the stop line for a crossing external agent, proceeds once it has passed.
+  - **B5-iii. DONE. Junction foe the reducer yields to.** `JunctionYieldConstraint` (Engine.cs) now
+    takes `(double time)` (threaded from `ComputeMoveIntent`'s own `time` parameter, itself threaded
+    from `PlanMovements`'s loop variable) — needed only so the new external-agent foe check below can
+    evaluate an `ExternalObstacle`'s `[StartTime, EndTime)` active window at the same instant every
+    other obstacle read this step uses (`ObstacleConstraint`/`TargetLaneBlockedByObstacle`'s own
+    convention); nothing about the pre-existing 9b-ii/iii SUMO-foe machinery reads `time`. New
+    `ExternalAgentOnFoeLane(foeInternalLaneId, time)`: returns `false` immediately when `_obstacles` is
+    empty (the same empty-store fast path `ObstacleConstraint`/`TargetLaneBlockedByObstacle` already
+    document — the inert-when-absent guard), otherwise `true` iff any obstacle is active at `time` AND
+    sitting on `foeInternalLaneId` (an external agent "clears" a junction purely by its owner
+    deactivating it via `EndTime` or calling `RemoveObstacle` — `AdvanceObstacles`'s dead-reckoned
+    `FrontPos` never by itself changes `LaneId`, so lane membership alone is the complete, correct
+    signal, exactly as B5-i/B5-ii already treat it; a future refinement letting an agent's own reported
+    position signal "physically past the crossing point" is out of scope). Called from INSIDE
+    `JunctionYieldConstraint`'s existing foe-link loop, right after `foeInternalLaneId` is resolved and
+    INDEPENDENT of `FindFoeVehicle` (so it fires even with zero SUMO vehicles on the junction — the
+    pure-external-agent case a `FindFoeVehicle`-only foe scan could never see, since an external agent
+    is never wrapped as a `VehicleRuntime`): when true, `constraint = Math.Min(constraint, extConstraint)`
+    where `extConstraint` reuses the EXACT approaching-foe stop-line yield the SUMO-foe branch already
+    uses (`egoOnInternal ? +infinity : KraussModel.StopSpeed(approachLane.Length - v.Pos - PositionEps,
+    ...)`) — ego brakes to a stop before ENTERING its own internal lane while the agent occupies a
+    RESPONDED-TO foe lane (`JunctionRequest.RespondsTo`, the static `<request>` bitstring matrix — the
+    SAME scoping 9b's SUMO-foe path already enforces, so an agent on a foe link ego's own request row
+    does NOT respond to is correctly ignored), and is no longer gated once ego itself has been granted
+    entry (`egoOnInternal`), identical to the SUMO-foe approaching branch's own short-circuit.
+    Inert-when-absent / 9b-byte-identical: with no obstacle on any foe internal lane,
+    `ExternalAgentOnFoeLane`'s empty-store fast path means the new `if` block is never entered, so the
+    `Math.Min` beside it never executes and `constraint` is only ever touched by the pre-existing,
+    untouched SUMO-foe path — `JunctionYieldConstraint` is byte-for-byte what it was before this rung
+    for every obstacle-free scenario. Verified: `scenarios/11-priority-junction`, `08-junction-straight`,
+    and `Rung9bParityTests`/`Rung9aParityTests`/`Rung9biJunctionGeometryTests` all unchanged/still green.
+    New fixture `scenarios/_fixtures/junction-external-foe/` (behavioral, no golden — net.net.xml copied
+    verbatim from scenario 11; rou.rou.xml has ONLY `vMinor` on the minor yielding route SJ→JN, no
+    vMajor, so with no external agent the ONLY thing that could make it yield is an injected obstacle).
+    New behavioral/differential tests in `tests/Sim.ParityTests/RungB5JunctionFoeTests.cs` (mirrors
+    `RungB5LaneChangeVetoTests`' idiom): (1) baseline — with no agent (and no vMajor), `vMinor` never
+    sustained-stops on its approach lane `SJ_0` and crosses to `JN_0` by t=17 (observed free-flow
+    profile: departs at rest, reaches cruise speed 13.89 by t=6, clears the 11.20m internal lane
+    `:J_1_0` inside a single 1s step around t=16→17); (2) an external agent on the RESPONDED-TO major
+    foe lane `:J_2_0` (link 2, set in link 1's own `response="1100"` row) active `[-inf, 20)` forces
+    `vMinor` to brake (the same 9.433/4.933 stop-line profile 9b's own SUMO-foe branch produces) and
+    hold at ~pos 192.699 on `SJ_0` through t=19 (differential vs. the baseline, which is already deep
+    into `JN_0` at that same t=19), never enters `:J_1_0` while the agent is active, then resumes and
+    reaches `JN_0` by t=23 once the agent deactivates at t=20 — proving yield-then-go; (3) an agent on
+    the NON-responded-to internal lane `:J_0_0` (link 0, not in link 1's response bits), active for the
+    entire run, does NOT force any yield at all — trajectory identical to the no-agent baseline (crosses
+    at t=17) — proving the `<request>`-matrix scoping is load-bearing, not "any obstacle near the
+    junction stops everyone." Full suite: 73 green (70 baseline + 3 new Facts), 0 failed. **B5 (all
+    three sub-rungs — dynamic lane leader/follower, lane-change veto, junction foe) is now DONE.**
 
 ### Group C — realism beyond the deterministic phase-1 core
 
