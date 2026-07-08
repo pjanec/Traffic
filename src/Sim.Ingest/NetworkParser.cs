@@ -225,7 +225,7 @@ public static class NetworkParser
         if (intLanes.Count == 0 || requestEls.Count == 0)
         {
             return new Junction(id, type, intLanes, Array.Empty<JunctionLink>(), Array.Empty<JunctionRequest>(),
-                Array.Empty<JunctionConflict>());
+                Array.Empty<JunctionConflict>(), Array.Empty<MergeConflict>());
         }
 
         // Links: for each link index i, the top-level <connection> whose `via` equals
@@ -267,6 +267,10 @@ public static class NetworkParser
         // of the two internal-lane shapes (see PolylineGeometry's doc comment for what counts
         // as a "crossing" -- merges that only share an endpoint are skipped).
         var conflicts = new List<JunctionConflict>();
+        // C4-v: sameTarget MERGE geometry (per ego link) -- the two links whose connections feed the
+        // same downstream lane converge instead of crossing, so they produce a MergeConflict (lbc/
+        // flbc) rather than a JunctionConflict.
+        var merges = new List<MergeConflict>();
         foreach (var request in requests)
         {
             if (!linksByIndex.TryGetValue(request.Index, out var egoLink))
@@ -288,6 +292,39 @@ public static class NetworkParser
 
                 var egoLane = lanesById[egoLink.InternalLaneId];
                 var foeLane = lanesById[foeLink.InternalLaneId];
+
+                // C4-v: a sameTarget MERGE (connections share the destination edge + lane) does NOT
+                // cross (TryIntersect below fails, they touch only at the shared end) -- compute its
+                // lengthBehindCrossing from MSLink::setRequestInformation's sameTarget arm instead.
+                if (egoLink.Connection.To == foeLink.Connection.To
+                    && egoLink.Connection.ToLane == foeLink.Connection.ToLane)
+                {
+                    // minDist = MIN2(DIVERGENCE_MIN_WIDTH=2.5, 0.5*(egoW+foeW)) (MSLink.cpp:306).
+                    var minDist = Math.Min(2.5, 0.5 * (egoLane.Width + foeLane.Width));
+                    double egoLbc;
+                    double foeLbc;
+                    // Lanes ending >= minDist apart => CONFLICT_DUMMY_MERGE (lbc 0); else compute the
+                    // divergence point (MSLink.cpp:307-330). computeDistToDivergence is symmetric in
+                    // its (lane, sibling) roles, so one call serves both lanes' lbc via their own
+                    // length/shape factor (InterpolateGeometryPosToLanePos = geomPos * laneLen / shapeLen).
+                    var egoEnd = egoLane.Shape[^1];
+                    var foeEnd = foeLane.Shape[^1];
+                    if (Math.Sqrt(((egoEnd.X - foeEnd.X) * (egoEnd.X - foeEnd.X)) + ((egoEnd.Y - foeEnd.Y) * (egoEnd.Y - foeEnd.Y))) >= minDist)
+                    {
+                        egoLbc = 0.0;
+                        foeLbc = 0.0;
+                    }
+                    else
+                    {
+                        var dtd = PolylineGeometry.ComputeDistToDivergence(
+                            egoLane.Shape, foeLane.Shape, egoLane.Length, foeLane.Length, minDist);
+                        egoLbc = dtd * egoLane.Length / PolylineGeometry.PolylineLength(egoLane.Shape);
+                        foeLbc = dtd * foeLane.Length / PolylineGeometry.PolylineLength(foeLane.Shape);
+                    }
+
+                    merges.Add(new MergeConflict(egoLink.Index, foeLink.Index, egoLbc, foeLbc));
+                    continue;
+                }
 
                 if (PolylineGeometry.TryIntersect(egoLane.Shape, foeLane.Shape, out var intersection))
                 {
@@ -320,7 +357,7 @@ public static class NetworkParser
             }
         }
 
-        return new Junction(id, type, intLanes, links, requests, conflicts);
+        return new Junction(id, type, intLanes, links, requests, conflicts, merges);
     }
 
     // Rung 9b-ii: a straight 2-point internal lane's travel direction, normalized -- ported

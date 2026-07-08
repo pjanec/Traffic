@@ -1705,7 +1705,31 @@ public sealed class Engine : IEngine
         {
             var foeInternalLane = _network.LanesByHandle[foeInternalLaneHandle];
             var leaderBack = foeMerging.Kinematics.Pos - foeMerging.VType.Length;
-            var gap = distToMerge - ego.VType.MinGap - (foeInternalLane.Length - leaderBack);
+
+            // C4-v: place the merge crossing point via the static lengthBehindCrossing geometry
+            // (MergeConflict, from MSLink::setRequestInformation). SUMO's gap (MSLink.cpp:1647,
+            // sameTarget -> foeCrossingWidth 0) is `distToCrossing - egoMinGap - leaderBackDist`,
+            // with distToCrossing = dist - egoLbc and leaderBackDist = (foeLen - foeLbc) - leaderBack.
+            // With lbc==flbc==0 (the pre-C4-v approximation) this reduces to the old
+            // `distToMerge - minGap - (foeLen - leaderBack)`; the (flbc - egoLbc) correction is 0 for
+            // a symmetric merge and ~0.005 for an asymmetric one (verified against the debug trace).
+            var (egoLbc, foeLbc) = MergeLengthsBehindCrossing(junction, egoLink.Index, foeLinkIndex);
+            var distToCrossing = distToMerge - egoLbc;
+            var leaderBackDist = (foeInternalLane.Length - foeLbc) - leaderBack;
+            // MSLink.cpp:1633-1638: for a sameTarget merge, when the foe's back has passed the
+            // crossing (leaderBackDist < 0), nudge it forward by the two lanes' crossing-point
+            // mismatch (foeLbc - egoLbc, when positive) so both vehicles measure to the same point.
+            var leaderBackDist2 = leaderBackDist;
+            if (leaderBackDist2 < 0.0)
+            {
+                var mismatch = foeLbc - egoLbc;
+                if (mismatch > 0.0)
+                {
+                    leaderBackDist2 += mismatch;
+                }
+            }
+
+            var gap = distToCrossing - ego.VType.MinGap - leaderBackDist2;
             if (gap >= 0.0)
             {
                 return FollowSpeedFor(
@@ -1773,6 +1797,22 @@ public sealed class Engine : IEngine
         }
 
         return rearmost;
+    }
+
+    // C4-v: the static (egoLbc, foeLbc) lengthBehindCrossing for a sameTarget merge pair
+    // (computed once at ingest -- MergeConflict). (0, 0) when no MergeConflict is recorded for this
+    // pair (a dummy merge, or geometry that produced none), matching the pre-C4-v approximation.
+    private static (double EgoLbc, double FoeLbc) MergeLengthsBehindCrossing(Junction junction, int egoLink, int foeLink)
+    {
+        foreach (var m in junction.Merges)
+        {
+            if (m.EgoLink == egoLink && m.FoeLink == foeLink)
+            {
+                return (m.EgoLengthBehindCrossing, m.FoeLengthBehindCrossing);
+            }
+        }
+
+        return (0.0, 0.0);
     }
 
     // B5-iii (TASKS.md "Junction foe the reducer yields to" -- the THIRD and final B5 sub-rung):

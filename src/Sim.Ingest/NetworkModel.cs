@@ -133,12 +133,26 @@ public sealed record JunctionConflict(
 // right-of-way matrix (non-empty `IntLanes` AND at least one child <request>); dead_end/internal
 // junctions parse with empty lists, which is harmless since nothing yields at them (rung 9b-iii
 // scope, not this rung).
+// C4-v (sameTarget-merge conflict geometry): two links whose <connection>s feed the SAME
+// downstream lane MERGE (converge) rather than cross, so they get no JunctionConflict -- but the
+// merge still has a per-lane `lengthBehindCrossing` (EgoLengthBehindCrossing / FoeLengthBehindCrossing)
+// ported from MSLink::setRequestInformation's sameTarget arm (sumo/src/microsim/MSLink.cpp:302-331)
+// via PolylineGeometry.ComputeDistToDivergence + InterpolateGeometryPosToLanePos. The C4-iv
+// sameTarget-merge yield reads these to place the merge-leader's crossing point exactly (the term
+// that cancels for a symmetric merge but is ~0.005 for an asymmetric one). Built only for
+// sameTarget link pairs that converge close enough to have a real crossing point; a "dummy merge"
+// (lanes ending far apart) gets EgoLengthBehindCrossing 0, matching the source's CONFLICT_DUMMY_MERGE.
+public sealed record MergeConflict(
+    int EgoLink, int FoeLink,
+    double EgoLengthBehindCrossing, double FoeLengthBehindCrossing);
+
 public sealed record Junction(
     string Id, string Type,
     IReadOnlyList<string> IntLanes,
     IReadOnlyList<JunctionLink> Links,
     IReadOnlyList<JunctionRequest> Requests,
-    IReadOnlyList<JunctionConflict> Conflicts);
+    IReadOnlyList<JunctionConflict> Conflicts,
+    IReadOnlyList<MergeConflict> Merges);
 
 // C2-i: one lane's route-continuity data for STRATEGIC lane-change planning -- a scoped port of
 // `struct LaneQ` (sumo/src/microsim/MSVehicle.h:865-886), the per-lane record
