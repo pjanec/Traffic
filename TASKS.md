@@ -872,12 +872,29 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     circulating foe actually present, the entering vehicle does not follow-yield to it (it needs the
     merge-leader path). This is the gap-acceptance half of C3 that scenario 19 never exercised (mA
     was far). Blocked on that rung; the roundabout anchor lands once it exists.
-  - **C4-iv. TODO. sameTarget-merge yield (a.k.a. the C3 merge half).** When ego's link and a foe's
-    link share a target lane (`sameTarget`), the minor/entering vehicle must car-follow the
-    major/circulating vehicle onto the shared lane (MSLink `checkLinkLeaderCurrentAndParallel` /
-    `getLeaderInfo` treating the merging foe as a link-leader). Needed by C4-iii (roundabouts) and
-    by on-ramp merges under load. Detect sameTarget conflicts (Connection `(To,ToLane)` match) +
-    superimpose the foe as a leader at the merge point. Own scoped rung.
+  - **C4-iv. ANCHORED (golden committed), NOT yet ported. sameTarget-merge yield (a.k.a. the C3
+    merge half).** `scenarios/29-merge-yield` (committed golden, no passing test yet -- the C3
+    precedent of committing a de-risked anchor while blocked). A SLOW mainline vehicle mA (maxSpeed
+    6) crawls across the `:J_1_0` merge lane exactly when ramp vehicle rA arrives, so rA must
+    follow-YIELD to mA onto the shared lane D (scenario 19's mA is far, so C3 never exercised this).
+    **Mechanism fully reverse-engineered this session** (from `MSLink::getLeaderInfo`,
+    `sumo/src/microsim/MSLink.cpp:1349-1663`): a sameTarget pair (ego's + foe's connections feed the
+    same `(To,ToLane)`) geometrically MERGES, not crosses, so no `JunctionConflict` is recorded --
+    the foe is instead a car-following LEADER at the merge point (shared internal-lane end),
+    crossingWidth forced to 0, gap = `distToMerge - egoMinGap - (foeInternalLaneLen - foeBackPos)`.
+    Verified: the golden's first brake is `7.4063 -> 2.9063 == speed - maxDecel` (the negative merge
+    gap drives max comfortable deceleration).
+    **Attempted port this session, REVERTED (parity bar) -- it is genuinely TWO mechanisms, only
+    the first is small:** (1) merge-leader while the foe is ON its internal lane (the gap above +
+    `FollowSpeedFor`); (2) **cross-lane leader following** once the foe moves onto the shared target
+    lane D while ego is still on its own internal lane `:J_0_0` -- ego must keep following mA across
+    the lane boundary (golden 2.265/4.865/5.82 on `:J_0_0`, converging to mA's 6.0 on D). The engine
+    has NO downstream/next-lane leader lookup (that is SUMO's `checkRewindLinkLanes` /
+    exit-link-leader machinery), so a naive phase-1-only port free-accelerates and OVERTAKES mA
+    between the foe leaving `:J_1_0` and ego reaching D. Byte-exact parity needs BOTH phases and
+    almost certainly a `DEBUG_PLAN_MOVE`/`getLeaderInfo`-gDebug trace for the exact per-step gaps
+    (the C3 situation). Own focused rung; anchor + this analysis committed so it starts de-risked.
+    Unblocks C4-iii (roundabouts).
 - **C5. Junction-blocking avoidance (`keepClear` / don't-block-the-box).** `MSLink::keepClear` + jam
   detection so a vehicle does not enter a junction it cannot clear. Prevents artificial gridlock /
   spillback across intersections. Parity axis; also a property test (junction never deadlocks).

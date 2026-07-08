@@ -1,0 +1,19 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T09:03:48Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# net: copied from scenarios/19-onramp-merge (M major + R minor -> shared D, a sameTarget merge).
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# C4-iv ANCHOR (rung NOT yet ported -- see TASKS.md): sameTarget-MERGE yield. A SLOW mainline
+#   vehicle mA (maxSpeed 6, departPos 430) crawls across the J_1_0 merge lane exactly when ramp
+#   vehicle rA arrives, so rA must follow-YIELD to mA onto the shared lane D (not just do the C3
+#   cautious approach as in scenario 19, where mA is far). Golden: rA cautious-approaches
+#   (11.9063, 7.4063) then brakes to 2.9063 (== 7.4063 - maxDecel) at t=11 for mA on :J_1_0,
+#   enters :J_0_0 at t=12 and CAR-FOLLOWS mA (2.265->4.865->5.82->5.91->...->6.0). Euler,
+#   sigma=0, teleport off, seed 42.
+# input file hashes (sha256):
+input=net.net.xml sha256=02dda41f141d5e6cfc5b26763df476353291a386478c8e91b34c41ee493acee0
+input=rou.rou.xml sha256=376629886b3d38f6f741f51469f9d57d3b2830b81439080352bfe56df0c3ff2a
+input=config.sumocfg sha256=562f72835b12ede92d02450f8b397ddc64e4c232e0c2453e651c7be8aa483754
