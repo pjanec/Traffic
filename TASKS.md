@@ -1117,6 +1117,60 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     the ACC-fallback path end-to-end (ported, but not exercised by any committed golden — needs a
     mixed CACC-follows-non-CACC scenario), and CACC+junction/stop interplay beyond what the ported
     `stopSpeed`/`AdaptToJunctionLeader` plumbing itself guarantees.
+  - **C11-iv. DONE. IDMM (IDM with Memory / "Improved IDM").** SUMO builds IDMM from the SAME
+    `MSCFModel_IDM` class as plain IDM, just with its `idmm=true` ctor arm
+    (`sumo/src/microsim/cfmodels/MSCFModel_IDM.cpp:37-47`): `myAdaptationFactor=1.8`,
+    `myAdaptationTime=600` (plain IDM: `1.0`/`0.0`), plus a per-vehicle
+    `VehicleVariables::levelOfService` (`.h:189-194`, ctor-defaulted to `1.0`, NOT `0`). Two
+    `myAdaptationFactor != 1.` branches only IDMM ever takes: (1) `_v`'s headway adaptation
+    (`.cpp:203-207`) — `headwayTime = tau * (myAdaptationFactor + levelOfService*(1-
+    myAdaptationFactor))`, i.e. `tau * (1.8 - 0.8*LOS)` for IDMM, used everywhere `_v` used plain
+    `tau`; (2) `finalizeSpeed`'s memory update (`.cpp:67-74`) — AFTER the base (unmodified)
+    `vNext = MSCFModel::finalizeSpeed(...)`, `levelOfService += (vNext/laneMaxSpeed -
+    levelOfService)/600*TS`. Ported WITHOUT touching `IdmModel.cs`'s existing plain-IDM body at
+    all (byte-identical proof, not just an argument): `IdmModel.V`/`FollowSpeed`/`FreeSpeed`/
+    `StopSpeed` each gained an **optional** `double? headwayTimeOverride = null` parameter —
+    inside `V`, `headwayTime = headwayTimeOverride ?? vType.Tau`; every pre-existing IDM/ACC/CACC
+    call site passes nothing, so this resolves to the exact literal `vType.Tau` these functions
+    always used. `IdmModel.FinalizeSpeed`'s body is untouched (no `ref levelOfService` parameter
+    added there at all) — the LOS memory update is applied by the CALLER
+    (`Engine.ComputeMoveIntent`'s IDMM dispatch arm) immediately after that call returns
+    `newSpeed`, mirroring the vendored source's own sequencing (base finalizeSpeed first, then the
+    memory update) without growing the shared function's signature. `GetSecureGap` is
+    DELIBERATELY left unadapted (`MSCFModel_IDM::getSecureGap`, `.cpp:190-193`, always uses the
+    plain unadapted `myHeadwayTime` member, never `levelOfService`, even for IDMM — ported
+    faithfully as-is, not an oversight). New `src/Sim.Core/IdmmModel.cs` holds only the two small
+    IDMM-specific pieces (`AdaptationFactor=1.8`/`AdaptationTime=600.0` constants,
+    `AdaptedHeadwayTime(tau, los)`, `UpdateLevelOfService(los, vNext, laneMaxSpeed, dt)`) — no
+    duplicate `_v`/finalizeSpeed body. **STATE**: `VehicleRuntime.LevelOfService` (double), set to
+    `1.0` for EVERY vehicle at creation (`Engine.LoadScenario`, matching the vendored ctor
+    default) — harmless/inert for non-IDMM vTypes since only the IDMM dispatch arms below ever
+    read or write it, the exact same per-entity plan-phase-mutation pattern C1's `RngState` /
+    C11-ii's `AccControlMode` / C11-iii's `CaccControlMode` already establish as parallel-safe.
+    **Dispatch** (`Engine.cs`): `FollowSpeedFor`/`StopSpeedFor` gained a `levelOfService`
+    parameter (read-only, ONLY consumed by their new `"IDMM"` arms to build
+    `IdmmModel.AdaptedHeadwayTime(vType.Tau, levelOfService)` and pass it as
+    `headwayTimeOverride`), threaded from every one of their six/three call sites as the ego's own
+    `v.LevelOfService`/`ego.LevelOfService`; `FreeFlowDesiredSpeedConstraint` gained its own
+    `"IDMM"` arm computing the same override inline (it already has direct `VehicleRuntime`
+    access); the `vMinComfortable`/`minNextSpeed` dispatch (`StopLineConstraint`) simply added
+    `"IDMM"` alongside `"IDM"` to its existing check — `minNextSpeed` (`.cpp:52-62`) has NO
+    `myAdaptationFactor`/`levelOfService` term at all, so IDMM shares the identical
+    `IdmModel.MinNextSpeed` call, no override needed; the `FinalizeSpeed` dispatch
+    (`ComputeMoveIntent`) added `"IDMM"` alongside `"IDM" or "ACC" or "CACC"` (same
+    `IdmModel.FinalizeSpeed` call, byte-identical body) and then, ONLY for `"IDMM"`, updates
+    `v.LevelOfService = IdmmModel.UpdateLevelOfService(v.LevelOfService, newSpeed,
+    laneVehicleMaxSpeed, dt)` right after. Krauss/IDM/ACC/CACC stay byte-identical: every new
+    parameter/field is threaded/written unconditionally but read only by the `"IDMM"` arms (104
+    total parity tests, 0 failed — including `Rung1`/`Rung9b`/`RungC11ParityTests` (IDM)/
+    `RungC11AccParityTests`/`RungC11CaccParityTests` all unchanged/green — verified). New anchor:
+    `scenarios/25-idmm-carfollow` (`tests/Sim.ParityTests/RungC11IdmmParityTests.cs`, 250 steps,
+    exact 1e-3) — a LONG 3000m single lane so the follower stays in sustained congestion behind
+    the slow (maxSpeed=6) leader long enough for `levelOfService` to actually drift (600s
+    time-constant); at LOS=1.0 IDMM==IDM exactly, and as the follower settles into congestion the
+    steady-state gap visibly GROWS over the run (~8.81m@t60 → ~9.52m@t249 in the golden), the
+    discriminating memory effect this anchor exercises. This completes the IDM/ACC/CACC/IDMM
+    car-following-model set (all four now ported).
 - **C12. Pedestrians & crossings; public transport.** Pedestrians already appear as junction foes in
   the ported `getLeaderInfo` (the `leader==nullptr` ped branch); add vehicles yielding at crosswalks,
   and bus stops / dwell times / schedules. Breadth; behavioral, with parity where a SUMO analog exists

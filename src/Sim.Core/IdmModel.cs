@@ -71,6 +71,17 @@ public static class IdmModel
     // `respectMinGap` mirrors the header's own default (`= true`) at each call site that omits
     // it explicitly (followSpeed does; freeSpeed/stopSpeed pass `false` explicitly) -- callers
     // here always pass it explicitly for clarity.
+    //
+    // C11-iv: `headwayTimeOverride` ports the `myAdaptationFactor != 1.` headwayTime-adaptation
+    // block at MSCFModel_IDM.cpp:203-207 (`headwayTime = myHeadwayTime; if (myAdaptationFactor !=
+    // 1.) headwayTime *= myAdaptationFactor + levelOfService*(1.-myAdaptationFactor);`) WITHOUT
+    // touching this function's plain-IDM body: every existing (IDM/ACC/CACC) caller passes null,
+    // so `headwayTimeOverride ?? vType.Tau` resolves to the exact literal `vType.Tau` this line
+    // always used -- byte-identical, no plain-IDM call-site or codepath change. Only Engine.cs's
+    // IDMM dispatch arms ever pass a non-null override (the caller-precomputed adapted headway,
+    // `vType.Tau * (AdaptationFactor - LevelOfService*(AdaptationFactor-1))`, i.e.
+    // `myAdaptationFactor + levelOfService*(1-myAdaptationFactor)` applied to `vType.Tau` up
+    // front -- see IdmmModel.AdaptedHeadwayTime).
     private static double V(
         double gap2pred,
         double egoSpeed,
@@ -78,9 +89,10 @@ public static class IdmModel
         double desSpeed,
         bool respectMinGap,
         ResolvedVType vType,
-        double dt)
+        double dt,
+        double? headwayTimeOverride = null)
     {
-        var headwayTime = vType.Tau;
+        var headwayTime = headwayTimeOverride ?? vType.Tau;
         var newSpeed = egoSpeed;
         var gap = gap2pred;
         if (respectMinGap)
@@ -121,7 +133,12 @@ public static class IdmModel
     // so both `maxSpeed` and `desSpeed` are the SAME caller-supplied `laneVehicleMaxSpeed` value
     // -- see that call site's own comment for why this collapses correctly for a normal
     // (no-upcoming-speed-limit-drop) free-flow lane.
-    public static double FreeSpeed(double speed, double seen, double maxSpeed, double desSpeed, ResolvedVType vType, double dt)
+    // C11-iv: `headwayTimeOverride` threads straight through to both `V` calls below, unread by
+    // `GetSecureGap` above -- MSCFModel_IDM::getSecureGap (:190-193) is IDM's own override, and it
+    // ALWAYS uses the plain (unadapted) `myHeadwayTime` member, never `levelOfService` -- ported
+    // faithfully as "no adaptation here", not an oversight (see IdmModel.GetSecureGap's own header
+    // comment, unchanged by this rung).
+    public static double FreeSpeed(double speed, double seen, double maxSpeed, double desSpeed, ResolvedVType vType, double dt, double? headwayTimeOverride = null)
     {
         if (maxSpeed < 0.0)
         {
@@ -133,12 +150,12 @@ public static class IdmModel
         if (speed <= maxSpeed)
         {
             // accelerate -- the free-accel branch the briefing's scenario 22 anchor exercises.
-            vSafe = V(1e6, speed, maxSpeed, desSpeed, respectMinGap: false, vType, dt);
+            vSafe = V(1e6, speed, maxSpeed, desSpeed, respectMinGap: false, vType, dt, headwayTimeOverride);
         }
         else
         {
             // decelerate; relax gap to avoid emergency braking (leader speed set to 0, as upstream).
-            vSafe = V(Math.Max(seen, secGap), speed, 0.0, desSpeed, respectMinGap: false, vType, dt);
+            vSafe = V(Math.Max(seen, secGap), speed, 0.0, desSpeed, respectMinGap: false, vType, dt, headwayTimeOverride);
         }
 
         if (seen < secGap)
@@ -154,19 +171,22 @@ public static class IdmModel
     // driver-state perception model -- no driver state exists in phase 1, exactly like
     // KraussModel.FollowSpeed's own citation, so it is correctly omitted, not ported as a no-op).
     // `desSpeed` is `veh->getLane()->getVehicleMaxSpeed(veh)` -- the caller's laneVehicleMaxSpeed.
-    public static double FollowSpeed(double egoSpeed, double gap2pred, double predSpeed, double desSpeed, ResolvedVType vType, double dt) =>
-        V(gap2pred, egoSpeed, predSpeed, desSpeed, respectMinGap: true, vType, dt);
+    // C11-iv: `headwayTimeOverride` threads through to `V` -- null (every IDM/ACC/CACC call site)
+    // resolves to `vType.Tau` inside `V`, byte-identical to the pre-C11-iv call.
+    public static double FollowSpeed(double egoSpeed, double gap2pred, double predSpeed, double desSpeed, ResolvedVType vType, double dt, double? headwayTimeOverride = null) =>
+        V(gap2pred, egoSpeed, predSpeed, desSpeed, respectMinGap: true, vType, dt, headwayTimeOverride);
 
     // MSCFModel_IDM.cpp:151-173 stopSpeed (applyHeadwayPerceptionError is likewise a no-op driver-
     // state hook in phase 1). `desSpeed` is again the caller's laneVehicleMaxSpeed.
-    public static double StopSpeed(double speed, double gap, double desSpeed, ResolvedVType vType, double dt, double actionStepLengthSecs)
+    // C11-iv: `headwayTimeOverride` threads through to `V` the same way as FollowSpeed/FreeSpeed.
+    public static double StopSpeed(double speed, double gap, double desSpeed, ResolvedVType vType, double dt, double actionStepLengthSecs, double? headwayTimeOverride = null)
     {
         if (gap < 0.01)
         {
             return 0.0;
         }
 
-        var result = V(gap, speed, 0.0, desSpeed, respectMinGap: false, vType, dt);
+        var result = V(gap, speed, 0.0, desSpeed, respectMinGap: false, vType, dt, headwayTimeOverride);
 
         if (gap > 0 && speed < KraussModel.NumericalEps && result < KraussModel.NumericalEps)
         {
@@ -203,6 +223,15 @@ public static class IdmModel
     // unaffected by KraussModel.FinalizeSpeed's own citations, equally true here.
     // The myAdaptationFactor!=1 levelOfService update (MSCFModel_IDM.cpp:69-72) is unreachable
     // for plain IDM (see class header) and is correctly omitted.
+    //
+    // C11-iv: this function's body stays EXACTLY this -- the base `vNext = MSCFModel::
+    // finalizeSpeed(veh, vPos)` computation MSCFModel_IDM.cpp:68 delegates to before its own
+    // `if (myAdaptationFactor != 1.)` levelOfService-update block (:69-72). Rather than growing an
+    // `ref levelOfService`/`adaptationTime` parameter here (which would touch every IDM/ACC/CACC
+    // call site's signature), the IDMM levelOfService update is applied by the CALLER
+    // (Engine.ComputeMoveIntent's IDMM dispatch arm, right after this call returns `vNext`) --
+    // mirroring the vendored source's own sequencing (base finalizeSpeed first, THEN the memory
+    // update) without touching this shared body at all. See IdmmModel.UpdateLevelOfService.
     public static double FinalizeSpeed(
         double oldV,
         double vPos,

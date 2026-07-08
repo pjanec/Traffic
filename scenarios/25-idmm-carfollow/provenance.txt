@@ -1,0 +1,13 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# C11-iv anchor: IDMM (IDM with Memory). net = a LONG 3000m single lane (so the follower stays in
+#   sustained congestion behind the slow leader long enough for the memory to drift). Both vehicles
+#   carFollowModel="IDMM"; leader maxSpeed=6. end=250. IDMM = MSCFModel_IDM with idmm=true:
+#   adaptationFactor=1.8, adaptationTime=600, per-vehicle levelOfService (init 1.0). _v uses
+#   headwayTime *= 1.8 - 0.8*LOS (MSCFModel_IDM.cpp:205-206); finalizeSpeed updates
+#   LOS += (vNext/maxSpeed - LOS)/600*TS (:70-71). At LOS=1 IDMM == IDM; as the follower sits in
+#   congestion (vNext/maxSpeed~0.43), LOS drifts down and the equilibrium GAP GROWS (observed
+#   8.81@t60 -> 9.52@t249, a ~0.7m memory effect vs constant-gap plain IDM -- discriminating).

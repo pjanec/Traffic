@@ -158,6 +158,18 @@ internal sealed class VehicleRuntime
     // other vType (Krauss/IDM/ACC): this field is simply never touched.
     public int CaccControlMode;
 
+    // C11-iv: SUMO's MSCFModel_IDM::VehicleVariables::levelOfService (MSCFModel_IDM.h:189-194)
+    // -- the IDMM per-vehicle headway-adaptation memory, ctor-defaulted to 1.0 (NOT 0 -- see that
+    // ctor's own initializer list). Set to 1.0 for EVERY vehicle at creation (Engine.LoadScenario),
+    // not just IDMM ones: only IdmModel/Engine's IDMM dispatch arms ever read or write it (see
+    // IdmModel.V's headwayTimeOverride parameter and the IDMM finalizeSpeed arm in Engine.cs's
+    // ComputeMoveIntent), so this is byte-identical-inert for every non-IDMM vType, exactly like
+    // AccControlMode/CaccControlMode above are for their own non-owning vTypes. At LOS=1.0 (the
+    // vendored ctor default, and the value plain IDM/ACC/CACC leave it at forever since they never
+    // touch it) the IDMM headway formula collapses to `tau` exactly -- see IdmModel's own
+    // Idmm-adaptation comments for that derivation.
+    public double LevelOfService;
+
     // C11-iii: the ego's OWN acceleration from the LAST COMPLETED step
     // ((newSpeed-oldSpeed)/dt), the exact analog of MSVehicle::getAcceleration() at the instant
     // CACC's cooperative gap-control law (MSCFModel_CACC.cpp:287) reads it. Written ONLY in
