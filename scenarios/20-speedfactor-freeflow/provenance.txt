@@ -1,0 +1,21 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+parity_mode=statistical (ensemble/aggregate — see TASKS.md C7/C1 owner decision)
+ensemble_size=50
+ensemble_seeds=1..50 (SUMO --seed)
+command_per_seed=sumo -c config.sumocfg --seed <N> --fcd-output golden.ensemble/seed<NN>.fcd.xml --precision 6 --no-step-log true
+fcd_precision=6
+# C7-ii: single vehicle, free flow on a 2000m single lane, default.speeddev=0.1 (heterogeneous
+#   desired speeds), sigma=0 (dawdle OFF, to isolate the speedFactor distribution). Each seed draws
+#   a different per-vehicle speedFactor ~ normc(1.0, 0.1, 0.2, 2.0), so each run's steady speed is
+#   13.89*speedFactor. end=80, 2000m lane so the vehicle never reaches the end (all runs fully
+#   present -> clean pooled statistics).
+# statistical bar: our engine's speedFactor distribution (C7-i, normc ported faithfully; RNG stream
+#   ours) must match SUMO's ensemble speed distribution. The ramp (0->steady) is byte-identical
+#   (accel 2.6); only the steady speed varies by seed.
+# tolerance rationale: STD is the discriminating statistic (spread == the 0.1 dev). Observed at
+#   authoring (engine seeds 1..50 vs this golden): stdDelta=0.0461 (tol 0.2 catches a dev error
+#   >~7%), meanDelta=0.5041 (tol 0.7). The mean delta is the honest FINITE-ENSEMBLE sampling floor:
+#   two independent 50-sample draws of speedFactor~N(1,0.1) have means bracketing 1.0 (SUMO 0.986,
+#   engine 1.023), a ~0.037 speedFactor gap = ~0.51 m/s, well within 50-sample sampling error. Both
+#   deltas are deterministic (fixed seeds + fixed golden), so the test is stable, not flaky.

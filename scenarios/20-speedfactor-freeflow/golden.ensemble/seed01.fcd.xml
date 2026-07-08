@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-08 04:00:13 by Eclipse SUMO sumo Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="rou.rou.xml"/>
+    </input>
+
+    <output>
+        <precision value="6"/>
+        <fcd-output value="golden.ensemble/seed01.fcd.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="80"/>
+        <step-length value="1"/>
+    </time>
+
+    <processing>
+        <step-method.ballistic value="false"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0.1"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <random_number>
+        <seed value="1"/>
+    </random_number>
+
+</configuration>
+-->
+
+<fcd-export xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/fcd_file.xsd">
+    <timestep time="0.000">
+        <vehicle id="veh0" x="0.000000" y="-1.600000" angle="90.000000" type="hetero" speed="0.000000" pos="0.000000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="1.000">
+        <vehicle id="veh0" x="2.600000" y="-1.600000" angle="90.000000" type="hetero" speed="2.600000" pos="2.600000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="2.000">
+        <vehicle id="veh0" x="7.800000" y="-1.600000" angle="90.000000" type="hetero" speed="5.200000" pos="7.800000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="3.000">
+        <vehicle id="veh0" x="15.600000" y="-1.600000" angle="90.000000" type="hetero" speed="7.800000" pos="15.600000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="4.000">
+        <vehicle id="veh0" x="26.000000" y="-1.600000" angle="90.000000" type="hetero" speed="10.400000" pos="26.000000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="5.000">
+        <vehicle id="veh0" x="39.000000" y="-1.600000" angle="90.000000" type="hetero" speed="13.000000" pos="39.000000" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="6.000">
+        <vehicle id="veh0" x="53.106684" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="53.106684" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="7.000">
+        <vehicle id="veh0" x="67.213368" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="67.213368" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="8.000">
+        <vehicle id="veh0" x="81.320052" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="81.320052" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="9.000">
+        <vehicle id="veh0" x="95.426736" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="95.426736" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="10.000">
+        <vehicle id="veh0" x="109.533420" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="109.533420" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="11.000">
+        <vehicle id="veh0" x="123.640104" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="123.640104" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="12.000">
+        <vehicle id="veh0" x="137.746788" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="137.746788" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="13.000">
+        <vehicle id="veh0" x="151.853472" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="151.853472" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="14.000">
+        <vehicle id="veh0" x="165.960156" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="165.960156" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="15.000">
+        <vehicle id="veh0" x="180.066840" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="180.066840" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="16.000">
+        <vehicle id="veh0" x="194.173524" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="194.173524" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="17.000">
+        <vehicle id="veh0" x="208.280208" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="208.280208" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="18.000">
+        <vehicle id="veh0" x="222.386892" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="222.386892" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="19.000">
+        <vehicle id="veh0" x="236.493576" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="236.493576" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="20.000">
+        <vehicle id="veh0" x="250.600260" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="250.600260" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="21.000">
+        <vehicle id="veh0" x="264.706944" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="264.706944" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="22.000">
+        <vehicle id="veh0" x="278.813628" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="278.813628" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="23.000">
+        <vehicle id="veh0" x="292.920312" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="292.920312" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="24.000">
+        <vehicle id="veh0" x="307.026996" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="307.026996" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="25.000">
+        <vehicle id="veh0" x="321.133680" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="321.133680" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="26.000">
+        <vehicle id="veh0" x="335.240364" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="335.240364" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="27.000">
+        <vehicle id="veh0" x="349.347048" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="349.347048" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="28.000">
+        <vehicle id="veh0" x="363.453732" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="363.453732" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="29.000">
+        <vehicle id="veh0" x="377.560416" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="377.560416" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="30.000">
+        <vehicle id="veh0" x="391.667100" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="391.667100" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="31.000">
+        <vehicle id="veh0" x="405.773784" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="405.773784" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="32.000">
+        <vehicle id="veh0" x="419.880468" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="419.880468" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="33.000">
+        <vehicle id="veh0" x="433.987152" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="433.987152" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="34.000">
+        <vehicle id="veh0" x="448.093836" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="448.093836" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="35.000">
+        <vehicle id="veh0" x="462.200520" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="462.200520" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="36.000">
+        <vehicle id="veh0" x="476.307204" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="476.307204" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="37.000">
+        <vehicle id="veh0" x="490.413888" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="490.413888" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="38.000">
+        <vehicle id="veh0" x="504.520572" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="504.520572" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="39.000">
+        <vehicle id="veh0" x="518.627256" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="518.627256" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="40.000">
+        <vehicle id="veh0" x="532.733940" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="532.733940" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="41.000">
+        <vehicle id="veh0" x="546.840624" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="546.840624" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="42.000">
+        <vehicle id="veh0" x="560.947308" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="560.947308" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="43.000">
+        <vehicle id="veh0" x="575.053992" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="575.053992" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="44.000">
+        <vehicle id="veh0" x="589.160676" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="589.160676" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="45.000">
+        <vehicle id="veh0" x="603.267360" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="603.267360" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="46.000">
+        <vehicle id="veh0" x="617.374044" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="617.374044" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="47.000">
+        <vehicle id="veh0" x="631.480728" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="631.480728" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="48.000">
+        <vehicle id="veh0" x="645.587412" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="645.587412" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="49.000">
+        <vehicle id="veh0" x="659.694096" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="659.694096" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="50.000">
+        <vehicle id="veh0" x="673.800780" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="673.800780" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="51.000">
+        <vehicle id="veh0" x="687.907464" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="687.907464" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="52.000">
+        <vehicle id="veh0" x="702.014148" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="702.014148" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="53.000">
+        <vehicle id="veh0" x="716.120832" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="716.120832" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="54.000">
+        <vehicle id="veh0" x="730.227516" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="730.227516" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="55.000">
+        <vehicle id="veh0" x="744.334200" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="744.334200" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="56.000">
+        <vehicle id="veh0" x="758.440884" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="758.440884" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="57.000">
+        <vehicle id="veh0" x="772.547568" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="772.547568" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="58.000">
+        <vehicle id="veh0" x="786.654252" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="786.654252" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="59.000">
+        <vehicle id="veh0" x="800.760936" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="800.760936" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="60.000">
+        <vehicle id="veh0" x="814.867620" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="814.867620" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="61.000">
+        <vehicle id="veh0" x="828.974304" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="828.974304" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="62.000">
+        <vehicle id="veh0" x="843.080988" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="843.080988" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="63.000">
+        <vehicle id="veh0" x="857.187672" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="857.187672" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="64.000">
+        <vehicle id="veh0" x="871.294356" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="871.294356" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="65.000">
+        <vehicle id="veh0" x="885.401040" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="885.401040" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="66.000">
+        <vehicle id="veh0" x="899.507724" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="899.507724" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="67.000">
+        <vehicle id="veh0" x="913.614408" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="913.614408" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="68.000">
+        <vehicle id="veh0" x="927.721092" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="927.721092" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="69.000">
+        <vehicle id="veh0" x="941.827776" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="941.827776" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="70.000">
+        <vehicle id="veh0" x="955.934460" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="955.934460" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="71.000">
+        <vehicle id="veh0" x="970.041144" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="970.041144" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="72.000">
+        <vehicle id="veh0" x="984.147828" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="984.147828" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="73.000">
+        <vehicle id="veh0" x="998.254512" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="998.254512" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="74.000">
+        <vehicle id="veh0" x="1012.361196" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1012.361196" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="75.000">
+        <vehicle id="veh0" x="1026.467880" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1026.467880" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="76.000">
+        <vehicle id="veh0" x="1040.574564" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1040.574564" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="77.000">
+        <vehicle id="veh0" x="1054.681248" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1054.681248" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="78.000">
+        <vehicle id="veh0" x="1068.787932" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1068.787932" lane="e0_0" slope="0.000000"/>
+    </timestep>
+    <timestep time="79.000">
+        <vehicle id="veh0" x="1082.894616" y="-1.600000" angle="90.000000" type="hetero" speed="14.106684" pos="1082.894616" lane="e0_0" slope="0.000000"/>
+    </timestep>
+</fcd-export>

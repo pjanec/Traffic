@@ -939,8 +939,20 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     with a REAL (`dev=0.05>0`) speedFactor draw — MUST produce byte-identical dawdle-perturbed
     speeds for t∈[1,3]s unless the speedFactor sampler's salted RNG leaked into `RngState`; the
     test asserts exactly that equality (and it holds, confirming the two streams never alias).
-    **C7-ii (a SUMO ensemble golden + statistical parity test, `[net]`) is a separate, still-TODO
-    sub-rung** — deliberately not attempted here (this rung is fully offline, no SUMO).
+  - **C7-ii. DONE ([net] golden regen, offline test). SUMO ensemble golden + statistical parity
+    test.** New scenario `scenarios/20-speedfactor-freeflow` (single vehicle, `default.speeddev=0.1`,
+    `sigma=0` to isolate speedFactor, free flow on a 2000m lane). Golden = a 50-run SUMO ENSEMBLE
+    (`golden.ensemble/seed01..50.fcd.xml`, `sumo --seed 1..50`), committed with `provenance.txt`.
+    `tolerance.json` `parityMode="statistical"`, `comparedAttributes=["speed"]`,
+    `statistical.speed.mean=0.7`/`std=0.2`. Test `RungC7iiStatisticalParityTests` runs the engine over
+    50 seeds and asserts `CompareEnsemble` (C1-ii) `IsMatch`. **Result:** the ramp (0→steady) is
+    byte-identical (accel 2.6); the pooled speed **std matches to Δ=0.046** (the discriminating check —
+    spread == the 0.1 dev; `std` tol 0.2 catches a dev error >~7%), validating the distribution.
+    The pooled **mean delta is 0.504** (the honest finite-ensemble sampling floor: two independent
+    50-sample draws of `speedFactor~N(1,0.1)` have means bracketing 1.0 — SUMO 0.986, engine 1.023 —
+    a ~0.51 m/s gap within 50-sample sampling error), covered by `mean` tol 0.7. Both deltas
+    deterministic (fixed seeds + golden) so the test is stable. **C7 (both sub-rungs) DONE** — the
+    speedFactor distribution is built and validated against SUMO. Full suite: 99 passed, 0 failed.
 - **C8. Ballistic integration + `actionStepLength > 1` (reaction time).** SUMO's ballistic update
   (more accurate than Euler) and sub-second/multi-second reaction time. The integration method is
   already a config flag (DESIGN.md seam); this ports the ballistic `finalizeSpeed`/position update and

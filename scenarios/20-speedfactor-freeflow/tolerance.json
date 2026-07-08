@@ -1,0 +1,7 @@
+{
+  "parityMode": "statistical",
+  "comparedAttributes": ["speed"],
+  "statistical": {
+    "speed": { "mean": 0.7, "std": 0.2 }
+  }
+}
