@@ -816,6 +816,49 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     before a general `-L 2` city runs** -- C2-iii redirects the pool only at `routeEdges[0]`, so a
     vehicle forced onto the wrong lane of a MIDDLE edge still throws (verified on a plain
     `netgenerate -L 2` grid). Parity-reviewer ACCEPT.
+  - **C4-vi. TODO (parity-track, exact @1e-3). HIGHEST-PRIORITY of the open parity rungs --
+    `FindFoeVehicle` matches an approaching foe ANYWHERE on its route, not on its actual approach.**
+    A VERIFIED `Sim.Core` correctness bug (root-caused against `main`'s engine, reproduced on the
+    scaled-city benchmark, NOT yet patched -- benchmark work must not touch `Sim.Core`). **This
+    gates ALL benchmark scaling, single- AND multi-lane** (whereas C2-v below only affects `-L 2`),
+    so sequence it FIRST. It is also a real priority-junction realism gap independent of the
+    benchmark. Briefing transcribed from `NEED-priorityjunction-farrouted-foe-falsepositive.md` on
+    sibling branch `claude/spec-docs-review-qgwatc` (viz/benchmark track -- do NOT merge/cherry-pick
+    that branch; only this one file's content is ported here).
+    **The bug (file:line on the current engine):** `Engine.FindFoeVehicle` (`src/Sim.Core/Engine.cs:
+    ~2279`) returns ANY active vehicle whose FULL route lane-sequence contains the foe internal lane
+    -- `IndexOfLaneHandle` (`Engine.cs:~2302`) scans the entire `[LaneSeqStart, LaneSeqStart +
+    LaneSeqLen)` precomputed route (insertion->arrival), with no proximity bound.
+    `JunctionYieldConstraint` (`Engine.cs:~1550-1583`) then treats that foe as "approaching" whenever
+    `foeInternalSeqIndex > foe.LaneSeqIndex` (the foe internal lane is anywhere AHEAD in the foe's
+    route) -- NO distance / hop-count / arrival-time filter. So the ego yields to a vehicle that may
+    be many junctions and kilometres away and won't reach the conflict for minutes. The engine's own
+    `FindFoeVehicle` comment flags it as a deliberate 9b single-foe-per-link scoping shortcut.
+    **Why invisible on the ladder:** on `11-priority-junction` / `19-onramp-merge` (1-2 junctions,
+    short routes) "some vehicle's route includes this lane" and "some vehicle is actually near this
+    junction soon" are the SAME fact; the false positive only fires once routes are long AND traffic
+    is dense enough that essentially every approach lane is on SOME distant vehicle's route.
+    **Reproduced (not guessed):** `scenarios/_bench/city-300` (24x24 grid, 576 junctions, `-L 1`, same
+    net+demand): engine 46 arrived vs SUMO 238, 404 vehicles permanently stuck at stop lines, while
+    SUMO runs the identical input at `meanSpeedRelative=0.98` / `halting=1` (free flow). Traced stuck
+    vehicle `281` sits 0.1 m from a stop line for 437+ continuous seconds (its `M14M15->M15L15` left
+    turn yields to all four `L15M15` outgoing links; ANY far-off vehicle routed through `L15M15_0`
+    holds it). Repro command + the full trace are in the NEED file (city-300 not committed here; it
+    is regenerable via `netgenerate --grid --grid.number=24 --grid.length=500 -L 1 --tls.guess
+    --seed 42` + `randomTrips.py --fringe-factor 5 --seed 42`).
+    **Port target:** SUMO never derives "approaching" from route membership. `MSLink::setApproaching`
+    populates `myApproaching` (the map `MSLink::opened()` reads) only once a vehicle is within that
+    link's own lookahead/braking-distance window of the link; `removeApproaching`/entry deregisters
+    it. Port that registration, OR (lighter, same effect) bound the `FindFoeVehicle` match to foes
+    within a small lane-hop / distance window of the foe internal lane (e.g. cap
+    `foeInternalSeqIndex - other.LaneSeqIndex`, matching setApproaching's registration point), so a
+    foe still far up its route is NOT counted.
+    **Done-condition (standard isolate -> golden -> reverse-engineer -> port -> gate):** (1) NEW
+    anchor scenario: a foe whose route INCLUDES the conflict lane but is still far away must NOT be
+    yielded to (build + commit its 1e-3 golden). (2) INERT when the foe is genuinely close:
+    `11-priority-junction` / `19-onramp-merge` / every committed scenario stays green at 137;
+    `Sim.Bench` determinism hash unchanged. (3) parity-reviewer ACCEPT, faithful to `MSLink`. Build
+    the anchor + golden FIRST (pin exactly SUMO's registration distance), then port.
   - **C2-v. TODO (parity-track, exact @1e-3). Intra-edge mid-route lane change to reach an onward
     connection.** The remaining half of multi-hop. **BLOCKS a general `netgenerate -L 2` city** (the
     benchmark generator `scripts/gen-benchmark.sh` stays pinned to `-L 1` until this lands); the
