@@ -133,7 +133,16 @@ through parity-reviewer only if `EmitTrajectory` or the snapshot changes touch t
 
 ---
 
-# PHASE 1 — `Sim.Viz` offline replay tool
+# PHASE 1 — `Sim.Viz` offline replay tool — **DONE (VB-1…VB-4)**
+
+**Status: DONE.** `src/Sim.Viz` (exporter `Program.cs` + committed `template.html`/`template.js`),
+`Junction.Shape` added to `Sim.Ingest` (inert), and committed `replay.html` for
+`01-single-free-flow`, `09-traffic-light`, `11-priority-junction`. `dotnet test` = **105
+green**; `Sim.Bench` hash **byte-identical** (`42F875C2662DB78E`); every `replay.html` is
+self-contained (no external refs). Verified with headless Chromium/Playwright (no JS errors,
+canvas draws, TLS head red/green at the stop line, junction fill distinct, play/pause/restart/
+speed/pan/keyboard all functional). Run: `dotnet run --project src/Sim.Viz -- <scenarioDir>`
+(defaults FCD to `golden.fcd.xml`; `--fcd <path>` for an engine `engine.fcd.xml` from VB-0).
 
 Front-end is a **committed static template** (`src/Sim.Viz/template.html` + `template.js`);
 the C# exporter injects one `<script>const REPLAY_DATA = {...}</script>` and writes
