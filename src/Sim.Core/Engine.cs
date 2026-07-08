@@ -1626,6 +1626,29 @@ public sealed class Engine : IEngine
                 // yield only guards ENTRY onto ego's own internal lane -- once ego has already
                 // been granted entry (egoOnInternal), it is no longer gated by this foe's
                 // approach state.
+                // C4-vi (far-routed-foe false positive): FindFoeVehicle matches ANY vehicle whose
+                // route includes this internal lane -- including one many junctions / kilometres
+                // away that merely passes through here much later. SUMO never yields to such a foe:
+                // MSLink::opened only sees a foe registered via MSLink::setApproaching, and a
+                // vehicle registers approaching a link ONLY while it is within its own planMove
+                // lookahead `dist = SPEED2DIST(maxV) + brakeGap(maxV)` of that link (MSVehicle.cpp:
+                // 2238). A foe farther than that has not reserved this link, so opened() reports
+                // numApproaching==0 and ego is not blocked. This is the SAME reservation-distance
+                // gate the sameTarget-merge PHASE-0 arm already applies (SameTargetMergeConstraint),
+                // ported here to the crossing arm it was missing from -- without it, on a dense
+                // multi-junction network essentially every approach lane is on SOME distant
+                // vehicle's route and the minor road never gets a gap (the city-300 benchmark:
+                // 58.8% of vehicles permanently stuck while SUMO runs the identical net at free
+                // flow). `SeenToInternalLaneEntry` is the foe's distance to this internal lane's
+                // start; beyond the reservation range the foe is not yet approaching -> ego proceeds.
+                // (Single-foe-per-link scope is unchanged: FindFoeVehicle still returns the first
+                // route-matching foe; a genuinely-close foe hidden behind a far one is out of scope
+                // here as before.)
+                var foeMaxV = KraussModel.MaxNextSpeed(foe.Kinematics.Speed, foe.VType, dt);
+                var foeReservationDist = KraussModel.Speed2Dist(foeMaxV, dt)
+                    + KraussModel.BrakeGap(foeMaxV, foe.VType.Decel, foe.VType.Tau, dt);
+                var foeNotApproaching = SeenToInternalLaneEntry(foe, foeInternalLaneHandle) > foeReservationDist;
+
                 // C5 follow-on (willPass): SUMO's blockedByFoe short-circuits on `!avi.willPass`
                 // (MSLink.cpp:935) -- a foe that will NOT enter the junction does not block ego. The
                 // engine's approaching-foe yield is otherwise blanket; here we skip it when the foe
@@ -1636,7 +1659,7 @@ public sealed class Engine : IEngine
                 // (the crossing vehicle) proceeds. Inert for every scenario without a downstream jam
                 // (KeepClearConstraint is +infinity there), so only scenario 38 is affected.
                 var foeWillNotPass = !egoOnInternal && FoeKeepClearBlocked(foe, allVehicles, dt, actionStepLengthSecs);
-                thisConstraint = egoOnInternal || foeWillNotPass
+                thisConstraint = egoOnInternal || foeWillNotPass || foeNotApproaching
                     ? double.PositiveInfinity
                     : StopSpeedFor(
                         v.VType, v.Kinematics.Speed,

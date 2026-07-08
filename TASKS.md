@@ -816,8 +816,27 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     before a general `-L 2` city runs** -- C2-iii redirects the pool only at `routeEdges[0]`, so a
     vehicle forced onto the wrong lane of a MIDDLE edge still throws (verified on a plain
     `netgenerate -L 2` grid). Parity-reviewer ACCEPT.
-  - **C4-vi. TODO (parity-track, exact @1e-3). HIGHEST-PRIORITY of the open parity rungs --
-    `FindFoeVehicle` matches an approaching foe ANYWHERE on its route, not on its actual approach.**
+  - **C4-vi. DONE (parity-track, exact @1e-3). Priority-junction far-routed-foe false positive fixed.**
+    The crossing approaching-foe arm of `JunctionYieldConstraint` (`Engine.cs`, the
+    `foeInternalSeqIndex > foe.LaneSeqIndex` branch) now gates the yield by the foe's
+    approach-reservation range `SPEED2DIST(maxV) + brakeGap(maxV)` (`MSVehicle::setApproaching`'s
+    registration window, MSVehicle.cpp:2238) -- the SAME gate the sameTarget-merge PHASE-0 arm
+    already applied, ported to the crossing arm it was missing from. A foe farther than that from the
+    conflict internal lane (`SeenToInternalLaneEntry`) has not reserved the link, so `opened()` sees
+    no approaching foe and ego is not blocked. **TEST `RungC4viFarRoutedFoeParityTests`**
+    (`scenarios/40-farrouted-foe`, Run 46) passes exact @1e-3; suite 138 -> 140 (with C6-ii). ANCHOR:
+    a priority junction J where the minor ego (SJ->JN) responds to the major link WJ->JE, and the lone
+    major vehicle `foeFar` departs 496 m up WJ. Golden: ego does the cautious minor-approach slowdown
+    (13.89->8.64 by t=9) then PROCEEDS, crossing at t=10-11; foeFar reaches J only at t=38. The bug
+    reproduced exactly on this anchor (pre-fix engine stops ego at the SJ stop line pos=92.699 and
+    holds it stuck through the foe's whole approach); NON-VACUOUS: disabling the gate fails the test at
+    FirstDivergenceStep=10 (pos err 85.7 m, ego stuck). INERT for genuinely-close foes: scenario 11 /
+    19 / 32 (close/circulating foes) + right-before-left + every committed scenario stay green (140);
+    D1 determinism hash unchanged. Single-foe-per-link scope unchanged (FindFoeVehicle still returns
+    the first route-matching foe). Parity-reviewer gate pending. UNBLOCKS the scaled-city benchmark
+    scaling ladder (single- AND multi-lane). *(original briefing retained below for context.)*
+    Priority-junction far-routed-foe false positive --
+    `FindFoeVehicle` matches an approaching foe ANYWHERE on its route, not on its actual approach.
     A VERIFIED `Sim.Core` correctness bug (root-caused against `main`'s engine, reproduced on the
     scaled-city benchmark, NOT yet patched -- benchmark work must not touch `Sim.Core`). **This
     gates ALL benchmark scaling, single- AND multi-lane** (whereas C2-v below only affects `-L 2`),

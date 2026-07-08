@@ -1,0 +1,25 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T23:09:00Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# C4-vi (priority-junction far-routed-foe false positive) parity anchor.
+#   A priority junction J: major road W->E (WJ major, JE out) crosses minor road S->N (SJ minor
+#   yields, JN out). The minor-road ego (SJ->JN) yields to the major link WJ->JE per the request
+#   matrix. The single major-road vehicle foeFar departs at WJ pos 0 -- 496 m (WJ_0 length) from J --
+#   so at the moment ego reaches the SJ stop line (~t=9) foeFar is still ~380 m away, far beyond its
+#   approach-reservation range SPEED2DIST(maxV)+brakeGap(maxV) (~27 m). SUMO does NOT yield ego to it
+#   (MSLink::setApproaching never registers a foe that far up its route, so opened() reports no
+#   approaching foe): ego does the cautious minor-link approach slowdown (13.89->8.64 by t=9) then
+#   PROCEEDS, crossing onto :J_0_0 at t=10 and JN_0 at t=11; foeFar reaches the junction only at t=38,
+#   long after ego has cleared. The pre-fix engine's FindFoeVehicle matches foeFar purely because its
+#   route includes :J_1_0 (with no proximity bound) and yields ego to it -> ego brakes to a full stop
+#   at the SJ stop line (pos 92.699) and stays stuck through the far foe's whole approach. Euler,
+#   sigma=0, teleport off, seed 42.
+# net: netconvert --no-turnarounds; edge priority 2 (major W-E) vs 1 (minor S-N).
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# input file hashes (sha256):
+input=net.net.xml sha256=aa46c9f1ba3a0dc082770f4886711febd97d371197c74bc42c1a5cb8219eb8bc
+input=rou.rou.xml sha256=7093981399f5e43e88629a7eb742b52e064eb9af93840640f953868ba2f01a35
+input=config.sumocfg sha256=53f49f1759ee97b9633681d41da2293c785033015164e2a6571e2b8feda4e06a
