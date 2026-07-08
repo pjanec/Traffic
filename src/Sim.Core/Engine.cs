@@ -1292,6 +1292,63 @@ public sealed class Engine : IEngine
         var egoOnInternal = v.LaneId == egoInternalLaneId;
 
         var constraint = double.PositiveInfinity;
+
+        // C3 (TASKS.md "on-ramp merge" / minor-link CAUTIOUS APPROACH): ported from
+        // MSVehicle::planMoveInternal's minor-link arm (sumo/src/microsim/MSVehicle.cpp:2655-2664
+        // for the minor `laneStopOffset`/`stopDist`, :2734-2735 for the `stopSpeed` call, and the
+        // :2805-2806 `couldBrakeForMinor && !determinedFoePresence` gate). This is the piece the
+        // pre-existing foe-scan below CANNOT produce: a vehicle approaching a minor link must
+        // decelerate toward the stop line even when NO foe is present/approaching, because it
+        // "cannot see" whether the foe lanes are clear until it is within the link's foe-visibility
+        // distance -- and only then may it re-accelerate and enter. Verified against the vendored
+        // v1_20_0 DEBUG_PLAN_MOVE trace for scenarios/19-onramp-merge's `rA` (mA ~390m away, a huge
+        // gap, so rA is NOT gap-blocked): seen=22.32 -> 11.906333, seen=10.41 -> 7.406333, released
+        // at seen=3.01 (<= visibilityDistance) -> re-accelerates. In scenarios/11-priority-junction
+        // this is byte-identical: a foe (vMajor) is approaching the whole time, so the foe-scan
+        // below already brakes vMinor to the SAME stop line (stopDist == seen - POSITION_EPS), and
+        // where the two overlap they compute the identical stopSpeed (verified 9.433 at seen=14.9),
+        // so this Math.Min changes nothing there; far from the junction stopSpeed exceeds the
+        // current speed (non-binding). Only applies while ego is still on its APPROACH lane
+        // (!egoOnInternal) -- once it has entered its internal lane the link is behind it.
+        //
+        // "ego's link is minor" == its <request> row yields to at least one foe link
+        // (Response has any set bit) -- equivalent to SUMO's `!(*link)->havePriority()` for a
+        // priority junction (this rung's scope): a major link's Response row is all-zero.
+        if (!egoOnInternal && approachLane is not null && request.Response.Contains('1'))
+        {
+            // NLHandler.cpp:1413: a link with no explicit `visibility` attribute defaults its
+            // foe-visibility distance to 4.5 (for non-ZIPPER links) -- this net specifies none.
+            const double visibilityDistance = 4.5;
+            var seen = approachLane.Length - v.Kinematics.Pos;
+
+            // couldBrakeForMinor (MSVehicle.cpp:2805): `!havePriority() && brakeDist < seen &&
+            // !lastWasContMajor()`. The lastWasContMajor arm is inert here (ego's approach lane is
+            // a normal lane, not a major continuation). `!determinedFoePresence` (:2794/:2806) is
+            // `seen > visibilityDistance` -- once within visibility the vehicle re-accelerates and
+            // the foe-scan below (or free-flow) governs instead. stopDecel = getMaxDecel() (4.5).
+            var brakeDist = KraussModel.BrakeGap(v.Kinematics.Speed, v.VType.Decel, headwayTime: 0.0, dt);
+            if (brakeDist < seen && seen > visibilityDistance)
+            {
+                // Minor-link stopDist (MSVehicle.cpp:2656-2664): laneStopOffset =
+                // MIN2(visibilityDistance - POSITION_EPS, minorStopOffset), then the
+                // avoid-emergency-braking clamp MIN2(., seen - brakeDist) when it can brake before
+                // the lane end (always true inside `brakeDist < seen`), then MAX2(POSITION_EPS, .).
+                // minorStopOffset = lane.getVehicleStopOffset(this) = 0 here (no vClass stop offset
+                // modeled -- this net's <lane>s set none), mirroring RedLightConstraint's own
+                // majorStopOffset treatment; with it 0 this resolves to POSITION_EPS, i.e.
+                // stopDist = seen - POSITION_EPS (plan to be able to stop AT the junction stop line).
+                const double minorStopOffset = 0.0;
+                var laneStopOffset = Math.Min(visibilityDistance - PositionEps, minorStopOffset);
+                laneStopOffset = Math.Min(laneStopOffset, seen - brakeDist); // canBrakeBeforeLaneEnd
+                laneStopOffset = Math.Max(PositionEps, laneStopOffset);
+                var stopDist = Math.Max(0.0, seen - laneStopOffset);
+
+                constraint = Math.Min(
+                    constraint,
+                    StopSpeedFor(v.VType, v.Kinematics.Speed, stopDist, laneVehicleMaxSpeed, dt, actionStepLengthSecs, v.LevelOfService));
+            }
+        }
+
         for (var j = 0; j < junction.IntLanes.Count; j++)
         {
             if (j == egoLink.Index || !request.RespondsTo(j))

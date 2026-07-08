@@ -21,12 +21,16 @@ namespace Sim.ParityTests;
 // bits, so an agent sitting there must NOT cause `vMinor` to yield -- test (c) below.
 //
 // Baseline arrival timing (observed by running the engine against this exact fixture with no
-// obstacle at all, config.sumocfg's default.action-step-length=1/step-length=1, free-flow
-// acceleration profile straight off KraussModel.FinalizeSpeed): `vMinor` accelerates cleanly off
-// `SJ_0` (departPos=0/departSpeed=0), reaches the lane's cruise speed 13.89 by t=6, and is already
-// past its own internal lane `:J_1_0` -- lane reads `JN_0` -- by t=17 (pos=1.68 into `JN_0`, since
-// the 11.20m internal lane at 13.89 m/s takes under a second to cross, well inside a single 1s
-// step). It never comes to a sustained stop anywhere on its approach lane `SJ_0`.
+// obstacle at all, config.sumocfg's default.action-step-length=1/step-length=1): `vMinor`
+// accelerates cleanly off `SJ_0` (departPos=0/departSpeed=0), reaches the lane's cruise speed
+// 13.89 by t=6, and cruises until it nears its own minor link. Per C3 (the minor-link CAUTIOUS
+// APPROACH now modeled in JunctionYieldConstraint), a lone minor vehicle does NOT sail straight
+// through at 13.89 even with no foe present: it briefly decelerates toward the stop line while
+// still beyond the link's foe-visibility distance (13.89 -> 9.433 at t=16 -> 4.933 at t=17), then
+// -- once within visibility, gap confirmed clear -- re-accelerates and crosses, reading `JN_0`
+// by t=19. This is the SAME mechanism (and shape) scenarios/19-onramp-merge's golden-verified rA
+// exercises; crucially it NEVER comes to a sustained stop (min speed 4.933), which is exactly what
+// separates it from test (b)'s external-agent hold (a full halt to 0 at the stop line).
 public class RungB5JunctionFoeTests
 {
     private static readonly string ScenarioDir =
@@ -34,11 +38,12 @@ public class RungB5JunctionFoeTests
 
     // (a) Baseline sanity: with NO external agent (and no vMajor -- this fixture has only
     // vMinor), JunctionYieldConstraint's foe-link loop never finds a foe of any kind (SUMO or
-    // external) on either responded-to internal lane (:J_2_0/:J_3_0), so `vMinor` crosses the
-    // junction WITHOUT ever coming to a sustained stop on its approach lane -- proving 9b's
-    // inert path (and this rung's new ExternalAgentOnFoeLane guard, which the empty `_obstacles`
-    // store trivially short-circuits) lets a lone minor vehicle straight through, exactly as
-    // Rung9bParityTests' own header comment describes vMajor's unconstrained pass.
+    // external) on either responded-to internal lane (:J_2_0/:J_3_0), so `vMinor` is never HELD
+    // at its stop line -- proving 9b's inert path (and this rung's new ExternalAgentOnFoeLane
+    // guard, which the empty `_obstacles` store trivially short-circuits) lets a lone minor
+    // vehicle through. It does perform C3's minor-link cautious dip (9.433/4.933 near the stop
+    // line, min 4.933) but never a sustained stop, then crosses to JN_0 -- the differential
+    // against test (b)'s full agent-forced halt.
     [Fact]
     public void Baseline_NoAgent_CrossesWithoutYielding()
     {
@@ -51,9 +56,9 @@ public class RungB5JunctionFoeTests
         var trajectory = engine.Run(30);
         var points = trajectory.PointsFor("vMinor");
 
-        // Never comes to a sustained stop while still approaching: once past the initial
-        // depart-from-rest ramp-up (t=0/1), speed only ever increases up to the lane's cruise
-        // speed (13.89) -- no braking-to-zero anywhere on SJ_0.
+        // Never comes to a sustained stop while approaching: on `SJ_0` through the cautious
+        // approach, speed stays well clear of zero (the C3 dip bottoms out at 4.933) -- no
+        // braking-to-halt anywhere, which is what distinguishes this from test (b)'s agent hold.
         for (var t = 2.0; t <= 15.0; t += 1.0)
         {
             Assert.True(trajectory.TryGet("vMinor", t, out var point), $"missing point at t={t}");
@@ -61,8 +66,10 @@ public class RungB5JunctionFoeTests
             Assert.True(point.Speed > 0.5, $"vMinor unexpectedly near-stopped at t={t}, speed={point.Speed}");
         }
 
-        // Crosses (reaches JN_0) by t=17, matching the observed baseline anchor.
-        Assert.True(trajectory.TryGet("vMinor", 17.0, out var crossed));
+        // Crosses (reaches JN_0) by t=19 -- one-plus step later than a naive free-cruise would,
+        // exactly because of C3's cautious approach (dip to 4.933 at the stop line, then
+        // re-accelerate through :J_1_0 into JN_0), matching the observed baseline anchor.
+        Assert.True(trajectory.TryGet("vMinor", 19.0, out var crossed));
         Assert.Equal("JN_0", crossed.Lane);
     }
 
@@ -164,7 +171,8 @@ public class RungB5JunctionFoeTests
 
         var trajectory = engine.Run(30);
 
-        // Same free-flow, never-stops profile as the baseline.
+        // Same never-held profile as the baseline (the C3 cautious dip applies identically; the
+        // non-responded-to agent adds nothing), min speed well clear of zero throughout SJ_0.
         for (var t = 2.0; t <= 15.0; t += 1.0)
         {
             Assert.True(trajectory.TryGet("vMinor", t, out var point), $"missing point at t={t}");
@@ -172,9 +180,10 @@ public class RungB5JunctionFoeTests
             Assert.True(point.Speed > 0.5, $"vMinor unexpectedly near-stopped at t={t}, speed={point.Speed}");
         }
 
-        // Crosses at the exact same baseline step (t=17), unaffected by the non-responded-to
-        // foe-lane agent.
-        Assert.True(trajectory.TryGet("vMinor", 17.0, out var crossed));
+        // Crosses at the exact same baseline step (t=19), unaffected by the non-responded-to
+        // foe-lane agent -- the <request>-matrix scoping holds, so its trajectory is identical to
+        // baseline (a) including the cautious dip.
+        Assert.True(trajectory.TryGet("vMinor", 19.0, out var crossed));
         Assert.Equal("JN_0", crossed.Lane);
     }
 

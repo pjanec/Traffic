@@ -794,83 +794,49 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     first such scenario lands (with its own golden), port the full early-return semantics (return
     before the accumulator decrement) instead of the commit-gate veto, and re-anchor 07/12
     byte-identical.
-- **C3. Merging / on-ramp / zipper.** Gap-acceptance merging where two lanes join (`sameTarget`
-  links). Extends 9b's foe machinery + A2's neighbor leader/follower. Parity axis.
+- **C3. Merging / on-ramp / zipper. DONE (exact parity @1e-3).** Minor-link CAUTIOUS APPROACH —
+  the "slow to the stop line, then go once the gap is confirmed" half of the priority-junction
+  mechanism that 9b did not cover (9b ported only yield-to-a-present-foe). Test:
+  `RungC3OnRampMergeParityTests` (72 steps, `["lane","pos","speed"]` @1e-3, both vehicles full extent).
 
-  **`[net]` anchor DONE: `scenarios/19-onramp-merge`** (committed golden). Mainline `M` (A→J, 500m,
+  **Scenario `scenarios/19-onramp-merge`** (committed golden, SUMO v1_20_0). Mainline `M` (A→J, 500m,
   priority 10) + ramp `R` (B→J, ~104m, priority 1) BOTH feed the same downstream lane `D_0`
   (`sameTarget` merge via `:J_1_0`/`:J_0_0`); junction J makes link 1 (M→D) major, link 0 (R→D) minor
   (`request index=0 response="10"`). `mA` (mainline, depart 0) + `rA` (ramp, depart 2), both at 13.89,
-  `sigma=0`. SUMO: `rA` cruises `R` at 13.89, then DECELERATES near the junction (t=8: 11.91, t=9:
-  7.41) at the stop line, enters `:J_0_0` at t=10, merges to `D_0` at t=11 and re-accelerates.
+  `sigma=0`. SUMO: `rA` cruises `R` at 13.89, then DECELERATES near the junction (t=8: 11.906, t=9:
+  7.406) toward the stop line, enters `:J_0_0` at t=10 (10.006), merges to `D_0` at t=11 and
+  re-accelerates. `mA` is ~390 m away (pos 111 at t=8) — a HUGE gap — so `rA` is NOT gap-blocked; the
+  slowdown is purely the cautious approach (a minor vehicle decelerates to be able to yield as it
+  nears the junction, because it "cannot see" the foe lanes until within the link's foe-visibility
+  distance, then re-accelerates once the gap is confirmed clear).
 
-  **KEY FINDING (this session): our 9b engine FAILS this (firstDiv=t=8, `rA` cruises straight through
-  at 13.89 with no yield).** Diagnosis: `mA` is ~390 m away (pos 111 at t=8) when `rA` reaches the
-  merge — a HUGE gap, so `rA` is NOT gap-blocked. The golden's slowdown is SUMO's **minor-road
-  CAUTIOUS APPROACH**: a minor-link vehicle decelerates to be able to yield as it nears a priority
-  junction (so it *could* stop if a major appeared), confirms the gap is safe, then proceeds. Our
-  `JunctionYieldConstraint` only yields to a foe PRESENT on / immediately approaching the junction
-  (`FindFoeVehicle` on the foe internal lane) and has NO approach-speed term when the major is
-  distant-but-visible — so `rA` never slows. **C3 must port SUMO's `MSLink` minor-link approach-speed
-  / `getLeaderInfo` arrival-time logic** (`sumo/src/microsim/MSLink.cpp` `getLeaderInfo`/`opened`,
-  and `MSVehicle`'s junction-approach `adaptToLeaders`/`checkLinkLeader`) — the "slow to the stop
-  line, then go when the gap is safe" mechanism, of which 9b ported only the yield-to-present-foe
-  half. Reverse-engineer the exact approach speed (HANDOFF method step 3) so the t=8-9 decel matches
-  to 1e-3. Own scoped rung, likely worth a focused session. `tolerance.json` exact,
-  `["lane","pos","speed"]` @1e-3.
+  **How it was resolved (this session):** the exact per-step speed is NOT a closed form derivable by
+  static reading (documented dead-ends: it emerges from `planMoveInternal`'s `vLinkWait`/`opened()`
+  path, not the `arrivalSpeed` cap). Built a `DEBUG_PLAN_MOVE` instrumented v1_20_0 Debug binary in a
+  separate clone (`scripts/sumo-debug-instructions.md`), captured the `rA` trace, and read the exact
+  internals. **The mechanism turned out simpler than the `arrivalSpeed` block suggested:** the actual
+  per-step brake is just `vLinkWait = stopSpeed(speed, stopDist)` at `MSVehicle.cpp:2734`, with
+  `stopDist = seen − laneStopOffset` and (minor arm, `.cpp:2656-2664`) `laneStopOffset` resolving to
+  `POSITION_EPS` (0.1) since this net's lanes set no stop offset — i.e. plan to be able to stop AT the
+  junction. The `arrivalSpeed`/`maxSpeedAtVisDist`/`maxArrivalSpeed` values feed only the
+  arrival-TIME (`opened()`) decision, not the executed speed. Reproduced to <1e-3 from the trace:
+  `stopSpeed(13.89, 22.22)=11.906333`, `stopSpeed(11.906333, 10.313667)=7.406333`; release at
+  `seen(3.01) ≤ visibilityDistance(4.5)` → accelerate through.
 
-  **Braking geometry measured (this session, to scope the port):** `R_0` length = 91.77 m. Golden
-  `rA` distance-to-stop-line → speed: t=7 dist 22.32 → 13.89 (not yet braking); t=8 dist 10.41 →
-  11.906; t=9 dist 3.01 → 7.406; then RELEASES (t=10 on `:J_0_0` at 10.006, accelerating). **It is
-  NOT a plain stop-at-stop-line brake** — `KraussModel.StopSpeed(dist=10.41)` ≈ 6.2 m/s, far below
-  the golden's 11.906, so the approach speed is GENTLER than braking-to-full-stop.
-
-  **REVERSE-ENGINEERED FROM SOURCE (this session — NO DEBUG build needed; `/sumo/` is vendored and
-  the golden pins it).** The mechanism is the "slow down when approaching a minor link" block in
-  `MSVehicle::planMoveInternal` (`sumo/src/microsim/MSVehicle.cpp:2786-2812`):
-  ```
-  seen              = distance from the vehicle to the link (stop line)
-  brakeDist         = the vehicle's braking distance at current speed
-  visibilityDistance= link.getFoeVisibilityDistance()               // = 4.5 for an unspecified
-                                                                     //   non-zipper MINOR link
-                                                                     //   (NLHandler.cpp:1413)
-  couldBrakeForMinor    = !link.havePriority() && brakeDist < seen && !link.lastWasContMajor()
-  determinedFoePresence = (seen <= visibilityDistance)
-  if (couldBrakeForMinor && !determinedFoePresence):                // still too far to SEE foes
-      maxSpeedAtVisDist = maximumSafeStopSpeed(visibilityDistance, maxDecel, speed, ...)
-      maxArrivalSpeed   = estimateSpeedAfterDistance(visibilityDistance, maxSpeedAtVisDist, maxAccel)
-      arrivalSpeed      = MIN2(vLinkPass, maxArrivalSpeed)          // cap: arrive able to stop once
-                                                                    //   a foe first becomes visible
-  ```
-  The vehicle then brakes toward `arrivalSpeed` via car-following free-speed at distance `seen`
-  (`DriveProcessItem`, `.cpp:2842+`). Once `seen <= visibilityDistance(4.5)` the vehicle can SEE the
-  junction is clear ⇒ `determinedFoePresence` true ⇒ no cap ⇒ it accelerates through. **Verified
-  against the golden:** the release is exactly at `seen<=4.5` — t=9 `seen=3.01<=4.5` ⇒ `rA` stops
-  slowing and accelerates (7.41→10.01 at t=10). So the port is a NEW multi-constraint-reducer term
-  (a "minor-link cautious-approach" speed cap), NOT the `MSLink::opened()` foe-arrival machinery
-  (that only matters when a foe is actually near; here `mA` is far and the cap is purely the
-  visibility-distance approach). Needs `estimateSpeedAfterDistance` + the arrive-at-distance-at-speed
-  free-speed in `KraussModel` (port if absent).
-
-  **CORRECTION (attempted the port this session): exact per-step SPEED defeats static analysis —
-  this is the 9b situation, it needs `DEBUG_PLAN_MOVE` instrumentation.** The mechanism, `visDist=4.5`,
-  and the release (`seen<=4.5`) ARE source-derivable (above). But the exact approach-speed VALUES
-  (golden: seen 22.32→11.906, seen 10.41→7.406, then release+accel to 10.006) do NOT fall out of any
-  clean formula — tried and REJECTED against the golden: (a) `freeSpeed(speed, seen, arrivalSpeed)`
-  with `arrivalSpeed = min(vLinkPass, estimateSpeedAfterDistance(visDist, maximumSafeStopSpeed(visDist),
-  accel))` → gives ~13.4 (barely brakes); (b) `maximumSafeStopSpeedEuler(seen - visDist)` with
-  headway 0 (brakes too late, at seen≈8) and headway 1 (brakes to a near-stop). None reproduce the
-  golden positions (moves 11.906 then 7.406). Root cause: the per-step speed is NOT a closed form —
-  it emerges from the entangled `planMoveInternal` link loop + `processLinkApproaches` + `MSLink::
-  opened()` go-vs-`vLinkWait` decision (`v`/myVLinkPass is NOT reduced in the minor block itself;
-  the brake comes from the `opened()`/`vLinkWait` path). A genuine contradiction under static
-  reading: `opened()` should be TRUE here (mA ~390 m away, no real conflict) yet the vehicle brakes,
-  so the decisive value is only visible at RUNTIME. **Reliable path = compile the (already-vendored,
-  no clone) `/sumo/` with `DEBUG_PLAN_MOVE` and read the printed `slowedDownForMinor
-  maxSpeedAtVisDist/arrivalSpeed` per step** — exactly the instrumented-build approach 9b used
-  (`RUNG9B.md`). Needs SUMO build deps + compile time; NOT derivable from a formula alone. Anchor +
-  golden + this analysis are committed so the instrumented pass starts with the failed interpretations
-  already ruled out.
+  **Port:** a new arm in `Engine.JunctionYieldConstraint` (folded in, reusing the already-resolved
+  ego-link / `<request>` / approach lane): when ego is on its approach lane and its link is minor
+  (Response has any set bit ≡ `!havePriority()`) and `brakeDist < seen && seen > visibilityDistance`,
+  contribute `stopSpeed(speed, seen − POSITION_EPS)` to the reducer; once `seen ≤ visibilityDistance`
+  (4.5, the `NLHandler.cpp:1413` non-zipper default) it releases and free-flow/foe terms govern.
+  `visibilityDistance` is a constant (no net attribute in scope). **Byte-identical elsewhere:** in
+  `scenarios/11-priority-junction` a foe (vMajor) is approaching the whole time, so 9b's foe-scan
+  already brakes vMinor to the SAME stop line (`stopDist == seen − POSITION_EPS`) — the two overlap
+  at the identical `stopSpeed` (verified 9.433 at seen=14.9) and `Math.Min` changes nothing; far from
+  the junction `stopSpeed` exceeds current speed (non-binding). `RungB5JunctionFoeTests`' two
+  "lone-vMinor crosses" behavioral facts were updated: a lone minor vehicle now correctly performs
+  the cautious dip (13.89→9.433→4.933, min 4.933, never a sustained stop) and crosses to `JN_0` at
+  t=19 (was a naive free-cruise t=17) — the SAME golden-verified mechanism, and still cleanly
+  differential vs. the external-agent FULL-halt fact (b).
 - **C4. Remaining right-of-way: right-before-left, roundabouts, stop signs.** 9b did PRIORITY
   junctions only. Right-before-left (uncontrolled symmetric), roundabout yielding (+
   `myRoundaboutBonus`/cooperative), all-way-stop (`LINKSTATE_ALLWAY_STOP`). Reuses 9b's `<request>`
