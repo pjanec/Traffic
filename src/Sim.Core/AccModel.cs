@@ -90,7 +90,15 @@ public static class AccModel
     // very first call -- a mode write that would otherwise occur is skipped, exactly as the
     // vendored source itself does (observably inert here since AccControlMode's own default, 0,
     // already equals what speed control would have written).
-    private static double V(
+    // C11-iii: widened from `private` to `internal` so CaccModel's speedGapControl port
+    // (MSCFModel_CACC.cpp:271-273 `acc_CFM._v(veh, gap2pred, speed, predSpeed, desSpeed, true)`)
+    // can call the SAME raw control-mode machine ACC's own followSpeed uses -- CACC's ACC
+    // fallback calls MSCFModel_ACC::_v directly, NOT MSCFModel_ACC::followSpeed (so it does
+    // NOT go through ACC's own vSafe/EmergencyThreshold check -- that safety check is CACC's
+    // own followSpeed's job, applied once, after the whole _v dispatch resolves, exactly like
+    // it already is for CACC's own non-fallback branches). Not a distinct formula -- literally
+    // the same private mode machine, just called from a second entry point.
+    internal static double V(
         double gap2pred,
         double speed,
         double predSpeed,

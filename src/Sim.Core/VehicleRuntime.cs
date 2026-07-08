@@ -140,6 +140,37 @@ internal sealed class VehicleRuntime
     public int AccControlMode;
     public double AccLastUpdateTime;
 
+    // C11-iii: SUMO's MSCFModel_CACC::CACCVehicleVariables (MSCFModel_CACC.h:222-228) --
+    // `class CACCVehicleVariables : public MSCFModel_ACC::ACCVehicleVariables` literally
+    // INHERITS ACC_ControlMode/lastUpdateTime rather than declaring its own copies, adding only
+    // ONE new field: CACC_ControlMode (the CACC-specific speed/gap-control hysteresis mode).
+    // Ported as CaccControlMode below (default 0, matching createVehicleVariables' own
+    // CACC_ControlMode=0 default). The inherited pair is DELIBERATELY reused rather than
+    // duplicated: a CACC-typed vehicle's embedded ACC-fallback state (used only when its leader is
+    // NOT itself CACC) reuses THIS SAME vehicle's AccControlMode/AccLastUpdateTime fields above --
+    // see CaccModel.cs's own header comment for the full citation, including why this reuse is
+    // required for byte-parity (the shared lastUpdateTime guard's cross-call interaction), not
+    // merely a storage optimization. No collision with an actually-ACC-typed vehicle: a vehicle's
+    // CarFollowModel is fixed at exactly one string, so Engine.cs's dispatch never routes a given
+    // vehicle through both AccModel.FollowSpeed and CaccModel.FollowSpeed. Only ever read/written
+    // from inside CaccModel.FollowSpeed, threaded `ref` from Engine.cs's FollowSpeedFor dispatch,
+    // and ONLY when this vehicle's OWN VType.CarFollowModel=="CACC" -- byte-identical for every
+    // other vType (Krauss/IDM/ACC): this field is simply never touched.
+    public int CaccControlMode;
+
+    // C11-iii: the ego's OWN acceleration from the LAST COMPLETED step
+    // ((newSpeed-oldSpeed)/dt), the exact analog of MSVehicle::getAcceleration() at the instant
+    // CACC's cooperative gap-control law (MSCFModel_CACC.cpp:287) reads it. Written ONLY in
+    // Engine.ExecuteMoves (the EXECUTE phase, right next to the pre-existing `oldSpeed` capture)
+    // and read ONLY in the FOLLOWING step's PLAN phase by CaccModel's cooperative branch --
+    // consistent with the frozen-start-of-step-snapshot invariant (CLAUDE.md rule 2): never a
+    // leader's/foe's acceleration, only this vehicle's own. Default 0.0, matching
+    // getAcceleration()'s own value before any step has executed. Written for EVERY vehicle
+    // (unconditionally, alongside oldSpeed) but read by nothing except CaccModel -- so this field
+    // is byte-identical-inert for every non-CACC vType, exactly like AccControlMode/
+    // AccLastUpdateTime above are for every non-ACC/non-CACC vType.
+    public double Acceleration;
+
     // B3: live reroute-around-blockage bookkeeping (DESIGN.md "Two futures" -- not a SUMO
     // field). BlockedByObstacleSeconds accumulates dt while a FUTURE edge of this vehicle's
     // remaining route is sitting under an active external obstacle; reset to 0 the moment no

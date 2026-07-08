@@ -901,7 +901,10 @@ public sealed class Engine : IEngine
         // (non-Krauss-overridden) default of `return vMax` (MSCFModel.h:102-105) meaning NO dawdle
         // at all, regardless of vType.Sigma. IdmModel.FinalizeSpeed IS that exact base formula
         // (see its own header comment), so ACC reuses it verbatim rather than duplicating it.
-        var newSpeed = v.VType.CarFollowModel is "IDM" or "ACC"
+        // C11-iii: CACC never overrides finalizeSpeed/patchSpeedBeforeLC either (MSCFModel_CACC.h
+        // has no such override, just like MSCFModel_ACC.h) -- it inherits the SAME base
+        // MSCFModel::finalizeSpeed dawdle-free clamp ACC/IDM already route through here.
+        var newSpeed = v.VType.CarFollowModel is "IDM" or "ACC" or "CACC"
             ? IdmModel.FinalizeSpeed(v.Kinematics.Speed, vPos, vStop, laneVehicleMaxSpeed, v.VType, dt, actionStepLengthSecs)
             : KraussModel.FinalizeSpeed(v.Kinematics.Speed, vPos, vStop, laneVehicleMaxSpeed, v.VType, dt, actionStepLengthSecs, ref v.RngState);
 
@@ -930,6 +933,13 @@ public sealed class Engine : IEngine
     // `time` and `ref ego.AccControlMode/ref ego.AccLastUpdateTime` through unread/unwritten, so
     // this stays a pure plumbing change for those two models, not a behavior change (verified by
     // the "Krauss AND IDM byte-identical" parity tests below).
+    // C11-iii: `caccControlMode`/`egoAcceleration`/`hasPred`/`predIsCacc` are ONLY read/written by
+    // the CACC arm (CaccModel.cs's own header comment) -- CACC's arm ALSO threads
+    // `accControlMode`/`accLastUpdateTime` (reused for its own embedded ACC-fallback state, see
+    // VehicleRuntime.CaccControlMode's own header comment for why that reuse is required, not
+    // optional) -- every Krauss/IDM/ACC call site simply threads the four new parameters through
+    // unread/unwritten, keeping this a pure plumbing change for those three models (verified by
+    // the "Krauss/IDM/ACC byte-identical" parity tests below).
     private static double FollowSpeedFor(
         ResolvedVType vType,
         double egoSpeed,
@@ -940,8 +950,20 @@ public sealed class Engine : IEngine
         double dt,
         double time,
         ref int accControlMode,
-        ref double accLastUpdateTime)
+        ref double accLastUpdateTime,
+        ref int caccControlMode,
+        double egoAcceleration,
+        bool hasPred,
+        bool predIsCacc)
     {
+        if (vType.CarFollowModel == "CACC")
+        {
+            return CaccModel.FollowSpeed(
+                egoSpeed, gap, predSpeed, predMaxDecel, laneVehicleMaxSpeed, vType, dt, time,
+                egoAcceleration, hasPred, predIsCacc,
+                ref caccControlMode, ref accControlMode, ref accLastUpdateTime);
+        }
+
         if (vType.CarFollowModel == "ACC")
         {
             return AccModel.FollowSpeed(
@@ -968,7 +990,10 @@ public sealed class Engine : IEngine
         double dt,
         double actionStepLengthSecs)
     {
-        if (vType.CarFollowModel == "ACC")
+        // C11-iii: CACC's stopSpeed (MSCFModel_CACC.cpp:148-158) is the SAME formula
+        // ACC's/Krauss's own stopSpeed uses (see CaccModel.StopSpeed's own header comment) --
+        // reuses AccModel.StopSpeed's byte-identical pass-through rather than a third duplicate.
+        if (vType.CarFollowModel is "ACC" or "CACC")
         {
             return AccModel.StopSpeed(speed, gap, vType, dt, actionStepLengthSecs);
         }
@@ -1404,7 +1429,9 @@ public sealed class Engine : IEngine
         {
             vsafeLeader = FollowSpeedFor(
                 ego.VType, ego.Kinematics.Speed, gap, foe.Kinematics.Speed, foe.VType.Decel, laneVehicleMaxSpeed, dt,
-                time: time, accControlMode: ref ego.AccControlMode, accLastUpdateTime: ref ego.AccLastUpdateTime);
+                time: time, accControlMode: ref ego.AccControlMode, accLastUpdateTime: ref ego.AccLastUpdateTime,
+                caccControlMode: ref ego.CaccControlMode, egoAcceleration: ego.Acceleration,
+                hasPred: true, predIsCacc: foe.VType.CarFollowModel == "CACC");
         }
         else
         {
@@ -1558,6 +1585,9 @@ public sealed class Engine : IEngine
         var leaderBackPos = leader.Kinematics.Pos - leader.VType.Length;
         var gap = leaderBackPos - ego.VType.MinGap - ego.Kinematics.Pos;
 
+        // C11-iii: `predIsCacc` -- MSCFModel_CACC.cpp:271 `pred->getCarFollowModel().getModelID()
+        // != SUMO_TAG_CF_CACC` -- the leader's OWN resolved vType, read from the frozen `leader`
+        // snapshot the neighbor query already returned (never re-read mid-step).
         return FollowSpeedFor(
             ego.VType,
             egoSpeed: ego.Kinematics.Speed,
@@ -1568,7 +1598,11 @@ public sealed class Engine : IEngine
             dt: dt,
             time: time,
             accControlMode: ref ego.AccControlMode,
-            accLastUpdateTime: ref ego.AccLastUpdateTime);
+            accLastUpdateTime: ref ego.AccLastUpdateTime,
+            caccControlMode: ref ego.CaccControlMode,
+            egoAcceleration: ego.Acceleration,
+            hasPred: true,
+            predIsCacc: leader.VType.CarFollowModel == "CACC");
     }
 
     // B1/B5-i: external-obstacle constraint. Treats the nearest active obstacle ahead of `v` on
@@ -1630,6 +1664,10 @@ public sealed class Engine : IEngine
 
         var gap = nearestBack - v.VType.MinGap - v.Kinematics.Pos;
 
+        // C11-iii: an ExternalObstacle has no CarFollowModel of its own (it is not a SUMO
+        // vehicle) -- `predIsCacc` is always false here, exactly matching CACC's own
+        // `pred->getCarFollowModel().getModelID() != SUMO_TAG_CF_CACC` ACC-fallback test for any
+        // non-CACC leader (a static/moving obstacle is never CACC).
         return FollowSpeedFor(
             v.VType,
             egoSpeed: v.Kinematics.Speed,
@@ -1640,7 +1678,11 @@ public sealed class Engine : IEngine
             dt: _config!.StepLength,
             time: time,
             accControlMode: ref v.AccControlMode,
-            accLastUpdateTime: ref v.AccLastUpdateTime);
+            accLastUpdateTime: ref v.AccLastUpdateTime,
+            caccControlMode: ref v.CaccControlMode,
+            egoAcceleration: v.Acceleration,
+            hasPred: true,
+            predIsCacc: false);
     }
 
     // Execute phase: apply each vehicle's own MoveIntent and integrate position.
@@ -1664,6 +1706,12 @@ public sealed class Engine : IEngine
             // C8-i: capture the pre-move speed BEFORE overwriting it, for the ballistic
             // trapezoidal position update below (Euler ignores it).
             var oldSpeed = v.Kinematics.Speed;
+            // C11-iii: MSVehicle::getAcceleration()'s analog -- the (speed-oldSpeed)/dt this
+            // vehicle just realized THIS step, written here so CaccModel's cooperative
+            // gap-control law can read it as "last completed step's acceleration" from the
+            // FOLLOWING step's Plan phase (see VehicleRuntime.Acceleration's own header comment).
+            // Written for every vehicle, unconditionally -- read by nothing except CACC.
+            v.Acceleration = (v.Intent.NewSpeed - oldSpeed) / dt;
             v.Kinematics.Speed = v.Intent.NewSpeed;
             v.Kinematics.Pos += _config!.Ballistic
                 ? 0.5 * (oldSpeed + v.Intent.NewSpeed) * dt

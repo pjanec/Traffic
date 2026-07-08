@@ -1,0 +1,15 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# C11-iii anchor: CACC (Cooperative ACC) car-following. net = scenario 01's 1000m single lane.
+#   BOTH vehicles carFollowModel="CACC"; leader maxSpeed=6, follower default. Since the leader IS
+#   CACC, the follower uses COOPERATIVE gap control (needs the ego's own acceleration, veh->
+#   getAcceleration()). Follower: speed control (time_gap>2), hysteresis (1.5-2), gap control (<1.5)
+#   settling at the tight CACC cooperative gap (~11m). sigma=0, Euler, actionStepLength=1.
+# CACC default CommunicationsOverrideMode=CACC_NO_OVERRIDE (time-gap-based). speedGapControl:
+#   leader-not-CACC -> ACC fallback; leader-CACC -> spacingErr=gap-tau*speed, speedErr=predSpeed-
+#   speed+tau*egoAccel, 3 sub-modes (gap/CA/gap-closing). Params (MSCFModel_CACC.cpp:57-68):
+#   SC=-0.4, GCC=(gap 0.005, gapdot 0.05), GC=(0.45, 0.0125), CA=(0.45, 0.05), headway=1,
+#   scMinGap=1.66, emergency=2.0. STATEFUL: per-vehicle CACC_ControlMode + lastUpdateTime.

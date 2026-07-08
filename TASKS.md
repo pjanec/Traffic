@@ -1052,9 +1052,71 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     (`tests/Sim.ParityTests/RungC11AccParityTests.cs`, 70 steps, exact 1e-3) — both vTypes ACC,
     leader maxSpeed=6 departs at pos 140 (initial gap ~132.5 > 120 → follower does SPEED CONTROL),
     transitions through the 100-120 HYSTERESIS band, then GAP CONTROL (<100), settling behind the
-    slow leader. **Deferred**: CACC (`MSCFModel_CACC`), and ACC+junction/stop interplay beyond what
-    the ported `stopSpeed`/`AdaptToJunctionLeader` plumbing itself guarantees (not exercised
-    end-to-end by a junction golden yet).
+    slow leader. **Deferred**: CACC (`MSCFModel_CACC`, now done — see C11-iii below), and
+    ACC+junction/stop interplay beyond what the ported `stopSpeed`/`AdaptToJunctionLeader`
+    plumbing itself guarantees (not exercised end-to-end by a junction golden yet).
+  - **C11-iii. DONE. CACC (Cooperative Adaptive Cruise Control).** Ported
+    `sumo/src/microsim/cfmodels/MSCFModel_CACC.cpp` (whole file, CACC_NO_OVERRIDE
+    `CommunicationsOverrideMode` path only) + `.h` (the `CACCVehicleVariables` state) as
+    `src/Sim.Core/CaccModel.cs`: the stateful, COOPERATIVE `_v` (time-gap-based mode select —
+    `timeGap>2`→speed control, `timeGap<1.5`→gap control (`speedGapControl`), `[1.5,2]`
+    hysteresis→the vehicle's OWN previous `CaccControlMode`) and `speedGapControl` (no
+    leader→`speedSpeedControl`; leader NOT CACC→ACC fallback calling `AccModel.V` — widened from
+    `private` to `internal` — DIRECTLY, not `AccModel.FollowSpeed`, with `headwayTime=
+    HEADWAYTIME_ACC=1.0`, not `vType.Tau`; leader IS CACC→the cooperative law
+    `spacingErr=gap-tau*speed`, `speedErr=predSpeed-speed+tau*egoAcceleration`, gap/collision-
+    avoidance/gap-closing sub-modes selected by the `0<spacingErr<0.2 && vErr<0.1` /
+    `spacingErr<0` thresholds, gains `GC=(0.45,0.0125)`, `CA=(0.45,0.05)`, `GCC=(0.005,0.05)`);
+    `followSpeed` (= `_v`'s result, overridden by `maximumSafeFollowSpeed(...,onInsertion:true)+2.0`
+    whenever that safety floor is more than 2.0 below it — `onInsertion=true` here, UNLIKE ACC's own
+    `followSpeed`, which omits the argument); `stopSpeed` (provably the same formula as
+    Krauss/ACC's own, so `CaccModel.StopSpeed` is a thin pass-through, not a duplicate). CACC does
+    not override `freeSpeed` (beyond a debug-only `caccVehicleMode` side-effect, not ported — no
+    behavior change) or `finalizeSpeed`/`patchSpeedBeforeLC` (inherits the same base-class
+    dawdle-free clamp ACC/IDM already route through — `Engine.ComputeMoveIntent`'s dispatch now
+    reads `v.VType.CarFollowModel is "IDM" or "ACC" or "CACC"` for that one line).
+    **STATE — the key subtlety**: `MSCFModel_CACC.h`'s `CACCVehicleVariables` literally
+    *inherits* `MSCFModel_ACC::ACCVehicleVariables` rather than declaring its own
+    `ACC_ControlMode`/`lastUpdateTime` copies, and CACC's own outer `_v` guard
+    (`vars->lastUpdateTime`) and its embedded ACC-fallback call (`acc_CFM._v(veh,...)`, reading
+    the SAME `veh`'s SAME inherited field) share that ONE physical field — confirmed by reading
+    `createVehicleVariables()`, which initializes `ACC_ControlMode=0`/`lastUpdateTime=0` alongside
+    `CACC_ControlMode=0` on a single allocated object. Ported literally: `VehicleRuntime` gained
+    only ONE new field, `CaccControlMode` (int, default 0) — the ACC-fallback state REUSES this
+    vehicle's own pre-existing `AccControlMode`/`AccLastUpdateTime` (C11-ii) rather than adding a
+    redundant, behaviorally-divergent `CaccLastUpdateTime` (a separate field would silently break
+    the real cross-call guard interaction: CACC's outer `_v` stamps `lastUpdateTime` to the current
+    step BEFORE calling into the ACC fallback in the same call, making the fallback's OWN guard see
+    an already-current timestamp and skip its mode rewrite that step — exactly reproduced by
+    sharing the field, broken by not sharing it). No collision with an actually-ACC-typed vehicle:
+    `CarFollowModel` is fixed at one string per vehicle, so a vehicle is never dispatched through
+    both `AccModel.FollowSpeed` and `CaccModel.FollowSpeed`. **EGO-ACCELERATION**: CACC's
+    cooperative law reads `veh->getAcceleration()` — the ego's own acceleration from the LAST
+    COMPLETED step — ported as a new `VehicleRuntime.Acceleration` (double, default 0), written
+    unconditionally in `Engine.ExecuteMoves` right next to the pre-existing `oldSpeed` capture
+    (`v.Acceleration = (v.Intent.NewSpeed - oldSpeed) / dt`) and read only by CACC's cooperative
+    branch in the FOLLOWING step's Plan phase — consistent with the frozen-start-of-step-snapshot
+    invariant, and read-by-nothing-but-CACC for every other vType. Both new state fields are
+    threaded `ref`/by-value through `FollowSpeedFor`'s three call sites
+    (`LeaderFollowSpeedConstraint`, `ObstacleConstraint`, `JunctionYieldConstraint`/
+    `AdaptToJunctionLeader`), which now also pass `hasPred`/`predIsCacc` (the leader's/foe's own
+    `VType.CarFollowModel=="CACC"`; always `false` for a B1 `ExternalObstacle`, which has no
+    `CarFollowModel` at all). Krauss/IDM/ACC stay byte-identical: the four new `FollowSpeedFor`
+    parameters and the `ExecuteMoves` `Acceleration` write are threaded/written unconditionally but
+    read ONLY by the CACC arm (103 pre-C11-iii parity tests unchanged, including
+    `Rung1`/`Rung9b`/`RungA2`/`RungB1`/`RungC11ParityTests` (IDM)/`RungC11AccParityTests` (ACC) —
+    verified). New anchor: `scenarios/24-cacc-carfollow`
+    (`tests/Sim.ParityTests/RungC11CaccParityTests.cs`, 70 steps, exact 1e-3) — both vTypes CACC,
+    leader maxSpeed=6; follower free-accelerates under speed control, transitions through the
+    1.5-2.0s time-gap HYSTERESIS band, then COOPERATIVE gap control (leader IS CACC, so the ACC
+    fallback is never actually exercised by this golden — ported and cited but unreached by this
+    anchor), settling at the tight CACC cooperative gap. **Deferred**: the
+    `CACC_MODE_NO_LEADER`/`CACC_MODE_LEADER_NO_CAV`/`CACC_MODE_LEADER_CAV`
+    `CommunicationsOverrideMode` branches (unreachable — no vType/param in this engine's ingest
+    ever sets `CACC_CommunicationsOverrideMode` away from its `CACC_NO_OVERRIDE` ctor default),
+    the ACC-fallback path end-to-end (ported, but not exercised by any committed golden — needs a
+    mixed CACC-follows-non-CACC scenario), and CACC+junction/stop interplay beyond what the ported
+    `stopSpeed`/`AdaptToJunctionLeader` plumbing itself guarantees.
 - **C12. Pedestrians & crossings; public transport.** Pedestrians already appear as junction foes in
   the ported `getLeaderInfo` (the `leader==nullptr` ped branch); add vehicles yielding at crosswalks,
   and bus stops / dwell times / schedules. Breadth; behavioral, with parity where a SUMO analog exists
