@@ -1,0 +1,24 @@
+{
+  "_comment": "Empirically-resolved SUMO vType parameters for every vType used by this scenario, dumped via libsumo/TraCI. Ground truth for the vType init cross-check; captures per-vType overrides on top of implicit vClass defaults.",
+  "backend": "traci",
+  "sumo_version": "Eclipse SUMO sumo Version 1.20.0",
+  "vTypes": {
+    "car": {
+      "accel": 2.6,
+      "apparentDecel": 4.5,
+      "carFollowModel": "Krauss",
+      "decel": 4.5,
+      "emergencyDecel": 9.0,
+      "height": 1.5,
+      "length": 5.0,
+      "maxSpeed": 55.55555555555556,
+      "minGap": 2.5,
+      "sigma": 0.0,
+      "speedDeviation": 0.0,
+      "speedFactor": 1.0,
+      "tau": 1.0,
+      "vClass": "passenger",
+      "width": 1.8
+    }
+  }
+}

@@ -851,14 +851,20 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     (arrival lane -> exit lane on one edge), not just a longitudinal lane-per-edge chain -- build the
     anchor + golden FIRST to pin exactly when SUMO shows the A->B change, then decide the pool
     representation.
+    **ANCHOR BUILT (committed, NON-TESTED): `scenarios/37-intraedge-lanechange`** -- E0(1 lane)->
+    E1(2 lanes)->E2(1 lane); E0_0 connects only to E1_1 (forced arrival on the WRONG middle lane),
+    E1->E2 only from E1_0, so v0 must intra-edge-change E1_1->E1_0 on E1. SUMO golden: E0_0 (t<=14),
+    arrive E1_1 at t=15, STAY on E1_1 t=15-17, change to E1_0 at t=18, :N2_0_0 (t=29), E2_0 (t=30) --
+    so the FCD shows the arrival lane E1_1 for 3 steps before the change (the port must reproduce
+    that, not snap to the exit lane). The engine crashes at insertion (`InvalidOperationException`):
+    the C2-iii backward pass propagates E1_1's offset -1 back to the 1-lane E0_0 and the departure
+    redirect applies it -> lane -1, so the port ALSO has to (a) apply bestLaneOffset per-edge where
+    actionable / clamp the departure redirect to the edge's lane range.
     **Done-condition (standard isolate -> golden -> reverse-engineer -> port -> gate):** (1) intra-edge
     redirection at EVERY hop (arrival lane with no onward connection -> move to the same-edge sibling
     that connects, record it as the edge's exit lane, strategic-LC across); no throw for any route
-    SUMO routes. (2) the clean `-L 2` repro runs to completion in the engine. (3) NEW anchor
-    `scenarios/NN-intraedge-lanechange/`: 2-lane, >=3-edge net where a vehicle is forced onto the
-    WRONG lane of a MIDDLE edge and must intra-edge-change to reach the last edge (scenario 36 covers
-    only the departure edge); `sigma=0`, one vehicle, SUMO golden `--precision 6`, match
-    lane/pos/speed @1e-3. (4) INERT: scenario 36 + 18 + all committed stay green; `Sim.Bench`
+    SUMO routes. (2) the clean `-L 2` repro runs to completion in the engine. (3) anchor
+    `scenarios/37-intraedge-lanechange` passes exact @1e-3 (golden already committed). (4) INERT: scenario 36 + 18 + all committed stay green; `Sim.Bench`
     highway-dense determinism hash `42F875C2662DB78E` unchanged; departure-edge + single-connection
     behavior byte-identical. (5) parity-reviewer ACCEPT, faithful to `MSVehicle.cpp`. Briefing
     transcribed from NEED-C2iii-followup-intraedge-lanechange.md (sibling viz/benchmark track).

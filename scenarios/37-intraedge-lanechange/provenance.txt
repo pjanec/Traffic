@@ -1,0 +1,24 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T15:10:00Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# C2-v intra-edge mid-route lane change NON-TESTED ANCHOR (engine port not yet done -- see TASKS.md).
+#   3 edges E0(1 lane)->E1(2 lanes)->E2(1 lane). E0_0 connects ONLY to E1_1, so v0 ARRIVES on the
+#   "wrong" middle-edge lane E1_1; E1->E2 connects ONLY from E1_0, so v0 must intra-edge-change
+#   E1_1->E1_0 while traversing E1, before junction N2. SUMO golden: v0 on E0_0 (t<=14), arrives
+#   E1_1 at t=15, STAYS on E1_1 for t=15,16,17 (shows the arrival lane), changes to E1_0 at t=18,
+#   crosses :N2_0_0 (t=29), E2_0 (t=30). The engine crashes at insertion: the C2-iii route-wide
+#   backward pass propagates E1_1's bestLaneOffset -1 back to the 1-lane E0_0, and the departure
+#   redirect applies it -> lane index -1 (InvalidOperationException). The port must (a) apply
+#   bestLaneOffset PER-EDGE where actionable (not propagate to a departure edge that cannot change),
+#   and (b) let the vehicle arrive on the connection's toLane (E1_1) and strategic-LC to the exit
+#   lane (E1_0) -- a pool intra-edge lateral transition, since the FCD must show E1_1 first (t=15-17)
+#   then E1_0 (t=18+). Euler, sigma=0, teleport off, seed 42.
+# net: netconvert from nodes/edges/connections, --no-turnarounds.
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# input file hashes (sha256):
+input=net.net.xml sha256=6568ccfb7b10434821471b2b34229fa61170ab891bf3fdc37043ac146051a893
+input=rou.rou.xml sha256=30d2ad08e9ba2cb8dfd68ed8c1e24a2de14cab5697db903d7c7a254bef4d285b
+input=config.sumocfg sha256=308989acc91d865dbc311a287f15d701f7111c51452727d4fd40c76b5e46280f
