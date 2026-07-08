@@ -1243,7 +1243,13 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
   step 2 (follower inserts at t=0, presence mismatch). SIMPLIFICATION (documented): only the FIRST
   (nearest) downstream leader is followed (no multi-leader min across several downstream lanes) --
   sufficient for the single-leader anchor. keepClear/C5 covers the box-blocking STOPPED-downstream
-  case (checkRewindLinkLanes); this is the MOVING-leader case. Parity-reviewer gate pending.
+  case (checkRewindLinkLanes); this is the MOVING-leader case. Parity-reviewer ACCEPT (both mechanisms
+  non-vacuous; insertion reorder verified outcome-neutral vs 15 multi-departure scenarios + D1/D8/B3
+  hashes; gap/lookahead/onInsertion-followSpeed faithful to MSVehicle.cpp:2238/3040 + MSLane.cpp:1341
+  + MSCFModel.cpp:334). **FOLLOW-UP (flagged by reviewer, not yet needed):** `TryFindCrossJunctionLeader`
+  returns only the NEAREST downstream leader; SUMO Min's over ALL downstream lanes within the
+  lookahead. Inert for every committed scenario -- but a future scenario with a farther, slower
+  downstream leader that binds tighter than a nearer one would need the multi-leader min.
 - **C6. Actuated / adaptive traffic lights + yellow decision.** Rung 10 did STATIC `tlLogic` only.
   - **C6-i. DONE. Yellow decision ("stop if you can brake, else go").** `scenarios/30-yellow-decision`
     (`RungC6YellowDecisionParityTests`, exact @1e-3). Ported the `canBrakeBeforeStopLine` gate from
