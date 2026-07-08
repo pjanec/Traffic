@@ -1133,9 +1133,17 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
   does not yield. INERT outside the keepClear box (KeepClearConstraint is +infinity there) -- suite
   133 -> 135 green. NOTE: the willPass predicate covers only the keepClear reason; other
   not-passing reasons (red-light-held, stopped-for-any-cause) are not modeled (no committed scenario
-  exercises them). **STILL OPEN (own rung): general cross-junction leader following** -- a stopped/
-  slow vehicle on the exit edge is not yet seen as a plain car-following leader; keepClear covers the
-  box-blocking (stopped-downstream) case but not a MOVING downstream queue across a junction.
+  exercises them). **STILL OPEN (own rung): general cross-junction leader following.** ANCHOR BUILT
+  (committed, NON-TESTED): `scenarios/39-crossjunction-leader` -- AJ->J->JB single lane, a SLOW leader
+  (maxSpeed 3) on JB just past the junction; the follower (13.89) on AJ must car-follow it ACROSS the
+  junction. SUMO golden: the follower DECELERATES to 10.4 at t=4 while STILL ON AJ (it sees the
+  cross-junction leader). The engine's `LeaderFollowSpeedConstraint` sees only SAME-LANE leaders, so
+  its follower crosses at full speed then brakes erratically. TWO entangled mechanisms are needed:
+  (1) cross-junction leader following (a getLeaderInfo-across-links scan onto the downstream lane, cf.
+  MSVehicle::planMoveInternal's per-lane `ahead` leader loop) AND (2) cross-junction INSERTION safety
+  (SUMO DELAYS the follower's insertion to t=2 considering the downstream leader; the engine inserts
+  at t=0). Both must land together for parity -- own focused rung. keepClear/C5 already covers the
+  box-blocking STOPPED-downstream case (checkRewindLinkLanes); this is the MOVING-leader case.
 - **C6. Actuated / adaptive traffic lights + yellow decision.** Rung 10 did STATIC `tlLogic` only.
   - **C6-i. DONE. Yellow decision ("stop if you can brake, else go").** `scenarios/30-yellow-decision`
     (`RungC6YellowDecisionParityTests`, exact @1e-3). Ported the `canBrakeBeforeStopLine` gate from
@@ -1171,9 +1179,24 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     recompute); (3) `gapControl`/`duration`/`trySwitch`; (4) parser support for `type="actuated"` +
     per-phase `minDur`/`maxDur`. Trace handoff prepared:
     `scripts/sumo-actuated-tls-trace-instructions.md` (`DEBUG_DETECTORS` + `DEBUG_PHASE_SELECTION`
-    gated to `J`) + `actuated-tls-trace.zip` -- pins the detector positions and the per-step
-    gap/duration decisions. Port lands once the trace resolves those. SUMO available in-session for
-    golden regen.
+    gated to `J`) + `actuated-tls-trace.zip`. **TRACE RECEIVED + ANALYZED** (`debug/actuated-tls-trace`
+    on `pjanec/sumo`, verified byte-matching scenario 35). Detector placement confirmed: `ilpos =
+    laneLength - inductLoopPosition`, `inductLoopPosition = MIN2(detectorGap*speed=2*13.89,
+    (minDur/passingTime+0.5)*7.5) = 23.4868` (SJ det ilpos 119.313, WJ 122.513), detLength 0.
+    `trySwitch` is EVENT-DRIVEN (called only at the phase's computed end, not every step); at each
+    call `gapControl` = min over the phase's loops of `getTimeSinceLastDetection` (if < maxGap 3.0 and
+    !jammed, else -1=inf=end); if finite, `duration()` = `MAX3(minDur-actDur, ceil(myDetectorGap 2.0
+    - detectionGap), 1)` sets the next end (scenario-35 phase-0 extends 5->7->8->10->12->13 then ends
+    when gap>=3.0). **THE HARD PART (and why it is deferred as HIGH-RISK / precision-sensitive):**
+    `getTimeSinceLastDetection` = `now - myLastLeaveTime` where `myLastLeaveTime = SIMTIME +
+    passingTime(oldBackPos, ilpos, newBackPos, ...)` (MSInductLoop.cpp:165). The trace's actualGap is
+    consistently the naive geometric value MINUS exactly 1.0 s (e.g. ns1 back-exits ilpos at 3.9102
+    but the gap at t=5 is `5-(3.9102+1.0)=0.0898`, not `5-3.9102`), i.e. a one-step lag from SUMO's
+    detector-update-vs-TLS-control ordering + the FCD/SIMTIME step convention. The phase chain is
+    INTEGER-ROUNDING sensitive (a wrong gap flips `duration()`'s ceil or the `>=maxGap` end test ->
+    the whole timeline shifts), so this rung must nail the step/time convention exactly -- best done
+    as a focused pass with the trace open, not folded into a broad autonomous run. Everything except
+    that detector-timing convention is fully characterized above.
 - **C7. `speedFactor` distribution (heterogeneous desired speeds).** Per-vehicle desired-speed
   variation (`speedFactor` = `normc(1.0, dev)`, `default.speeddev`); today everyone wants exactly the
   limit (mean 1.0, dev forced 0). Depends on C1 (seeded RNG). Statistical parity. Produces realistic

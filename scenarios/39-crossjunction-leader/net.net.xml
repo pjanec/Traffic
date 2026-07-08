@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-08 15:15:20 by Eclipse SUMO netconvert Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <node-files value="nodes.nod.xml"/>
+        <edge-files value="edges.edg.xml"/>
+        <connection-files value="connections.con.xml"/>
+    </input>
+
+    <output>
+        <output-file value="net.net.xml"/>
+    </output>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+    </junctions>
+
+</configuration>
+-->
+
+<net version="1.20" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,400.00,0.00" origBoundary="0.00,0.00,400.00,0.00" projParameter="!"/>
+
+    <edge id=":J_0" function="internal">
+        <lane id=":J_0_0" index="0" speed="13.89" length="0.10" shape="200.00,-1.60 200.00,-1.60"/>
+    </edge>
+
+    <edge id="AJ" from="A" to="J" priority="-1">
+        <lane id="AJ_0" index="0" speed="13.89" length="200.00" shape="0.00,-1.60 200.00,-1.60"/>
+    </edge>
+    <edge id="JB" from="J" to="B" priority="-1">
+        <lane id="JB_0" index="0" speed="13.89" length="200.00" shape="200.00,-1.60 400.00,-1.60"/>
+    </edge>
+
+    <junction id="A" type="dead_end" x="0.00" y="0.00" incLanes="" intLanes="" shape="0.00,0.00 0.00,-3.20"/>
+    <junction id="B" type="dead_end" x="400.00" y="0.00" incLanes="JB_0" intLanes="" shape="400.00,-3.20 400.00,0.00"/>
+    <junction id="J" type="priority" x="200.00" y="0.00" incLanes="AJ_0" intLanes=":J_0_0" shape="200.00,0.00 200.00,-3.20 200.00,0.00">
+        <request index="0" response="0" foes="0" cont="0"/>
+    </junction>
+
+    <connection from="AJ" to="JB" fromLane="0" toLane="0" via=":J_0_0" dir="s" state="M"/>
+
+    <connection from=":J_0" to="JB" fromLane="0" toLane="0" dir="s" state="M"/>
+
+</net>

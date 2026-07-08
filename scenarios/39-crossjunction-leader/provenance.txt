@@ -1,0 +1,21 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T16:10:00Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# CROSS-JUNCTION LEADER FOLLOWING NON-TESTED ANCHOR (C5 follow-on; engine port not yet done -- see
+#   TASKS.md). AJ(200m)->J->JB(200m), single lane. A SLOW leader (maxSpeed 3) sits on JB just past
+#   the junction; the follower (13.89) approaches on AJ and must car-follow the leader ACROSS the
+#   junction. SUMO golden: foll DECELERATES to 10.4 at t=4 while STILL ON AJ (pos 199.3) -- it sees
+#   the cross-junction leader -- then follows onto JB. TWO entangled mechanisms the engine lacks:
+#   (1) cross-junction LEADER following (LeaderFollowSpeedConstraint sees only same-lane leaders, so
+#   the engine's follower crosses at full speed then brakes erratically), AND (2) cross-junction
+#   INSERTION safety (SUMO delays foll's insertion to t=2 considering the downstream leader; the
+#   engine inserts at t=0). Both must be ported for parity. Euler, sigma=0, teleport off, seed 42.
+# net: netconvert from nodes/edges/connections, --no-turnarounds.
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# input file hashes (sha256):
+input=net.net.xml sha256=ac74ab1d01acd5f83a556fdbff0eb8a8b214feff0142ef3c0c058d80fc6d8429
+input=rou.rou.xml sha256=1ff41f9ddd390a463edece399bcd4280991d89efdc58098dfaf7a6bb438dd300
+input=config.sumocfg sha256=cb5d41ce4ff3617552c7444b0c82b0ce18ac203fcc08f324acc2555f9f68bae7
