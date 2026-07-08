@@ -16,6 +16,13 @@ public sealed class ToleranceConfig
     public double? Angle { get; init; }
     public double? Acceleration { get; init; }
 
+    /// <summary>
+    /// Per-attribute ensemble (mean, std) tolerances for <c>parityMode="statistical"</c> configs
+    /// (see <see cref="Harness.TrajectoryComparator.CompareEnsemble"/>). Absent/null for
+    /// <c>parityMode="exact"</c> configs — those never populate or read this.
+    /// </summary>
+    public IReadOnlyDictionary<string, StatisticalAttributeTolerance>? Statistical { get; init; }
+
     public double ToleranceFor(string attribute) => attribute switch
     {
         "lane" => 0.0,
@@ -27,6 +34,20 @@ public sealed class ToleranceConfig
         "acceleration" => Acceleration ?? throw MissingTolerance(attribute),
         _ => throw new ArgumentException($"Unknown comparison attribute '{attribute}'.", nameof(attribute)),
     };
+
+    /// <summary>Ensemble-mean tolerance for <paramref name="attribute"/> (statistical parity mode).</summary>
+    public double MeanToleranceFor(string attribute) => StatisticalToleranceFor(attribute).Mean;
+
+    /// <summary>Ensemble-standard-deviation tolerance for <paramref name="attribute"/> (statistical parity mode).</summary>
+    public double StdToleranceFor(string attribute) => StatisticalToleranceFor(attribute).Std;
+
+    private StatisticalAttributeTolerance StatisticalToleranceFor(string attribute)
+    {
+        if (Statistical is null || !Statistical.TryGetValue(attribute, out var found))
+            throw new InvalidOperationException(
+                $"tolerance.json does not define a statistical tolerance for compared attribute '{attribute}'.");
+        return found;
+    }
 
     private static InvalidOperationException MissingTolerance(string attribute) =>
         new($"tolerance.json does not define a tolerance for compared attribute '{attribute}'.");
@@ -63,6 +84,9 @@ public sealed class ToleranceConfig
             Y = dto.Y,
             Angle = dto.Angle,
             Acceleration = dto.Acceleration,
+            Statistical = dto.Statistical?.ToDictionary(
+                kvp => kvp.Key,
+                kvp => new StatisticalAttributeTolerance(kvp.Value.Mean, kvp.Value.Std)),
         };
     }
 
@@ -85,5 +109,26 @@ public sealed class ToleranceConfig
         public double? Y { get; set; }
         public double? Angle { get; set; }
         public double? Acceleration { get; set; }
+
+        [JsonPropertyName("statistical")]
+        public Dictionary<string, StatisticalAttributeToleranceDto>? Statistical { get; set; }
+    }
+
+    private sealed class StatisticalAttributeToleranceDto
+    {
+        public double Mean { get; set; }
+        public double Std { get; set; }
     }
 }
+
+/// <summary>
+/// Ensemble mean/std tolerance pair for one attribute under <c>parityMode="statistical"</c>.
+/// JSON shape (nested under a top-level <c>"statistical"</c> object keyed by attribute name):
+/// <code>
+/// "statistical": {
+///   "speed": { "mean": 0.5, "std": 0.5 },
+///   "pos":   { "mean": 5.0, "std": 5.0 }
+/// }
+/// </code>
+/// </summary>
+public sealed record StatisticalAttributeTolerance(double Mean, double Std);

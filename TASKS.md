@@ -596,11 +596,46 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     variance (contrasted against the sigma=0 control, zero variance), different seeds diverge but
     stay bounded (`speed∈[0,vMax]`, no NaN, non-decreasing position), and `UseParallelPlan=true`
     reproduces the sequential sigma>0 result exactly.
-  - **C1-ii (OFFLINE, no SUMO). Statistical parity harness mode.** Extend `Sim.Harness`
-    (`TrajectoryComparator` + `tolerance.json` `parityMode="statistical"`) to compare ENSEMBLE
-    aggregate stats (mean/spread of speed, flow) within a statistical tolerance, instead of
-    per-`(vehicle,time)` points. Self-test it with synthetic ensembles (matching stats → pass; shifted
-    mean/inflated variance → fail), mirroring Task 0's comparator self-test. No SUMO needed.
+  - **C1-ii. DONE (OFFLINE, no SUMO). Statistical parity harness mode.** Added
+    `TrajectoryComparator.CompareEnsemble(actualRuns, expectedRuns, tolerance)`
+    (`src/Sim.Harness/TrajectoryComparator.cs`), a sibling to the existing exact-mode `Compare`
+    (untouched). For each attribute in `tolerance.ComparedAttributes` (default list, minus `"lane"`
+    — categorical, never averaged; silently skipped, documented in the method's XML doc) it pools
+    EVERY `(run, vehicle, time)` sample of that attribute across the whole ensemble into one flat
+    list (no per-run pre-averaging, no cross-ensemble run alignment) and computes the POPULATION
+    mean and std (`sqrt(mean((x-mean)^2))`, not Bessel-corrected) for actual vs. expected. Verdict
+    per attribute is `|meanActual-meanExpected| <= meanTolerance` AND `|stdActual-stdExpected| <=
+    stdTolerance`; empty ensembles yield mean=std=0 by convention (guarded, no throw/NaN).
+    `EnsembleComparisonResult`/`AttributeEnsembleComparisonResult`
+    (`src/Sim.Harness/EnsembleComparisonResult.cs`) mirror `ComparisonResult`/
+    `AttributeComparisonResult`'s reporting shape (actual/expected/error/withinTolerance for both
+    mean and std) so a failing test prints which stat failed and by how much. Explicitly deferred:
+    a per-time-bin flow/density (fundamental-diagram) variant — this only does whole-ensemble
+    pooling, documented as the richer later extension.
+    Schema: extended `ToleranceConfig` (`src/Sim.Harness/ToleranceConfig.cs`) with an optional
+    `IReadOnlyDictionary<string, StatisticalAttributeTolerance>? Statistical` property (new record
+    `StatisticalAttributeTolerance(double Mean, double Std)`) and `MeanToleranceFor`/
+    `StdToleranceFor` accessors mirroring `ToleranceFor`. JSON shape (new optional top-level
+    `"statistical"` object, keyed by attribute name):
+    `{"parityMode":"statistical","statistical":{"speed":{"mean":0.5,"std":0.5},"pos":{"mean":5.0,"std":5.0}}}`.
+    `parityMode="exact"` configs are untouched — the new DTO field is nullable/absent, and
+    `ToleranceConfigDto`/`Load`/`Parse` parse existing exact JSON byte-for-byte as before (verified
+    by a self-test that round-trips an existing-shape exact JSON and asserts `Statistical` is null
+    and every prior accessor is unchanged).
+    Self-test `tests/Sim.ParityTests/RungC1StatisticalHarnessTests.cs` (8 new tests, no SUMO, no
+    scenario files, no golden — synthetic in-memory `TrajectorySet` ensembles built with a
+    deterministic splitmix64-style local generator, mirroring the Task-0 comparator self-test
+    idiom): identical ensembles match (mean/std error ~0); a mean-shifted actual ensemble fails and
+    is attributed specifically to `MeanWithinTolerance=false` with `StdWithinTolerance=true`; an
+    actual ensemble with inflated noise amplitude (same mean, much larger spread) fails and is
+    attributed specifically to std, not mean; two independently-seeded same-parameter ensembles
+    (small per-point jitter) stay within the tolerance band (proves the tolerance is a real band,
+    not exact equality); `"lane"` in `comparedAttributes` is skipped without throwing even absent a
+    statistical tolerance entry for it; empty ensembles yield mean=std=0 without throwing; a
+    `parityMode="statistical"` JSON round-trips through `MeanToleranceFor`/`StdToleranceFor`; an
+    `exact` JSON still loads unchanged and `MeanToleranceFor` throws on it (no `Statistical` block).
+    Full suite: 86 passed, 0 failed (up from 78) — all prior exact-mode tests (`TrajectoryComparatorTests`,
+    every `Rung*ParityTests` real-golden test) verified unchanged and green.
   - **C1-iii ([net], needs SUMO). Statistical golden + parity test.** Generate N SUMO runs with
     `sigma>0` (different seeds) → an aggregate/ensemble golden; wire the statistical parity test for a
     `sigma>0` scenario. Requires the network-enabled golden-regen loop (SUMO install) — a `[net]`

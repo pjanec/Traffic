@@ -77,6 +77,98 @@ public static class TrajectoryComparator
         };
     }
 
+    /// <summary>
+    /// ENSEMBLE STATISTICAL comparison (C1-ii): compares aggregate distribution statistics of an
+    /// ensemble of engine runs (different seeds) against an ensemble of expected runs, instead of
+    /// matching individual (vehicle, time) points exactly. This is the right comparator once
+    /// <c>sigma&gt;0</c> — with dawdling there is no single trajectory to match to 1e-3, but the
+    /// POOLED distribution of speeds/positions across many seeds should still land in the same
+    /// place SUMO's does.
+    ///
+    /// "Pooled over all runs" means every (run, vehicle, time) sample of an attribute across the
+    /// whole ensemble is thrown into one flat list before computing statistics — runs are not
+    /// weighted or averaged individually first, and no attempt is made to align same-seed runs
+    /// between actual/expected (statistical parity does not require it: only the ensembles' shapes
+    /// need to agree, not which vehicle produced which point). For each attribute this computes:
+    ///   - mean: the arithmetic mean of the pooled samples.
+    ///   - std: the POPULATION standard deviation of the pooled samples, i.e.
+    ///     sqrt(mean((x - mean(x))^2)) — not the Bessel-corrected sample std, since we are treating
+    ///     the pooled ensemble as the full population we care about, not an estimate of a larger one.
+    /// An empty ensemble (no runs, or no points of that attribute) yields mean=std=0 by convention
+    /// (guarded explicitly below) rather than throwing or producing NaN.
+    ///
+    /// "lane" is intentionally never compared here: it is categorical (a string), and averaging or
+    /// taking a standard deviation of a lane id is not meaningful. Statistical tolerance configs
+    /// should list only numeric attributes (typically "speed", "pos") in comparedAttributes; if
+    /// "lane" is present it is silently skipped rather than rejected, so exact-mode's default
+    /// comparedAttributes list can be reused without modification.
+    ///
+    /// DEFERRED (not built here): a per-time-bin flow/density (fundamental-diagram) variant, which
+    /// would bucket samples by time (or by space) before aggregating instead of pooling everything
+    /// into one flat distribution. That is a richer, later extension — this method only supports
+    /// the whole-ensemble pooled mean/std bar decided for C1.
+    /// </summary>
+    public static EnsembleComparisonResult CompareEnsemble(
+        IReadOnlyList<TrajectorySet> actualRuns,
+        IReadOnlyList<TrajectorySet> expectedRuns,
+        ToleranceConfig tolerance)
+    {
+        var attributes = (tolerance.ComparedAttributes.Count > 0
+                ? tolerance.ComparedAttributes
+                : ToleranceConfig.DefaultComparedAttributes)
+            .Where(attribute => attribute != "lane")
+            .ToList();
+
+        var attributeResults = attributes.Select(attribute =>
+        {
+            var actualValues = PooledValues(actualRuns, attribute);
+            var expectedValues = PooledValues(expectedRuns, attribute);
+
+            var meanActual = Mean(actualValues);
+            var meanExpected = Mean(expectedValues);
+            var stdActual = PopulationStd(actualValues, meanActual);
+            var stdExpected = PopulationStd(expectedValues, meanExpected);
+
+            var meanError = Math.Abs(meanActual - meanExpected);
+            var stdError = Math.Abs(stdActual - stdExpected);
+
+            var meanTolerance = tolerance.MeanToleranceFor(attribute);
+            var stdTolerance = tolerance.StdToleranceFor(attribute);
+
+            return new AttributeEnsembleComparisonResult(
+                attribute,
+                meanActual, meanExpected, meanError, meanError <= meanTolerance,
+                stdActual, stdExpected, stdError, stdError <= stdTolerance);
+        }).ToList();
+
+        return new EnsembleComparisonResult { Attributes = attributeResults };
+    }
+
+    private static List<double> PooledValues(IReadOnlyList<TrajectorySet> runs, string attribute) =>
+        runs
+            .SelectMany(run => run.AllPoints)
+            .Select(point => GetValue(attribute, point))
+            .Where(value => value.HasValue)
+            .Select(value => value!.Value)
+            .ToList();
+
+    private static double Mean(IReadOnlyList<double> values) =>
+        values.Count > 0 ? values.Average() : 0.0;
+
+    private static double PopulationStd(IReadOnlyList<double> values, double mean) =>
+        values.Count > 0 ? Math.Sqrt(values.Average(v => (v - mean) * (v - mean))) : 0.0;
+
+    private static double? GetValue(string attribute, TrajectoryPoint point) => attribute switch
+    {
+        "pos" => point.Pos,
+        "speed" => point.Speed,
+        "x" => point.X,
+        "y" => point.Y,
+        "angle" => point.Angle,
+        "acceleration" => point.Acceleration,
+        _ => throw new ArgumentException($"Unknown comparison attribute '{attribute}'.", nameof(attribute)),
+    };
+
     private static double ComputeError(string attribute, TrajectoryPoint actual, TrajectoryPoint expected) => attribute switch
     {
         "lane" => string.Equals(actual.Lane, expected.Lane, StringComparison.Ordinal) ? 0.0 : 1.0,
