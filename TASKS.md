@@ -818,6 +818,18 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
   half. Reverse-engineer the exact approach speed (HANDOFF method step 3) so the t=8-9 decel matches
   to 1e-3. Own scoped rung, likely worth a focused session. `tolerance.json` exact,
   `["lane","pos","speed"]` @1e-3.
+
+  **Braking geometry measured (this session, to scope the port):** `R_0` length = 91.77 m. Golden
+  `rA` distance-to-stop-line → speed: t=7 dist 22.32 → 13.89 (not yet braking); t=8 dist 10.41 →
+  11.906; t=9 dist 3.01 → 7.406; then RELEASES (t=10 on `:J_0_0` at 10.006, accelerating). **It is
+  NOT a plain stop-at-stop-line brake** — `KraussModel.StopSpeed(dist=10.41)` ≈ 6.2 m/s, far below
+  the golden's 11.906, so the approach speed is GENTLER than braking-to-full-stop. This is SUMO's
+  arrival-time approach speed (arrive at the link able to yield to a foe arriving at time X; with
+  `mA` ~390 m / ~28 s away the permitted arrival speed is high, hence the gentle 11.9→7.4 dip then
+  release), NOT the `StopSpeed`-to-stop-line the 9b approaching-foe branch uses. So the port needs
+  the actual `MSLink` arrival-time/`opened()` machinery (arrivalTime/leaveTime vs foe arrivalTime,
+  `myFoeVisibilityDistance`), likely with a DEBUG-build instrument pass to extract the exact
+  per-step approach speed — this is the reverse-engineering the rung turns on.
 - **C4. Remaining right-of-way: right-before-left, roundabouts, stop signs.** 9b did PRIORITY
   junctions only. Right-before-left (uncontrolled symmetric), roundabout yielding (+
   `myRoundaboutBonus`/cooperative), all-way-stop (`LINKSTATE_ALLWAY_STOP`). Reuses 9b's `<request>`
