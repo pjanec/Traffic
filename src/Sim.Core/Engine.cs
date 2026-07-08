@@ -1213,6 +1213,23 @@ public sealed class Engine : IEngine
         var brakeDist = KraussModel.BrakeGap(v.Kinematics.Speed, stopDecel, headwayTime: 0.0, dt);
         var canBrakeBeforeLaneEnd = seen >= brakeDist;
 
+        // C6 (yellow decision): the planMoveInternal gate at MSVehicle.cpp:2754 adds the yellow/red
+        // stop-line brake ONLY when `canBrakeBeforeStopLine` -- the vehicle can still halt before
+        // the line. If it is too close (cannot brake in time), NO brake is added and it PROCEEDS
+        // through the light (the "dilemma zone" go decision). canBrakeBeforeStopLine
+        // (MSVehicle.cpp:2648): `seen - lane.getVehicleStopOffset(this) >= brakeDist`, with the
+        // stop offset 0 here (no vClass stop offset modeled). Byte-identical for rung 10 / the
+        // emergency-red scenario: there the vehicle always approaches from far enough to stop, so
+        // this is always true and never gates. (This is the mechanism the rung-A3 ignoreRed comment
+        // above notes was deferred -- it is the standard yellow "go if you can't stop" behavior,
+        // distinct from ignoreRed's jm-privilege arm.)
+        const double vehicleStopOffset = 0.0;
+        var canBrakeBeforeStopLine = seen - vehicleStopOffset >= brakeDist;
+        if (!canBrakeBeforeStopLine)
+        {
+            return double.PositiveInfinity;
+        }
+
         // majorStopOffset (MSVehicle.cpp:2642): MAX2(jmStoplineGap default
         // DIST_TO_STOPLINE_EXPECT_PRIORITY=1.0, lane.getVehicleStopOffset(this)=0 -- no
         // vClass-specific stop offset modeled) = 1.0.

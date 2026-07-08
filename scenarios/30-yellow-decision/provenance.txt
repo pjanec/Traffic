@@ -1,0 +1,18 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T09:21:10Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# net: scenarios/09-traffic-light's net with lane speeds raised to 25 and the tlLogic changed
+#   to Green(dur 11)/yellow(dur 3)/red -- a static program with a yellow phase.
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# C6 (yellow decision) anchor: veh0 cruises WJ at 25 m/s toward J; the light turns yellow at
+#   t=11 when veh0 (pos 255, seen 44 from the stop line < brakeDist 57.5) is too close to stop,
+#   so it PROCEEDS through at 25 (t=12 on JE) rather than emergency-braking. The can-brake case
+#   (yellow one step earlier) instead stops -- this is MSVehicle.cpp:2754's canBrakeBeforeStopLine
+#   gate. Euler, sigma=0, teleport off, seed 42.
+# input file hashes (sha256):
+input=net.net.xml sha256=591bd801f4110c5d97aab4e8b13ea9cf89faca01c39b118e3efc5e6cd3415562
+input=rou.rou.xml sha256=6118a86c65d54e2acc77c39af6c5e4da673941a55a4c3024ff6c7e35cf28d209
+input=config.sumocfg sha256=8698aef3b3f96565fb1389fa24916820c018769f69823a2df7df88aff47a37b8

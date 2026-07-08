@@ -906,17 +906,21 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
   lookup). Substantial own rung; needs a multi-vehicle downstream-jam scenario + almost certainly a
   DEBUG trace. SUMO is available in-session for golden regen.
 - **C6. Actuated / adaptive traffic lights + yellow decision.** Rung 10 did STATIC `tlLogic` only.
-  Add actuated/`delay_based` programs (`MSActuatedTrafficLightLogic` — gap-based phase extension) and
-  the yellow "stop if you can brake, else go" decision (the rung-10 deferred note; `MSLink::haveYellow`
-  + the `canBrake` branch). Parity axis (actuated needs detector state).
-  **SCOPING (this session):** `MSActuatedTrafficLightLogic` is ~1436 lines with heavy induction-loop
-  detector dependency (`MSInductLoop`, ~87 refs) -- the phase extension is driven by per-detector
-  time-gaps, so this rung needs the detector subsystem modeled first (vehicle presence + time-since-
-  detection per approach lane), then the gap-based `duration`/`maxDur` phase-switch logic. Large own
-  rung. The YELLOW-decision half (deferred from rung 10) is a much smaller, separable sub-rung
-  (`MSLink::haveYellow` + `MSVehicle::ignoreRed`'s `!canBrake` arm -- the passenger "too close to
-  stop, so proceed" branch) and is the natural first bite of C6. SUMO is available in-session for
-  golden regen.
+  - **C6-i. DONE. Yellow decision ("stop if you can brake, else go").** `scenarios/30-yellow-decision`
+    (`RungC6YellowDecisionParityTests`, exact @1e-3). Ported the `canBrakeBeforeStopLine` gate from
+    MSVehicle.cpp:2754 (condition at :2648, `seen - stopOffset >= brakeDist`) into
+    `Engine.RedLightConstraint`: a vehicle too close to a yellow/red light to stop in time PROCEEDS
+    through the junction instead of emergency-braking (the dilemma-zone "go" decision), rather than
+    always braking as rung 10 did. Scenario: scenario 09's TLS net, lane speed 25, a Green/yellow/red
+    static program; veh0 hits yellow at seen 44 m < its 57.5 m braking distance and cruises through
+    at 25 (the pre-C6 engine wrongly halted it at the stop line -- stash-test confirms). Byte-
+    identical for rung 10 (scenario 09) and emergency-red (scenario 16): those vehicles always
+    approach from far enough that the gate never fires. Parity-reviewer gated.
+  - **C6-ii. TODO. Actuated / `delay_based` programs.** `MSActuatedTrafficLightLogic` is ~1436 lines
+    with heavy induction-loop detector dependency (`MSInductLoop`, ~87 refs) -- the phase extension
+    is driven by per-detector time-gaps, so this rung needs the detector subsystem modeled first
+    (vehicle presence + time-since-detection per approach lane), then the gap-based `duration`/
+    `maxDur` phase-switch logic. Large own rung. SUMO is available in-session for golden regen.
 - **C7. `speedFactor` distribution (heterogeneous desired speeds).** Per-vehicle desired-speed
   variation (`speedFactor` = `normc(1.0, dev)`, `default.speeddev`); today everyone wants exactly the
   limit (mean 1.0, dev forced 0). Depends on C1 (seeded RNG). Statistical parity. Produces realistic
