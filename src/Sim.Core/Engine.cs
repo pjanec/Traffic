@@ -22,6 +22,14 @@ public sealed class Engine : IEngine
     // compact if that ever matters).
     private readonly List<int> _laneSeqPool = new();
 
+    // C2-v: the ARRIVAL-lane pool, parallel to _laneSeqPool slot-for-slot (same LaneSeqStart/Len
+    // slice). _laneSeqPool[k] is the lane the vehicle must reach to continue its route (the
+    // strategic-LC target); _laneSeqArrival[k] is the lane it physically occupies on ENTERING that
+    // slot's edge. They differ only at an intra-edge mid-route lane change; for every route with no
+    // such change (every pre-C2-v scenario) the two pools are identical, so the crossing (which
+    // reads _laneSeqArrival) is byte-identical to reading _laneSeqPool there.
+    private readonly List<int> _laneSeqArrival = new();
+
     // D3: this vehicle's scheduled stops (Sim.Ingest.VehicleDef.Stops), keyed by
     // VehicleRuntime.EntityIndex -- replaces the old per-vehicle `Queue<StopRuntime> Stops`
     // managed field. Populated once at LoadScenario, ONLY for vehicles that actually have stops
@@ -295,6 +303,7 @@ public sealed class Engine : IEngine
         // stale entries keyed against the previous scenario's vehicles. The pool only ever grows
         // within one scenario's lifetime; a fresh scenario starts it clean too.
         _laneSeqPool.Clear();
+        _laneSeqArrival.Clear();
         _stopsByEntity.Clear();
         _avoidedByEntity.Clear();
         foreach (var def in _demand.Vehicles)
@@ -630,10 +639,14 @@ public sealed class Engine : IEngine
         // equals the sequence's first element).
         // D3: append the handle-parallel sequence to the shared pool and slice into it, instead
         // of allocating a per-vehicle array -- same traversal, same order as before.
-        var handleSeq = _network!.ResolveLaneSequenceHandles(route.Edges, v.Def.DepartLaneIndex);
+        // C2-v: resolve the Exit (routing pool) AND Arrival sequences together (see
+        // _laneSeqArrival's own comment). Both slices share LaneSeqStart/Len; they differ only where
+        // the route requires an intra-edge lane change.
+        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
         v.LaneSeqStart = _laneSeqPool.Count;
-        v.LaneSeqLen = handleSeq.Length;
-        _laneSeqPool.AddRange(handleSeq);
+        v.LaneSeqLen = poolSeq.Length;
+        _laneSeqPool.AddRange(poolSeq);
+        _laneSeqArrival.AddRange(arrivalSeq);
         v.LaneSeqIndex = 0;
 
         v.Inserted = true;
@@ -786,10 +799,14 @@ public sealed class Engine : IEngine
             // THIS SAME iteration or any other vehicle's iteration this loop reads v's
             // LaneSeqStart/Len/Index after this point, see UpdateReroutes' own D5 comment below).
             var laneIndex = _network.LanesByHandle[v.LaneHandle].Index;
-            var newHandleSeq = _network.ResolveLaneSequenceHandles(newEdges, laneIndex);
+            // C2-v: append BOTH the Exit (pool) and Arrival slices in lockstep (they share
+            // LaneSeqStart/Len). The reroute keeps the vehicle physically where it is (arrival[0] ==
+            // its current lane), so for the common no-intra-change route this is identical to before.
+            var (newPoolSeq, newArrivalSeq) = _network.ResolveLaneSequenceHandlesWithArrival(newEdges, laneIndex);
             var newLaneSeqStart = _laneSeqPool.Count;
-            _laneSeqPool.AddRange(newHandleSeq);
-            _commandBuffer.ReplaceRoute(v, newLaneSeqStart, newHandleSeq.Length);
+            _laneSeqPool.AddRange(newPoolSeq);
+            _laneSeqArrival.AddRange(newArrivalSeq);
+            _commandBuffer.ReplaceRoute(v, newLaneSeqStart, newPoolSeq.Length);
 
             if (!_avoidedByEntity.TryGetValue(v.EntityIndex, out var avoidedEdges))
             {
@@ -2755,9 +2772,14 @@ public sealed class Engine : IEngine
 
                 v.Kinematics.Pos -= currentLane.Length;
                 v.LaneSeqIndex++;
-                // D3: keep LaneHandle/LaneId in lockstep -- direct pool-slice read, no string
-                // hash.
-                v.LaneHandle = _laneSeqPool[v.LaneSeqStart + v.LaneSeqIndex];
+                // C2-v: land on the new slot's ARRIVAL lane (the lane physically entered via the
+                // incoming connection), NOT its Exit/pool lane. They differ only at an intra-edge
+                // mid-route lane change: the vehicle arrives on lane A here and the strategic lane
+                // change (TryStrategicLaneChange, target = pool[slot]) then converges it onto the
+                // Exit lane B before the NEXT edge boundary (the convergence guard above waits for
+                // actual == pool[slot]). For every route with no intra-edge change Arrival == Exit,
+                // so this is byte-identical to reading _laneSeqPool. D3: direct pool-slice read.
+                v.LaneHandle = _laneSeqArrival[v.LaneSeqStart + v.LaneSeqIndex];
                 v.LaneId = _network.LanesByHandle[v.LaneHandle].Id;
             }
 

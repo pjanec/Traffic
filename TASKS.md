@@ -880,8 +880,29 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     `11-priority-junction` / `19-onramp-merge` / every committed scenario stays green at 137;
     `Sim.Bench` determinism hash unchanged. (3) parity-reviewer ACCEPT, faithful to `MSLink`. Build
     the anchor + golden FIRST (pin exactly SUMO's registration distance), then port.
-  - **C2-v. TODO (parity-track, exact @1e-3). Intra-edge mid-route lane change to reach an onward
-    connection.** The remaining half of multi-hop. **BLOCKS a general `netgenerate -L 2` city** (the
+  - **C2-v. DONE (parity-track, exact @1e-3). Intra-edge mid-route lane change to reach an onward
+    connection.** Port: the routing lane-sequence is now resolved as (Exit, Arrival) pairs per slot
+    (`NetworkModel.ResolveSequenceCore` + the new `_laneSeqArrival` pool parallel to `_laneSeqPool`).
+    `_laneSeqPool[k]` (Exit) is the lane the vehicle must reach to continue (strategic-LC target +
+    onward-connection source); `_laneSeqArrival[k]` is the lane it physically occupies on ENTERING
+    that slot's edge. The crossing lands the vehicle on the ARRIVAL lane; the existing C2-ii
+    `TryStrategicLaneChange` (target = pool[slot]) then converges arrival->exit, and the crossing
+    convergence guard holds the next boundary until it does -- the multi-lane generalization of the
+    departure-edge redirect, now unified: exit = arrivalLane + `bestLaneOffset` CLAMPED to the edge's
+    lane range (an offset that points off a 1-lane edge is a downstream change the vehicle makes on a
+    later edge, not here -- this is what fixed the old `lane -1` crash without a special case).
+    **TEST `RungC2vIntraEdgeLaneChangeParityTests`** (`scenarios/37-intraedge-lanechange`, Run 44)
+    passes exact @1e-3: E0_0 (t<=14) -> arrive E1_1 (t=15, shown for 3 steps) -> strategic-LC to E1_0
+    (t=18) -> :N2_0_0 (t=29) -> E2_0 (t=30), matching SUMO. Suite 140 -> 141. INERT: for every route
+    with no intra-edge change Arrival == Exit at every slot, so the Exit pool is byte-identical and
+    the crossing (reading `_laneSeqArrival`) is byte-identical -- scenario 18/36 + all committed +
+    the D1 determinism hash stay green (141). NON-VACUOUS: snapping the crossing to the Exit lane
+    fails at FirstDivergenceStep=15 (vehicle jumps to E1_0 instead of showing E1_1). SIMPLIFICATION
+    (documented, unexercised): a |offset| > 1 clamps/stays rather than moving one lane per edge.
+    Parity-reviewer gate pending. **UNBLOCKS a general `netgenerate -L 2` city.**
+    *(original briefing retained below for context.)*
+    Intra-edge mid-route lane change to reach an onward
+    connection. The remaining half of multi-hop. **BLOCKS a general `netgenerate -L 2` city** (the
     benchmark generator `scripts/gen-benchmark.sh` stays pinned to `-L 1` until this lands); the
     hand-built C2-iii anchor (scenario 36) only exercises the DEPARTURE edge.
     **The gap:** C2-iii's `ResolveLaneSequence` redirects the pool onto the best-continuing lane

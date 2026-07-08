@@ -264,55 +264,85 @@ public sealed record NetworkModel(
     // all single-lane-per-edge, per C2-i's own inert-control test), `ComputeBestLanes` reports
     // `AllowsContinuation=true` for it, so `currentLaneIndex` stays exactly `departLaneIndex`
     // -- this resolves to EXACTLY the prior behavior.
-    public IReadOnlyList<string> ResolveLaneSequence(IReadOnlyList<string> routeEdges, int departLaneIndex)
+    public IReadOnlyList<string> ResolveLaneSequence(IReadOnlyList<string> routeEdges, int departLaneIndex) =>
+        ResolveSequenceCore(routeEdges, departLaneIndex).Select(p => p.Exit).ToList();
+
+    // C2-v: the ordered lane sequence, resolved as (Exit, Arrival) pairs per slot.
+    //  * Exit  = the lane the vehicle must be on to CONTINUE its route from this edge (the onward
+    //            connection's fromLane) -- this is the routing "pool" the strategic lane change
+    //            converges the vehicle onto and that the next hop's connection is taken from.
+    //  * Arrival = the lane the vehicle physically OCCUPIES on entering this edge (the incoming
+    //            connection's toLane; the depart lane on the first edge). For an internal (via)
+    //            lane and for any edge whose arrival lane already connects onward, Arrival == Exit.
+    //
+    // They differ ONLY at an intra-edge mid-route lane change (C2-v): the vehicle arrives on lane A
+    // (fixed by the incoming connection) but the only onward connection to the next route edge
+    // leaves from a sibling lane B, so it must lane-change A->B while traversing this edge. This is
+    // the multi-lane generalization of the departure-edge redirect (a vehicle departing a drop lane
+    // that doesn't continue), which SUMO models uniformly: `bestLaneOffset` is a PER-EDGE quantity
+    // and the arrival lane and exit lane on one edge legitimately differ (MSVehicle::updateBestLanes,
+    // MSVehicle.cpp:5744-6063). For every route whose arrival lane already continues at every hop
+    // (every pre-C2-v scenario), Arrival == Exit at every slot, so the resolved Exit sequence -- and
+    // therefore the routing pool -- is byte-identical to before.
+    private List<(string Exit, string Arrival)> ResolveSequenceCore(IReadOnlyList<string> routeEdges, int departLaneIndex)
     {
-        var sequence = new List<string>();
-        var firstEdgeId = routeEdges[0];
-        var currentLaneIndex = departLaneIndex;
+        var result = new List<(string Exit, string Arrival)>();
+        // The lane the vehicle physically occupies on the current edge (depart lane on edge 0, then
+        // each hop's incoming connection toLane).
+        var arrivalIndex = departLaneIndex;
 
-        if (routeEdges.Count > 1)
+        for (var i = 0; i < routeEdges.Count; i++)
         {
-            var bestLanes = ComputeBestLanes(routeEdges, firstEdgeId);
-            foreach (var continuation in bestLanes)
+            var edgeId = routeEdges[i];
+            var edge = EdgesById[edgeId];
+            var isLast = i == routeEdges.Count - 1;
+
+            // Determine this edge's EXIT lane: steer from the arrival lane onto the route-wide
+            // best-continuing sibling via its bestLaneOffset (MSVehicle::updateBestLanes). The offset
+            // is a PER-EDGE quantity that is nonzero whenever the arrival lane's downstream
+            // continuation is worse than a sibling's -- even when the arrival lane DOES connect to the
+            // immediate next edge but that path dead-ends further along (scenario 36: E0_0 connects to
+            // E1_0, but only E0_1->E1_1 continues to E2, so E0_0's offset is +1). CLAMP to the edge's
+            // own lane range: an offset that points off this edge (scenario 37: E1_1's offset -1
+            // propagates back to the 1-lane E0_0 as -1) is a DOWNSTREAM change the vehicle cannot make
+            // on this edge, so it stays on the arrival lane and the change happens on a later edge
+            // where the target lane exists. The last edge has no onward connection, so exit == arrival.
+            // (SIMPLIFICATION, documented: a |offset| > 1 that clamps stays put rather than moving one
+            // lane toward the target per edge -- no committed scenario needs a 2+-lane mid-route
+            // change; the anchors use single-lane offsets that either fit or point off a 1-lane edge.)
+            int exitIndex;
+            if (isLast)
             {
-                if (continuation.LaneIndex != departLaneIndex)
-                {
-                    continue;
-                }
+                exitIndex = arrivalIndex;
+            }
+            else
+            {
+                var best = ComputeBestLanes(routeEdges, edgeId);
+                var offset = best.First(q => q.LaneIndex == arrivalIndex).BestLaneOffset;
+                var target = arrivalIndex + offset;
+                var targetExists = edge.Lanes.Any(l => l.Index == target);
+                exitIndex = offset != 0 && targetExists ? target : arrivalIndex;
+            }
 
-                // C2-iii: steer the pool onto the route-wide best-continuing lane whenever the depart
-                // lane is not it (nonzero BestLaneOffset). Gating on the offset rather than
-                // AllowsContinuation is what makes multi-hop work: SUMO's backward pass keeps a
-                // dead-ending lane's `allowsContinuation` true when its immediate downstream lane has
-                // any length (MSVehicle.cpp:6046), yet still sets BestLaneOffset to steer off it. For
-                // the single-junction C2-ii case the depart lane's offset is nonzero exactly when it
-                // did not continue, so this is byte-identical there (scenario 18 unchanged).
-                if (continuation.BestLaneOffset != 0)
-                {
-                    currentLaneIndex = departLaneIndex + continuation.BestLaneOffset;
-                }
+            var arrivalLane = edge.Lanes.First(l => l.Index == arrivalIndex);
+            var exitLane = edge.Lanes.First(l => l.Index == exitIndex);
+            result.Add((exitLane.Id, arrivalLane.Id));
 
+            if (isLast)
+            {
                 break;
             }
-        }
 
-        var firstEdge = EdgesById[firstEdgeId];
-        var currentLane = firstEdge.Lanes.First(l => l.Index == currentLaneIndex);
-        sequence.Add(currentLane.Id);
-
-        for (var i = 0; i < routeEdges.Count - 1; i++)
-        {
-            var fromEdgeId = routeEdges[i];
+            // Advance to the next edge via the EXIT lane's onward connection.
             var toEdgeId = routeEdges[i + 1];
-
-            var candidates = ConnectionsByFromEdgeLane.TryGetValue((fromEdgeId, currentLaneIndex), out var conns)
+            var candidates = ConnectionsByFromEdgeLane.TryGetValue((edgeId, exitIndex), out var conns)
                 ? conns.Where(c => c.To == toEdgeId).ToList()
                 : new List<Connection>();
 
             if (candidates.Count == 0)
             {
                 throw new InvalidDataException(
-                    $"No <connection> found from edge '{fromEdgeId}' lane {currentLaneIndex} to edge '{toEdgeId}'.");
+                    $"No <connection> found from edge '{edgeId}' lane {exitIndex} to edge '{toEdgeId}'.");
             }
 
             Connection connection;
@@ -338,16 +368,15 @@ public sealed record NetworkModel(
 
             if (connection.Via is { } via)
             {
-                sequence.Add(via);
+                // Internal (via) lane: arrival == exit (a vehicle never intra-edge-changes on a
+                // one-lane junction interior in this rung's scope).
+                result.Add((via, via));
             }
 
-            var toEdge = EdgesById[toEdgeId];
-            var toLane = toEdge.Lanes.First(l => l.Index == connection.ToLane);
-            sequence.Add(toLane.Id);
-            currentLaneIndex = connection.ToLane;
+            arrivalIndex = connection.ToLane;
         }
 
-        return sequence;
+        return result;
     }
 
     // D2: the handle-parallel form of ResolveLaneSequence -- same traversal, same lane
@@ -366,6 +395,27 @@ public sealed record NetworkModel(
         }
 
         return handles;
+    }
+
+    // C2-v: the handle-parallel Exit (routing pool) AND Arrival sequences together. `Pool[k]` is the
+    // lane the vehicle must be on to continue (strategic-LC target + onward-connection source);
+    // `Arrival[k]` is the lane it physically occupies on entering that slot's edge (== Pool[k] for
+    // every slot except an intra-edge mid-route lane change). The crossing code sets the vehicle's
+    // actual lane to Arrival[k] on entering a slot and the strategic lane change converges it onto
+    // Pool[k] -- so for every route with no intra-edge change (Arrival == Pool everywhere) this is
+    // byte-identical to ResolveLaneSequenceHandles.
+    public (int[] Pool, int[] Arrival) ResolveLaneSequenceHandlesWithArrival(IReadOnlyList<string> routeEdges, int departLaneIndex)
+    {
+        var sequence = ResolveSequenceCore(routeEdges, departLaneIndex);
+        var pool = new int[sequence.Count];
+        var arrival = new int[sequence.Count];
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            pool[i] = LaneHandleById[sequence[i].Exit];
+            arrival[i] = LaneHandleById[sequence[i].Arrival];
+        }
+
+        return (pool, arrival);
     }
 
     // C2-i: single-look-ahead scoped port of MSVehicle::updateBestLanes / LaneQ (see

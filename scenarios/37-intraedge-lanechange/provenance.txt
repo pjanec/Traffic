@@ -4,7 +4,7 @@ generated_utc=2026-07-08T15:10:00Z
 command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
 state_time=1
 fcd_precision=6
-# C2-v intra-edge mid-route lane change NON-TESTED ANCHOR (engine port not yet done -- see TASKS.md).
+# C2-v intra-edge mid-route lane change PARITY ANCHOR (RungC2vIntraEdgeLaneChangeParityTests, exact @1e-3).
 #   3 edges E0(1 lane)->E1(2 lanes)->E2(1 lane). E0_0 connects ONLY to E1_1, so v0 ARRIVES on the
 #   "wrong" middle-edge lane E1_1; E1->E2 connects ONLY from E1_0, so v0 must intra-edge-change
 #   E1_1->E1_0 while traversing E1, before junction N2. SUMO golden: v0 on E0_0 (t<=14), arrives
