@@ -1,0 +1,22 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-08T15:02:47Z
+target_concurrency=300
+seed=42
+begin=0 end=900 step-length=1
+net_command=netgenerate --grid --grid.number=24 --grid.length=500 -L 1 --tls.guess --seed 42 -o city.net.xml
+demand_command_randomtrips=python3 $SUMO_HOME/tools/randomTrips.py -n city.net.xml -e 900 -p 1.2447619033333333 --fringe-factor 5 --seed 42 -o city.trips.xml -r city.trips.rou.xml
+demand_command_duarouter=duarouter -n city.net.xml -r city.trips.xml -o city.rou.xml --seed 42 --ignore-errors --named-routes
+demand_postprocess=add DEFAULT_VEHTYPE (vClass=passenger sigma=0) vType + type= reference on every <vehicle> (randomTrips/duarouter emit neither; DemandParser requires an explicit vType -- see gen-benchmark.sh add_default_vtype)
+tuned_insertion_period_s=1.2447619033333333
+measured_mean_trip_time_s=424.651261
+measured_peak_running=485
+measured_mean_running_steady=390.395000
+measured_arrived=238
+net_grid_number=24 net_grid_length=500 net_lanes=1
+net_capacity_finding=target concurrency reached within tolerance band
+engine_capability_note=LANES pinned at 1 -- see gen-benchmark.sh header 'ENGINE CAPABILITY FINDING' (multi-lane multi-hop route-to-lane resolution is a single-look-ahead scoped port in Sim.Core/Engine.cs, C2-ii; -L 2+ throws 'No connection found' at insertion for some multi-edge routes)
+# input file hashes (sha256):
+input=net.net.xml sha256=c856cbf7c2bc464b4627ab4831c158e2061e9c4baef76889f418933f6fafee5c
+input=rou.rou.xml sha256=8e949b76f1b41d15bb567b73dc4e44d999f25da1e100b49f6592fa878c4aac5b
+input=config.sumocfg sha256=ec0ae84d98c1c923eddf8710d04aaed4ad5410e200bdba8cedd822d47de5857b

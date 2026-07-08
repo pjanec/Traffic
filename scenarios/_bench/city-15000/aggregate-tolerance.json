@@ -1,0 +1,6 @@
+{
+  "arrivedRelTol": 0.35,
+  "meanDurationRelTol": 0.35,
+  "meanSpeedRelTol": 0.35,
+  "distributionDistanceTol": 0.35
+}

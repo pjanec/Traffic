@@ -277,6 +277,20 @@ different lane) needs an INTRA-EDGE lane change mid-route, which `ResolveLaneSeq
 `NEED-C2iii-followup-intraedge-lanechange.md` (hand to the parity session). The benchmark generator
 stays pinned to `-L 1` until that lands.
 
+**Even `-L 1` scaling is blocked by a SEPARATE engine defect found at rung 2 (~300 concurrent).**
+The `-L 1` ladder was scaled (city-300/3000/15000, one shared 24×24 net) and immediately exposed a
+genuine `Sim.Core` correctness bug: `Engine.FindFoeVehicle` (`Engine.cs:2279`) matches a
+priority-junction foe if the foe internal lane appears **anywhere** in a vehicle's full route
+(no proximity/time-window filter), so on a 576-junction net almost every approach lane finds a
+false "approaching foe" and vehicles stall at stop lines forever. Verified against the actual code
++ a `city-300` run: engine arrived **46** vs SUMO **238** on identical demand, 404 vehicles stuck at
+end, while SUMO runs the same net at `meanSpeedRelative≈0.98` (free flow). Full root-cause + repro +
+parity done-condition in `NEED-priorityjunction-farrouted-foe-falsepositive.md`. **This blocks the
+`-L 1` scaling curve too** — city-300 is committed as the proof-of-bug rung (FAIL); city-3000/15000
+have committed SUMO references but their engine runs are DEFERRED until the fix lands (see
+`scenarios/_bench/SCALING.md`). Both engine defects (this + intra-edge LC) are the benchmark's
+headline output: it did its job — surfacing correctness gaps the small parity scenarios can't.
+
 **Correction to "Dependency status — C2 gate CLEARED" below:** that note's claim that "all rungs
 (30 → 15k) are engine-capability-unblocked" is **too strong** for multi-LANE nets specifically.
 Empirically reproduced during VB-8: a `netgenerate -L 2 --tls.guess` grid + multi-edge
