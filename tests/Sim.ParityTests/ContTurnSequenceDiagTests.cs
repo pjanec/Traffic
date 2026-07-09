@@ -1,4 +1,5 @@
 using Sim.Core;
+using Sim.Harness;
 using Xunit;
 
 namespace Sim.ParityTests;
@@ -59,6 +60,32 @@ public class ContTurnSequenceDiagTests
         var last = traj.AllPoints.Where(p => p.VehicleId == "vN").OrderBy(p => p.Time).Last();
         arrived = last.Lane == "CE_1" || !traj.AllPoints.Any(p => p.VehicleId == "vN" && p.Time >= maxT - 0.5);
         Assert.True(arrived, $"vN did not complete the turn (last lane {last.Lane} @ t={last.Time}).");
+    }
+
+    // C4-vii-a PART 2 (cont-turn SPEED) -- EXACT @1e-3 pos/speed parity. SUMO cautiously brakes the
+    // minor `cont` turn (golden dips 13.89 -> 10.036 -> 5.536 on :C_3_0 -> 8.136 on :C_16_0 -> 9.260);
+    // the baseline engine measured the minor-link cautious-approach `seen` from the wrong (intermediate
+    // internal) lane, so it never braked and entered :C_3_0 at ~9.26. FIX (Engine.cs 2a): when the
+    // approach lane is itself internal (the cont-turn signature), measure `seen` to the junction-link
+    // internal lane :C_16_0 through the intermediate internal lane. Reproduces the golden EXACTLY.
+    // See scenarios/_diag/cont-turn-sequence/provenance.txt.
+    [Fact]
+    public void ContTurn_SpeedMatchesGoldenExact()
+    {
+        var engine = new Engine();
+        engine.LoadScenario(
+            System.IO.Path.Combine(Dir, "net.net.xml"),
+            System.IO.Path.Combine(Dir, "rou.rou.xml"),
+            System.IO.Path.Combine(Dir, "config.sumocfg"));
+
+        var actual = engine.Run(45);
+        var golden = FcdParser.Parse(System.IO.Path.Combine(Dir, "golden.fcd.xml"));
+        var tolerance = ToleranceConfig.Load(System.IO.Path.Combine(Dir, "tolerance.json"));
+
+        var result = TrajectoryComparator.Compare(actual, golden, tolerance);
+
+        Assert.True(result.IsMatch,
+            $"cont-turn speed parity FAILED. FirstDivergenceStep={result.FirstDivergenceStep?.ToString() ?? "none"}");
     }
 
     private static string RepoRoot()

@@ -1931,7 +1931,29 @@ public sealed class Engine : IEngine
             // NLHandler.cpp:1413: a link with no explicit `visibility` attribute defaults its
             // foe-visibility distance to 4.5 (for non-ZIPPER links) -- this net specifies none.
             const double visibilityDistance = 4.5;
-            var seen = approachLane.Length - v.Kinematics.Pos;
+
+            // C4-vii-a 2a: `seen` is the distance to ego's junction-link internal lane (egoInternalLaneId).
+            // For an ordinary (single-internal-lane) turn `approachLane` IS the normal lane immediately
+            // before that internal lane, so `seen = approachLane.Length - pos` -- the exact pre-existing
+            // computation, kept verbatim on that path so every committed minor-link scenario stays
+            // byte-identical. For a `cont` turn the junction link's internal lane (:C_16_0) is reached
+            // only AFTER an intermediate internal lane (:C_3_0), so `approachLane` is itself an internal
+            // (':'-edge) lane and `approachLane.Length - pos` is meaningless (pos is on a different lane).
+            // There, walk the pool from ego's CURRENT lane to the link's internal lane, summing lane
+            // lengths, to get the true distance to the junction-link stop line.
+            double seen;
+            if (approachLane.EdgeId.Length > 0 && approachLane.EdgeId[0] == ':')
+            {
+                seen = _network.LanesByHandle[v.LaneHandle].Length - v.Kinematics.Pos;
+                for (var i = v.LaneSeqIndex + 1; i < egoLinkSeqIndex; i++)
+                {
+                    seen += _network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + i]].Length;
+                }
+            }
+            else
+            {
+                seen = approachLane.Length - v.Kinematics.Pos;
+            }
 
             // couldBrakeForMinor (MSVehicle.cpp:2805): `!havePriority() && brakeDist < seen &&
             // !lastWasContMajor()`. The lastWasContMajor arm is inert here (ego's approach lane is

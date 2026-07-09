@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-09 21:27:42 by Eclipse SUMO sumo Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="rou.rou.xml"/>
+    </input>
+
+    <output>
+        <precision value="6"/>
+        <fcd-output value="golden.fcd.xml"/>
+        <fcd-output.acceleration value="true"/>
+        <save-state.times value="1"/>
+        <save-state.files value="golden.state.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="45"/>
+        <step-length value="1"/>
+    </time>
+
+    <processing>
+        <step-method.ballistic value="false"/>
+        <time-to-teleport value="-1"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+
+</configuration>
+-->
+
+<fcd-export xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/fcd_file.xsd">
+    <timestep time="0.000">
+        <vehicle id="vN" x="198.400000" y="400.000000" angle="180.000000" type="car" speed="0.000000" pos="0.000000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="1.000">
+        <vehicle id="vN" x="198.400000" y="397.400000" angle="180.000000" type="car" speed="2.600000" pos="2.600000" lane="NC_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="2.000">
+        <vehicle id="vN" x="198.400000" y="392.200000" angle="180.000000" type="car" speed="5.200000" pos="7.800000" lane="NC_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="3.000">
+        <vehicle id="vN" x="198.400000" y="384.400000" angle="180.000000" type="car" speed="7.800000" pos="15.600000" lane="NC_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="4.000">
+        <vehicle id="vN" x="198.400000" y="374.000000" angle="180.000000" type="car" speed="10.400000" pos="26.000000" lane="NC_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="5.000">
+        <vehicle id="vN" x="198.400000" y="361.000000" angle="180.000000" type="car" speed="13.000000" pos="39.000000" lane="NC_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="6.000">
+        <vehicle id="vN" x="198.400000" y="347.110000" angle="180.000000" type="car" speed="13.890000" pos="52.890000" lane="NC_1" slope="0.000000" acceleration="0.890000"/>
+    </timestep>
+    <timestep time="7.000">
+        <vehicle id="vN" x="198.400000" y="333.220000" angle="180.000000" type="car" speed="13.890000" pos="66.780000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="8.000">
+        <vehicle id="vN" x="198.400000" y="319.330000" angle="180.000000" type="car" speed="13.890000" pos="80.670000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="9.000">
+        <vehicle id="vN" x="198.400000" y="305.440000" angle="180.000000" type="car" speed="13.890000" pos="94.560000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="10.000">
+        <vehicle id="vN" x="198.400000" y="291.550000" angle="180.000000" type="car" speed="13.890000" pos="108.450000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="11.000">
+        <vehicle id="vN" x="198.400000" y="277.660000" angle="180.000000" type="car" speed="13.890000" pos="122.340000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="12.000">
+        <vehicle id="vN" x="198.400000" y="263.770000" angle="180.000000" type="car" speed="13.890000" pos="136.230000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="13.000">
+        <vehicle id="vN" x="198.400000" y="249.880000" angle="180.000000" type="car" speed="13.890000" pos="150.120000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="14.000">
+        <vehicle id="vN" x="198.400000" y="235.990000" angle="180.000000" type="car" speed="13.890000" pos="164.010000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="15.000">
+        <vehicle id="vN" x="198.400000" y="222.100000" angle="180.000000" type="car" speed="13.890000" pos="177.900000" lane="NC_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="16.000">
+        <vehicle id="vN" x="198.400000" y="212.063667" angle="180.000000" type="car" speed="10.036333" pos="187.936333" lane="NC_1" slope="0.000000" acceleration="-3.853667"/>
+    </timestep>
+    <timestep time="17.000">
+        <vehicle id="vN" x="198.948821" y="206.565983" angle="173.687646" type="car" speed="5.536333" pos="3.872667" lane=":C_3_0" slope="0.000000" acceleration="-4.500000"/>
+    </timestep>
+    <timestep time="18.000">
+        <vehicle id="vN" x="203.401601" y="200.199039" angle="135.951908" type="car" speed="8.136333" pos="6.999000" lane=":C_16_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="19.000">
+        <vehicle id="vN" x="212.319000" y="198.400000" angle="95.011604" type="car" speed="9.260000" pos="1.919000" lane="CE_1" slope="0.000000" acceleration="1.123667"/>
+    </timestep>
+    <timestep time="20.000">
+        <vehicle id="vN" x="224.179000" y="198.400000" angle="90.000000" type="car" speed="11.860000" pos="13.779000" lane="CE_1" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="21.000">
+        <vehicle id="vN" x="238.069000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="27.669000" lane="CE_1" slope="0.000000" acceleration="2.030000"/>
+    </timestep>
+    <timestep time="22.000">
+        <vehicle id="vN" x="251.959000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="41.559000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="23.000">
+        <vehicle id="vN" x="265.849000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="55.449000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="24.000">
+        <vehicle id="vN" x="279.739000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="69.339000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="25.000">
+        <vehicle id="vN" x="293.629000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="83.229000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="26.000">
+        <vehicle id="vN" x="307.519000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="97.119000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="27.000">
+        <vehicle id="vN" x="321.409000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="111.009000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="28.000">
+        <vehicle id="vN" x="335.299000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="124.899000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="29.000">
+        <vehicle id="vN" x="349.189000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="138.789000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="30.000">
+        <vehicle id="vN" x="363.079000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="152.679000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="31.000">
+        <vehicle id="vN" x="376.969000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="166.569000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="32.000">
+        <vehicle id="vN" x="390.859000" y="198.400000" angle="90.000000" type="car" speed="13.890000" pos="180.459000" lane="CE_1" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="33.000"/>
+    <timestep time="34.000"/>
+    <timestep time="35.000"/>
+    <timestep time="36.000"/>
+    <timestep time="37.000"/>
+    <timestep time="38.000"/>
+    <timestep time="39.000"/>
+    <timestep time="40.000"/>
+    <timestep time="41.000"/>
+    <timestep time="42.000"/>
+    <timestep time="43.000"/>
+    <timestep time="44.000"/>
+</fcd-export>

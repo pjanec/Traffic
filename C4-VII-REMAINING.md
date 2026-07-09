@@ -324,11 +324,23 @@ golden, revert.
 
 ---
 
-## #4 Multi-lane cont-turn SPEED (C4-vii-a parts 2a–2c) — refined with exact SUMO mechanism + trajectory
+## #4 Multi-lane cont-turn SPEED (C4-vii-a part 2) — FIXED, exact @1e-3
 
-**Status: mechanism pinned + trajectory captured, NOT fixed (large multi-part junction-speed port,
-HIGH regression risk to every minor-link turn).** Part 1 (the internal via-chain SEQUENCE) is DONE on
-`main`; this is the cont-turn SPEED that keeps scenario 44 skip-gated.
+**Status: FIXED and landed, parity-reviewer ACCEPT.** Turned out to be a ONE-POINT fix, NOT the
+predicted large 2a–2c internal-junction port: the engine already models the cont link on its junction
+internal lane `:C_16_0`; the minor-link cautious-approach arm just measured `seen` from the wrong lane.
+FIX (Engine.cs): when the cautious arm's `approachLane` is itself an internal (':'-edge) lane — the
+cont-turn signature — compute `seen` by walking the route pool from ego's current lane to the
+junction-link internal lane, summing lengths (the true distance to the link stop line); the ordinary
+single-internal-lane path keeps `approachLane.Length - pos` verbatim (byte-identical). The existing
+cautious machinery then reproduces SUMO's dip (13.89 → 10.036 → 5.536 on `:C_3_0` → 8.136 → 9.260)
+EXACTLY. New committed anchor `scenarios/_diag/cont-turn-sequence` gained a `--precision 6` golden +
+`tolerance.json` (exact, pos/speed) + `ContTurnSequenceDiagTests.ContTurn_SpeedMatchesGoldenExact`
+(max-abs error 3.4e-07 = golden precision). INERT on every ordinary minor-link turn (suite
+byte-identical, Sim.Bench hash unchanged `909605E965BFFE59`). NOTE: scenario 44 still skip-gated on its
+OTHER blocker (bug B, the spurious final-edge lane change); its bug C blocker is fixed (#2), and this
+delivers its cont-turn-speed part. The original (over-cautious "needs 2c") diagnosis is retained below
+for context — it was superseded by this simpler correct fix.
 
 ### Trajectory evidence (lone `NC→CE` left turn, `scenarios/_diag/cont-turn-sequence`)
 SUMO (`--precision 6`) vs engine, the divergence window:

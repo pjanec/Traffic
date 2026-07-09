@@ -937,13 +937,18 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
         `scenarios/_diag/cont-turn-sequence` (`ContTurnSequenceDiagTests`) -- a lone `NC->CE` turn;
         without the chain the engine visits only `{NC_1, CE_1}` (collapse), with it `:C_16_0`. This is
         the SEQUENCE fix the decomposition asked to anchor first (not arrival).
-        **PARTS 2+ OPEN (the cont-turn SPEED, needed for exact FCD / scenario 44):** (2a) the cautious
-        approach must measure `seen` from the NORMAL approach lane (walk `approachLane` back over the
-        intermediate `:C_3_0`) -- prototyped this session, makes the approach slowdown fire but is NOT
-        sufficient alone; (2b) a turn-speed cap for the 9.26 m/s internal lanes; and (2c) modeling the
-        internal junction `:C_16` as a FIRST-CLASS minor link with its own cautious approach + `<request>`
-        foes (a lone turn enters `:C_3_0` at 3.55 m/s in SUMO but the engine still enters at ~11). Full
-        scenario 44 additionally needs bug B (spurious final-edge lane change under conflict) and the
+        **PART 2 (the cont-turn SPEED) -- FIXED, exact @1e-3 (parity-reviewer ACCEPT).** Turned out to
+        be a ONE-POINT fix, not the predicted 2a-2c internal-junction port. The engine already models
+        the cont link on its junction internal lane `:C_16_0`; the minor-link cautious-approach arm just
+        measured `seen` from the wrong lane. FIX (Engine.cs): when the cautious arm's `approachLane` is
+        itself an internal (':'-edge) lane (the cont-turn signature), measure `seen` to the junction-link
+        internal lane by walking the pool through the intermediate internal lane; the ordinary path keeps
+        `approachLane.Length - pos` verbatim. The existing machinery then reproduces SUMO's dip
+        (13.89 -> 10.036 -> 5.536 on `:C_3_0` -> 8.136 -> 9.260) EXACTLY. Anchor
+        `scenarios/_diag/cont-turn-sequence` gained a `--precision 6` golden + tolerance +
+        `ContTurn_SpeedMatchesGoldenExact` (max-abs err 3.4e-07). INERT on every ordinary minor-link
+        turn (suite byte-identical, Sim.Bench hash unchanged). Full scenario 44 additionally needs bug B
+        (spurious final-edge lane change under conflict) and the
         symmetric-4-way arrival-time RoW (bug C -- a distinct port, NOT willPass: with all four
         arriving together, priority/willPass alone can't break the tie; SUMO uses arrival-time). Anchor
         `44` stays skip-gated until 2a-2c + B + C land.

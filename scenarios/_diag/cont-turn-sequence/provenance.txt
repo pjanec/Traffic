@@ -1,0 +1,36 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# net: scenarios/44's symmetric 2-lane priority crossroads; vtype defaults golden.vtype.json (libsumo dump)
+
+C4-vii-a (cont-link internal via-chain) -- now an EXACT @1e-3 parity anchor.
+
+SETUP: a LONE left-turner vN (NC->CE) on the scenarios/44 crossroads. NC->CE is a `cont` link: the turn
+is split by an INTERNAL JUNCTION into TWO internal lanes -- NC_1 -> :C_3_0 (5.01 m) -> :C_16_0 (14.34 m)
+-> CE_1. Junction C's <request>/IntLanes[3] for this link is :C_16_0 (the lane AFTER the internal
+junction :C_16); :C_3_0 is the intermediate internal lane before :C_16. sigma=0, Euler,
+actionStepLength=1, teleport off.
+
+PART 1 (DONE earlier): the internal via-chain SEQUENCE -- NetworkModel.ResolveSequenceCore follows the
+full via-chain so the engine OCCUPIES :C_16_0 (ContTurnSequenceDiagTests.ContTurn_TraversesInternalJunctionLane).
+
+PART 2 (cont-turn SPEED -- FIXED, this is the @1e-3 assertion). SUMO cautiously slows a minor `cont`
+turn: the golden dips 13.89 -> 10.036 (t=16, approaching junction C) -> 5.536 on :C_3_0 (t=17,
+approaching the internal junction :C_16) -> 8.136 on :C_16_0 (t=18) -> 9.260 on CE_1 (t=19) ->
+re-accelerates. THE BUG (baseline): JunctionYieldConstraint's minor-link cautious approach measured
+`seen = approachLane.Length - pos`, but for a cont turn `approachLane` resolves to the INTERMEDIATE
+internal lane :C_3_0 (pool[egoLinkSeqIndex-1]), not the normal lane, so `seen` was meaningless
+(negative) and the cautious brake NEVER fired -- the engine clamped at the 9.26 internal-lane cap and
+entered :C_3_0 at ~9.26 instead of 5.54. FIX (Engine.cs, C4-vii-a 2a): when `approachLane` is itself an
+internal (':'-edge) lane (the cont-turn signature), compute `seen` by walking the route pool from ego's
+CURRENT lane to the junction-link internal lane :C_16_0, summing lane lengths -- the true distance to
+the link's stop line. The existing cautious-approach machinery then reproduces the golden EXACTLY
+(pos/speed max-abs error < 3.4e-07 across all frames, == the golden's 6-decimal precision). INERT for
+every ordinary single-internal-lane turn, where `approachLane` is a normal lane and the computation is
+byte-identical to before (whole committed suite unchanged, Sim.Bench hash 909605E965BFFE59).
+
+Note: this fix delivers the cont-turn SPEED that scenario 44 needs (one of its parts). Scenario 44
+stays skip-gated on its remaining part (bug B, the spurious final-edge lane change under conflict);
+bug C, its other blocker, is fixed (Engine.ResolveRightBeforeLeftCycles).
