@@ -1138,7 +1138,12 @@ public sealed class Engine : IEngine
         double egoAcceleration,
         bool hasPred,
         bool predIsCacc,
-        double levelOfService)
+        double levelOfService,
+        // C8-iii: ballistic integration flips the Krauss safe-speed to its ballistic branch. Only
+        // the Krauss arm reads it (scenario 42's vType is Krauss); IDM/ACC/CACC ballistic is out of
+        // scope and those arms ignore it -- byte-identical for every non-ballistic (config.Ballistic
+        // == false) call, which is every scenario but 21/42.
+        bool ballistic = false)
     {
         if (vType.CarFollowModel == "CACC")
         {
@@ -1165,7 +1170,7 @@ public sealed class Engine : IEngine
 
         return vType.CarFollowModel == "IDM"
             ? IdmModel.FollowSpeed(egoSpeed, gap, predSpeed, laneVehicleMaxSpeed, vType, dt)
-            : KraussModel.FollowSpeed(egoSpeed, gap, predSpeed, predMaxDecel, vType, dt);
+            : KraussModel.FollowSpeed(egoSpeed, gap, predSpeed, predMaxDecel, vType, dt, ballistic);
     }
 
     // StopSpeedFor: MSCFModel_Krauss.cpp:100-107 stopSpeed (KraussModel.StopSpeed) vs.
@@ -2177,7 +2182,7 @@ public sealed class Engine : IEngine
                     laneVehicleMaxSpeed, dt, time: time,
                     accControlMode: ref ego.AccControlMode, accLastUpdateTime: ref ego.AccLastUpdateTime,
                     caccControlMode: ref ego.CaccControlMode, egoAcceleration: ego.Acceleration,
-                    hasPred: true, predIsCacc: foeMerging.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService);
+                    hasPred: true, predIsCacc: foeMerging.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService, ballistic: _config!.Ballistic);
             }
 
             // gap<0 (MSVehicle.cpp:3228): stop before entering the junction.
@@ -2215,7 +2220,7 @@ public sealed class Engine : IEngine
             laneVehicleMaxSpeed, dt, time: time,
             accControlMode: ref ego.AccControlMode, accLastUpdateTime: ref ego.AccLastUpdateTime,
             caccControlMode: ref ego.CaccControlMode, egoAcceleration: ego.Acceleration,
-            hasPred: true, predIsCacc: leaderOnTarget.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService);
+            hasPred: true, predIsCacc: leaderOnTarget.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService, ballistic: _config!.Ballistic);
     }
 
     // C4-iv phase-2 helper: the rearmost vehicle (smallest Pos = ego's immediate downstream leader)
@@ -2409,7 +2414,7 @@ public sealed class Engine : IEngine
                 ego.VType, ego.Kinematics.Speed, gap, foe.Kinematics.Speed, foe.VType.Decel, laneVehicleMaxSpeed, dt,
                 time: time, accControlMode: ref ego.AccControlMode, accLastUpdateTime: ref ego.AccLastUpdateTime,
                 caccControlMode: ref ego.CaccControlMode, egoAcceleration: ego.Acceleration,
-                hasPred: true, predIsCacc: foe.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService);
+                hasPred: true, predIsCacc: foe.VType.CarFollowModel == "CACC", levelOfService: ego.LevelOfService, ballistic: _config!.Ballistic);
         }
         else
         {
@@ -2552,7 +2557,10 @@ public sealed class Engine : IEngine
     // leader's OWN decel (MSVehicle::getCurrentApparentDecel(), which for our phase-1 vTypes
     // -- no apparent-decel override beyond the vType default -- equals the leader's vType
     // decel). Returns +infinity (non-binding) when ego has no leader on its lane.
-    private static double LeaderFollowSpeedConstraint(VehicleRuntime ego, LaneNeighborQuery neighbors, double dt, double time, double laneVehicleMaxSpeed)
+    // C8-iii: instance (was static) only so it can read the immutable `_config.Ballistic` flag for
+    // the FollowSpeedFor call below -- a read of load-time-constant config, safe under UseParallelPlan
+    // (the parallel-plan invariant forbids WRITING shared state during planning, not reading it).
+    private double LeaderFollowSpeedConstraint(VehicleRuntime ego, LaneNeighborQuery neighbors, double dt, double time, double laneVehicleMaxSpeed)
     {
         var leader = neighbors.GetLeader(ego);
         if (leader is null)
@@ -2581,7 +2589,8 @@ public sealed class Engine : IEngine
             egoAcceleration: ego.Acceleration,
             hasPred: true,
             predIsCacc: leader.VType.CarFollowModel == "CACC",
-            levelOfService: ego.LevelOfService);
+            levelOfService: ego.LevelOfService,
+            ballistic: _config!.Ballistic);
     }
 
     // Cross-junction leader following: MSVehicle::planMoveInternal's per-downstream-lane leader scan
@@ -2627,7 +2636,8 @@ public sealed class Engine : IEngine
             egoAcceleration: ego.Acceleration,
             hasPred: true,
             predIsCacc: leader.VType.CarFollowModel == "CACC",
-            levelOfService: ego.LevelOfService);
+            levelOfService: ego.LevelOfService,
+            ballistic: _config!.Ballistic);
     }
 
     // Shared cross-junction downstream-leader scan (used by CrossJunctionLeaderConstraint during
@@ -2753,7 +2763,8 @@ public sealed class Engine : IEngine
             egoAcceleration: v.Acceleration,
             hasPred: true,
             predIsCacc: false,
-            levelOfService: v.LevelOfService);
+            levelOfService: v.LevelOfService,
+            ballistic: _config!.Ballistic);
     }
 
     // Execute phase: apply each vehicle's own MoveIntent and integrate position.

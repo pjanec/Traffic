@@ -1,0 +1,7 @@
+<routes>
+    <vType id="car"  vClass="passenger" sigma="0"/>
+    <vType id="slow" vClass="passenger" sigma="0" maxSpeed="5"/>
+    <route id="r" edges="E0"/>
+    <vehicle id="lead" type="slow" route="r" depart="0" departPos="100" departSpeed="5"/>
+    <vehicle id="foll" type="car"  route="r" depart="0" departPos="0"   departSpeed="13.89"/>
+</routes>

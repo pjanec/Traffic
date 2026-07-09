@@ -1,0 +1,23 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-09T06:10:00Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --no-step-log true
+fcd_precision=6
+# C8-iii BALLISTIC CAR-FOLLOWING PARITY ANCHOR (RungC8iiiBallisticFollowParityTests, exact @1e-3).
+#   step-method.ballistic=true. Single 500 m lane; a SLOW leader (maxSpeed 5, departPos 100) and a
+#   fast follower (13.89, departPos 0). The follower free-flows to t=7 then car-follows the leader
+#   down to ~5 m/s -- but under the BALLISTIC update, so the safe-speed comes from
+#   maximumSafeStopSpeedBallistic (MSCFModel.cpp:855-910) + the ballistic brakeGap
+#   (speed*(headway+0.5*speed/decel)), NOT the Euler branches. Pre-C8-iii the engine used the Euler
+#   safe-speed with the ballistic POSITION update (C8-i), diverging from t=8 (13.89 vs golden 13.24,
+#   up to ~1.17 m/s). C8-iii threads a  flag through KraussModel.FollowSpeed ->
+#   MaximumSafeFollowSpeed -> MaximumSafeStopSpeedBallistic + BrakeGap, gated so the Euler path
+#   (config.Ballistic=false, every scenario but 21/42) is byte-identical. The braking here is gentler
+#   than maxDecel, so finalizeSpeed's decel bound never binds (its ballistic minNextSpeed branch is
+#   not exercised -- documented scope). sigma=0, teleport off, seed 42.
+# net: netconvert from nodes/edges.
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump)
+# input file hashes (sha256):
+input=net.net.xml sha256=308b89714313d5652a7ac2733aea6817954027ceb8755f872c15676e740b9a29
+input=rou.rou.xml sha256=3e802921033f7781f5c8d10a08f300d91ee96c900119e27866fb97b768b9266f
+input=config.sumocfg sha256=11041825ac65f7fd2545a7e154f9957932cc314bae92ee21292364a11f4ec278

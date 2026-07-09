@@ -1500,8 +1500,24 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     fails at first-divergence t=6). NOTE (scoped): the isActionStep schedule is anchored for a
     depart-0 vehicle; per-vType action-step offsets and depart!=0 phase alignment are untested
     (no scenario needs them yet).
-  - **C8-iii. TODO (optional). Ballistic car-following.** The ballistic safe-speed branches, with a
-    ballistic-with-leader scenario, completing ballistic parity beyond free-flow.
+  - **C8-iii. DONE (parity-track, exact @1e-3). Ballistic car-following.** The ballistic safe-speed
+    branches, completing ballistic parity beyond free-flow (C8-i did the position update). Port:
+    `KraussModel.MaximumSafeStopSpeedBallistic` (MSCFModel.cpp:855-910, all three cases:
+    insertion / stop-within-tau / positive-speed-after-tau) + the ballistic `BrakeGap` branch
+    (`speed*(headway + 0.5*speed/decel)`), threaded through `MaximumSafeFollowSpeed` -> `FollowSpeed`
+    -> `Engine.FollowSpeedFor` via a `bool ballistic` flag sourced from `config.Ballistic` at the 6
+    FollowSpeedFor call sites (LeaderFollowSpeedConstraint made instance to read `_config`). **TEST
+    `RungC8iiiBallisticFollowParityTests`** (`scenarios/42-ballistic-follow`, Run 40) passes exact
+    @1e-3: a fast follower car-follows a slow (maxSpeed 5) leader under `step-method.ballistic=true`,
+    matching SUMO from the first braking step (13.24 at t=8) down to ~5. Suite 153 -> 156. INERT:
+    the flag defaults false and `config.Ballistic` is false for every scenario but 21/42, so the Euler
+    safe-speed path is byte-identical (all committed + D1 hash green); only the Krauss arm reads the
+    flag (IDM/ACC/CACC ballistic out of scope). NON-VACUOUS: forcing the Euler safe-speed under
+    ballistic fails at step 8 (speed err 1.93). SIMPLIFICATION (documented): the braking is gentler
+    than maxDecel so `finalizeSpeed`'s ballistic `minNextSpeed`/negative-speed branch is not
+    exercised; a ballistic EMERGENCY-brake scenario (vehicle stops within a step, speed goes negative)
+    would need that branch + the ballistic position update for a stopping vehicle. Parity-reviewer
+    gate pending.
 - **C9. Cooperative lane changes.** LC2013's COOPERATIVE block (`LCA_COOPERATIVE` — make room for a
   blocked/merging neighbor). Depends on A2's neighbor query + C3 (merging pressure). Parity axis.
 - **C10. Sublane / continuous lateral (SL2015). The lateral axis and the BRIDGE to navmesh/RVO.**

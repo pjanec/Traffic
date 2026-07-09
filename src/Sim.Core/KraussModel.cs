@@ -51,13 +51,63 @@ public static class KraussModel
     // stay the same constant.
     public const double HaltingSpeed = 0.1;
 
-    // MSCFModel.cpp:75-96 brakeGap/brakeGapEuler (Euler branch only -- ballistic is a later
-    // task per CLAUDE.md/DESIGN.md). Called from maximumSafeFollowSpeed with headwayTime=0.
-    public static double BrakeGap(double speed, double decel, double headwayTime, double dt)
+    // MSCFModel.cpp:75-96 brakeGap. Euler branch (`brakeGapEuler`) by default; C8-iii adds the
+    // ballistic branch (MSCFModel.cpp:79-86 `speed <= 0 ? 0 : speed * (headwayTime + 0.5*speed/decel)`)
+    // taken only when `ballistic` is set. Called from maximumSafeFollowSpeed with headwayTime=0.
+    // `ballistic` defaults false so every Euler call site is byte-identical.
+    public static double BrakeGap(double speed, double decel, double headwayTime, double dt, bool ballistic = false)
     {
+        if (ballistic)
+        {
+            return speed <= 0.0 ? 0.0 : speed * (headwayTime + (0.5 * speed / decel));
+        }
+
         var speedReduction = Accel2Speed(decel, dt);
         var steps = (int)(speed / speedReduction);
         return Speed2Dist((steps * speed) - (speedReduction * steps * (steps + 1) / 2.0), dt) + (speed * headwayTime);
+    }
+
+    // MSCFModel.cpp:855-910 maximumSafeStopSpeedBallistic -- the ballistic counterpart of
+    // maximumSafeStopSpeedEuler (C8-iii). Given a gap, returns the maximum speed from which the
+    // vehicle can still stop within `gap` under the ballistic update (constant acceleration across
+    // the step; a NEGATIVE return means "brake so hard you stop mid-step", clamped by the caller).
+    // `onInsertion` uses the constant-insertion-speed form (the vehicle covers no distance until the
+    // next step). `emergencyDecel` supplies the hard-brake return for the g==0 case.
+    public static double MaximumSafeStopSpeedBallistic(
+        double gap, double decel, double currentSpeed, bool onInsertion, double headway, double emergencyDecel, double dt)
+    {
+        var g = Math.Max(0.0, gap - NumericalEps);
+        var h = headway >= 0 ? headway : throw new ArgumentException("headway must be >= 0", nameof(headway));
+
+        if (onInsertion)
+        {
+            // g = tau*v0 + v0^2/(2b); solve for v0.
+            var btauIns = decel * h;
+            return -btauIns + Math.Sqrt((btauIns * btauIns) + (2.0 * decel * g));
+        }
+
+        var tau = h == 0.0 ? dt : h;
+        var v0 = Math.Max(0.0, currentSpeed);
+
+        // Case 1: a stop must take place within time tau.
+        if (v0 * tau >= 2.0 * g)
+        {
+            if (g == 0.0)
+            {
+                return v0 > 0.0 ? -Accel2Speed(emergencyDecel, dt) : 0.0;
+            }
+
+            // g = v0^2/(-2a); return v0 + a*TS.
+            var a1 = -v0 * v0 / (2.0 * g);
+            return v0 + (a1 * dt);
+        }
+
+        // Case 2: the vehicle may still have positive speed v1 after time tau.
+        // 0 = v1^2 + b*tau*v1 + b*tau*v0 - 2bg  =>  v1 = -b*tau/2 + sqrt((b*tau)^2/4 + b(2g - tau*v0)).
+        var btau2 = decel * tau / 2.0;
+        var v1 = -btau2 + Math.Sqrt((btau2 * btau2) + (decel * ((2.0 * g) - (tau * v0))));
+        var a = (v1 - v0) / tau;
+        return v0 + (a * dt);
     }
 
     // MSCFModel.cpp:getMinimalArrivalTime -- the minimal time (SECONDS here; the source returns
@@ -227,15 +277,20 @@ public static class KraussModel
         double predMaxDecel,
         ResolvedVType vType,
         double dt,
-        bool onInsertion = false)
+        bool onInsertion = false,
+        bool ballistic = false)
     {
         var headway = vType.Tau; // myHeadwayTime
 
         double x;
         if (gap >= 0)
         {
-            var effectiveGap = gap + BrakeGap(predSpeed, Math.Max(vType.Decel, predMaxDecel), 0.0, dt);
-            x = MaximumSafeStopSpeed(effectiveGap, vType.Decel, headway, dt);
+            // C8-iii: both the leader-brakeGap term and the stop-speed take their ballistic branch
+            // under ballistic integration (MSCFModel.cpp:936-940 dispatch on gSemiImplicitEulerUpdate).
+            var effectiveGap = gap + BrakeGap(predSpeed, Math.Max(vType.Decel, predMaxDecel), 0.0, dt, ballistic);
+            x = ballistic
+                ? MaximumSafeStopSpeedBallistic(effectiveGap, vType.Decel, egoSpeed, onInsertion, headway, vType.EmergencyDecel, dt)
+                : MaximumSafeStopSpeed(effectiveGap, vType.Decel, headway, dt);
         }
         else
         {
@@ -277,9 +332,10 @@ public static class KraussModel
         double predSpeed,
         double predMaxDecel,
         ResolvedVType vType,
-        double dt)
+        double dt,
+        bool ballistic = false)
     {
-        var vsafe = MaximumSafeFollowSpeed(gap, egoSpeed, predSpeed, predMaxDecel, vType, dt);
+        var vsafe = MaximumSafeFollowSpeed(gap, egoSpeed, predSpeed, predMaxDecel, vType, dt, onInsertion: false, ballistic: ballistic);
         var vmax = MaxNextSpeed(egoSpeed, vType, dt);
         return Math.Min(vsafe, vmax);
     }
