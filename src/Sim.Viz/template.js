@@ -25,19 +25,6 @@
 
   var data = REPLAY_DATA;
 
-  // TEMP diagnostic (remove once mobile render is confirmed): a visible build tag + live runtime
-  // readout, so a device we can't debug remotely reports its own state. If you can see this panel
-  // you are running THIS build (not a cached older file); the values pinpoint any bad camera.
-  var VIZ_BUILD = 8;
-  var dbg = document.createElement("div");
-  dbg.id = "dbg";
-  dbg.style.cssText =
-    "position:fixed;left:8px;bottom:96px;z-index:9998;background:rgba(0,90,150,0.9);color:#fff;" +
-    "font:11px/1.35 monospace;padding:5px 7px;border-radius:6px;white-space:pre;pointer-events:none;max-width:92vw;";
-  dbg.textContent = "build " + VIZ_BUILD + " (loading)";
-  document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(dbg); });
-  if (document.body) document.body.appendChild(dbg);
-
   // ---------------------------------------------------------------------
   // DOM
   // ---------------------------------------------------------------------
@@ -423,6 +410,36 @@
 
   // Returns a map id -> {x,y,angle,speed} interpolated at `t`; a vehicle present at step k but
   // absent at step k+1 is omitted (VIZ_SPEC.md: "stops being drawn").
+  // Centripetal Catmull-Rom through p0..p3 (segment p1->p2, local u in [0,1]). Centripetal
+  // (alpha=0.5) is used rather than uniform because FCD samples are unevenly spaced through a
+  // junction (the vehicle slows to turn), and uniform Catmull-Rom overshoots / loops on uneven
+  // spacing -- exactly the "slide" artifact. Barry-Goldman pyramid form.
+  function catmullRom(p0, p1, p2, p3, u) {
+    function knot(ti, pa, pb) {
+      var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+      return ti + Math.max(Math.pow(dx * dx + dy * dy, 0.25), 1e-6); // alpha/2 = 0.25
+    }
+    function lerp(pa, pb, s) {
+      return [pa[0] + (pb[0] - pa[0]) * s, pa[1] + (pb[1] - pa[1]) * s];
+    }
+    var t0 = 0, t1 = knot(t0, p0, p1), t2 = knot(t1, p1, p2), t3 = knot(t2, p2, p3);
+    var tt = t1 + (t2 - t1) * u;
+    var a1 = lerp(p0, p1, (tt - t0) / (t1 - t0));
+    var a2 = lerp(p1, p2, (tt - t1) / (t2 - t1));
+    var a3 = lerp(p2, p3, (tt - t2) / (t3 - t2));
+    var b1 = lerp(a1, a2, (tt - t0) / (t2 - t0));
+    var b2 = lerp(a2, a3, (tt - t1) / (t3 - t1));
+    return lerp(b1, b2, (tt - t1) / (t2 - t1));
+  }
+
+  // naviDegree (0 = north/+Y, clockwise) from a world-space motion vector -- same convention as
+  // Sim.Ingest.LaneGeometry, so tangent-derived headings match the engine's FCD angles.
+  function headingFromDelta(dx, dy) {
+    var deg = 90 - (Math.atan2(dy, dx) * 180) / Math.PI;
+    deg = deg % 360;
+    return deg < 0 ? deg + 360 : deg;
+  }
+
   function interpolatedVehicles(t) {
     var result = {};
     if (steps.length === 0) return result;
@@ -433,23 +450,43 @@
     var span = stepB.t - stepA.t;
     var frac = span > 1e-9 ? Math.max(0, Math.min(1, (t - stepA.t) / span)) : 0;
 
+    // Neighbours for the spline (k-1 and k+2); may be absent for a vehicle that just appeared or
+    // is about to leave -- clamp to the segment endpoints in that case (Catmull-Rom endpoint rule).
+    var stepPrev = steps[k - 1];
+    var stepNext2 = steps[k + 2];
+
     var idsA = stepA.v;
     for (var id in idsA) {
       if (!Object.prototype.hasOwnProperty.call(idsA, id)) continue;
       var a = idsA[id];
       var b = stepB.v[id];
       if (!b) {
-        // Only draw the exact-hold position when we are still essentially AT step k (k===k2,
-        // i.e. simTime is at/after the last step); otherwise the vehicle has left and is hidden.
-        if (k === k2) {
-          result[id] = a;
-        }
+        // Vehicle not present next step: hold only if we're at/after the last step, else it's gone.
+        if (k === k2) result[id] = a;
         continue;
       }
-      var angle = shortestArcDeg(a.angle, b.angle);
+
+      var p1 = [a.x, a.y], p2 = [b.x, b.y];
+      var pv = stepPrev && stepPrev.v[id] ? stepPrev.v[id] : a;
+      var pn = stepNext2 && stepNext2.v[id] ? stepNext2.v[id] : b;
+      var p0 = [pv.x, pv.y], p3 = [pn.x, pn.y];
+
+      var pos = catmullRom(p0, p1, p2, p3, frac);
+
+      // Heading from the path tangent (sample the curve slightly ahead), so the box faces its
+      // actual direction of travel through the curve instead of crabbing. Fall back to the FCD
+      // angle when barely moving (tangent undefined).
+      var df = 0.06;
+      var ahead = frac + df <= 1 ? catmullRom(p0, p1, p2, p3, frac + df) : pos;
+      var behind = frac + df <= 1 ? pos : catmullRom(p0, p1, p2, p3, frac - df);
+      var dx = frac + df <= 1 ? ahead[0] - pos[0] : pos[0] - behind[0];
+      var dy = frac + df <= 1 ? ahead[1] - pos[1] : pos[1] - behind[1];
+      var moving = dx * dx + dy * dy > 1e-4;
+      var angle = moving ? headingFromDelta(dx, dy) : shortestArcDeg(a.angle, b.angle);
+
       result[id] = {
-        x: a.x + (b.x - a.x) * frac,
-        y: a.y + (b.y - a.y) * frac,
+        x: pos[0],
+        y: pos[1],
         angle: angle,
         speed: a.speed + (b.speed - a.speed) * frac,
       };
@@ -571,9 +608,7 @@
     // which read as an all-dark canvas on a phone while looking fine on a dpr=1 desktop.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // TEMP (build 8): bright background so a freshly-loaded file is instantly distinguishable
-    // from a cached black one. Reverts to "#1b1e26" once mobile load is confirmed.
-    ctx.fillStyle = "#00c2b8";
+    ctx.fillStyle = "#1b1e26";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -603,18 +638,6 @@
     }
 
     vehCountEl.textContent = "vehicles: " + count;
-
-    // TEMP diagnostic readout (see VIZ_BUILD): the exact mobile runtime state.
-    var nlanes = (data.network && data.network.lanes) ? data.network.lanes.length : -1;
-    var nveh = data.vehicles ? Object.keys(data.vehicles).length : -1;
-    dbg.textContent =
-      "build " + VIZ_BUILD + " dpr=" + dpr.toFixed(1) +
-      " cvs=" + canvas.width + "x" + canvas.height +
-      " wrap=" + wrap.clientWidth + "x" + wrap.clientHeight +
-      " scale=" + camera.scale.toFixed(4) +
-      " off=" + Math.round(camera.offsetX) + "," + Math.round(camera.offsetY) +
-      " lanes=" + nlanes + " veh=" + nveh + " draw=" + count + " t=" + simT.toFixed(0);
-
     timeReadout.textContent =
       "t = " + simT.toFixed(1) + " s / " + simEnd.toFixed(1) + " s";
     if (!sliderDragging) {
