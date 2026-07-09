@@ -1390,6 +1390,14 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
       (exact trajectory + no regression across the 19/29/31/32 merge scenarios). The leader-branch
       `unsafeMergeSpeeds` path is present for fidelity but not exercised by a committed scenario (the
       reservation gate short-circuits the only far-foe case). Suite 122 -> 123 green.
+    - **DIAGNOSED, NOT FIXED (deferred rung): tight-roundabout box-blocking under saturation.** On a
+      pathologically tight 25 m single-lane ring (~35 m ring edges) at 251 concurrent trips the engine
+      gridlocks (69 stuck vs SUMO 0); root cause is the `KeepClearConstraint` SIMPLIFICATION (no exit-lane
+      *reservation*) letting circulating vehicles commit onto a junction whose exit packs the same step,
+      so they halt mid-junction (SUMO never does). NORMAL single-lane roundabouts flow fine (viz
+      `city-mixed-1k`, 1000 concurrent, ~2% stuck). Full diagnosis + fix sketch: `C4-VII-REMAINING.md`
+      "#3 Roundabout box-blocking". The fix is a full `checkRewindLinkLanes` reservation port (HIGH
+      regression risk, its own rung) — not landed autonomously.
   - **C4-iv. DONE (symmetric merge, exact @1e-3). sameTarget-merge yield (the C3 merge half).**
     `scenarios/31-merge-yield-sym` (`RungC4ivMergeYieldParityTests`, exact). A SLOW major vehicle mA
     crawls across the merge exactly as the minor vehicle vB arrives, so vB must follow-YIELD to mA

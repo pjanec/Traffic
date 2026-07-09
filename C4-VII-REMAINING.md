@@ -205,6 +205,53 @@ of junctions (multi-lane turns) — re-evaluate priority vs C4-vii-c, which unbl
 
 ---
 
+## #3 Roundabout box-blocking on tight single-lane rings (diagnosed, NOT fixed — deep core port)
+
+**Status: precise diagnosis, no fix landed.** A safe overnight fix does not exist — the fix is a full
+`MSVehicle::checkRewindLinkLanes` port with cross-continuation space reservation, HIGH regression risk
+to scenario `34-keepclear` and every junction parity scenario. The trigger geometry is *pathological*
+(25 m-radius ring, ~35 m ring edges); the viz session's `city-mixed-1k` shows **normal** single-lane
+roundabouts flow fine at 1000 concurrent (~2% stuck). Documented here so the next session can decide
+priority without re-deriving.
+
+### Reproduction (ephemeral, hand-built — recipe below)
+A 4-arm single-lane roundabout: ring nodes `RN/RE/RS/RW` (`type="priority"`, ring edges `priority=10`,
+entry/exit edges `priority=1`), radius 25 m, ring speed 8.33, arm speed 13.89. 251 fixed-route trips
+(`randomTrips -e 600 --fringe-factor 10 --seed 7`, `duarouter --named-routes --remove-loops`), sigma=0,
+Euler, teleport off, seed 42, 800 steps. Nodes/edges were `scratchpad/rb/{n.nod.xml,e.edg.xml}`;
+regenerate with `netconvert -n n.nod.xml -e e.edg.xml`. **Result: SUMO 0 stuck / 251, engine 69 stuck.**
+
+### Evidence (decisive)
+- Stuck breakdown: 49 queued on ENTRY edges, 16 on RING edges, **4 stopped ON internal junction lanes**
+  (`:RN_3_0`, `:RE_3_0` — the circulating left/continue-around movements).
+- Stopped-on-internal-lane vehicle-steps: **SUMO = 0 (never), engine ≈ 500 per `_3` link.** SUMO never
+  lets a vehicle halt on a junction; the engine does — this IS the box-block.
+- Single-vehicle trace (veh 148, ends stuck on `:RN_3_0`): at t=324 it is on ring-approach `REtoRN`
+  ~10 m from the junction at 6.3 m/s (brakeGap ≈ 4.4 m < 9.5 m stop distance — it *could* still stop);
+  exit `RNtoRW` then shows nominal free space *behind its frontmost stopped vehicle*. It commits to
+  `:RN_3` at t=325 and is trapped mid-junction as `RNtoRW` packs (4 veh, 2 stopped) the same step.
+
+### Root cause
+`KeepClearConstraint` (Engine.cs:~1940, the ported *removal* half of `checkRewindLinkLanes`) computes
+the exit chain's free space via `LaneSpaceTillLastStanding`, which returns the room ahead of the
+**frontmost stopped** vehicle and ignores the still-*moving* vehicles filling that room behind it. So a
+circulating vehicle sees "≥ egoLen free" and enters, but the space is being consumed by leaders that
+halt the same/next step → ego stops on the junction. SUMO's full `checkRewindLinkLanes` reserves the
+exit space across the whole downstream continuation (approaching vehicles reduce `availableSpace`), so
+circulating vehicles *wait on the ring approach edge*, keeping the junction clear and letting
+perpendicular exits drain the ring. This is exactly the documented `KeepClearConstraint` SIMPLIFICATION
+("lengthsInFront = 0, single-internal-lane back-propagation, no reservation") biting on a topology the
+`34-keepclear` anchor never exercised (multi-junction ring, no slack).
+
+### Fix sketch (for a future dedicated rung, gated + anchored)
+Port the reservation half of `checkRewindLinkLanes`: accumulate `availableSpace` across the best-lanes
+continuation subtracting **approaching** vehicles (those with a set link reservation on each exit lane),
+not only stopped ones; hold ego at the junction-entry stop line when cumulative `leftSpace < 0`. Build a
+committed tight-roundabout stuck-count anchor (`_diag`, gauged by stuck ≤ small, same convention as
+`willpass-saturation`) and re-verify `34-keepclear` byte-identical. HIGH regression risk — its own rung.
+
+---
+
 ## Git state at handoff
 - `main` = `eac0a5b` (C4-vii-b + crash fix) — the shippable, testable state.
 - Branch `claude/handoff-docs-i5a9vm` = all of main + C4-vii-a part 1 (`1cb6c12`) + the diagnosis
