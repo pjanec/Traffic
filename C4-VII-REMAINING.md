@@ -72,12 +72,24 @@ keep-rights onto a connecting non-pool lane; pre-fix strands it at the lane end,
 inert on the suite + grid, un-anchorable, and its pre-pass doubled plan-phase work). Revive it only when
 a genuine willPass scenario is isolated.
 
-**NEW follow-up exposed by this fix:** dense `-L2` grids now crash in `TryStrategicLaneChange →
-ComputeBestLanes` on an INTERNAL edge (a vehicle that used to clamp now proceeds onto a junction
-interior and, if it lands there, hits `ComputeBestLanes(route, ':...')`). A defensive guard was added
-(skip all lane-change decisions on internal lanes, mirroring commit `eac0a5b`'s keep-right guard), which
-covers the committed diag grid; the underlying strategic-LC-on-internal-edge path is a separate open bug
-for a denser scenario.
+**Follow-up exposed by this fix — NOW FIXED + regression-tested.** The convergence fix rescues vehicles
+that used to clamp at a lane end (never entering the junction); they now proceed onto junction interiors,
+which made a latent crash reachable: a vehicle transiting a MULTI-LANE junction's internal lane while its
+pool wants the sibling internal lane reached `DecideSpeedGainChanges`' strategic-LC path →
+`ComputeBestLanes(route, ':A0_2')` → throws (an internal edge is never on an edge-only route). FIX: skip
+ALL lane-change decisions (keep-right/strategic/speed-gain) on internal lanes — SUMO's `MSLaneChanger`
+runs only on normal edges (mirrors commit `eac0a5b`'s keep-right guard, hoisted to also cover the
+strategic path). This is the FAITHFUL fix, not a band-aid. REGRESSION ANCHOR:
+`scenarios/_diag/multilane-internal-lc-crash` (`MultilaneInternalLcCrashDiagTests`) — a 3x3 -L2 grid,
+10 trips; without the guard the engine throws `Edge ':A0_2' is not part of the given route`, with it the
+grid runs to completion and flows (0 stuck == SUMO). Verified across a ~10-config dense-`-L2` sweep
+(6×6/8×8 priority + TLS, up to 800 veh): all now run without crashing.
+
+**Still open (the -L2 FLOW frontier, NOT a single bug):** on dense TLS grids the engine gridlocks MORE
+than SUMO (e.g. tls.guess 6×6/150 veh: engine 36 stuck vs SUMO 19; a 375-veh TLS grid: 137 vs 66) — all
+on NORMAL lanes (0 mid-junction), i.e. junction-approach queuing, not the crash and not a keepClear
+box-block. Priority grids are fine (engine ≤ SUMO stuck). This is TLS-specific junction-approach/ signal
+parity — its own rung, not part of this fix.
 
 ---
 

@@ -937,13 +937,21 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
         onto a connecting non-pool lane; pre-fix strands it at the lane end pos 300 speed 0, post-fix
         flows it -- pos/speed EXACT vs SUMO, `lane` excluded because the keep-right AB_1->AB_0 timing is a
         separate C4-vii-b fidelity gap). The willPass port was implemented then REVERTED (faithful but
-        provably inert + un-anchorable + doubled plan-phase cost). **NEW follow-up EXPOSED:** dense `-L2`
-        grids now crash in `TryStrategicLaneChange -> ComputeBestLanes` on an INTERNAL edge (vehicles that
-        used to clamp now proceed onto junction interiors); a defensive internal-lane guard was added
-        (covers the committed grid), but the underlying strategic-LC-on-internal-edge path is a separate
-        open bug for a denser scenario.
-    C4-vii-a (cont-internal-lane path) is the only remaining C4-vii strand; anchor `44` stays skip-gated
-    until it lands.
+        provably inert + un-anchorable + doubled plan-phase cost). **Follow-up EXPOSED then FIXED:** the
+        fix lets vehicles that used to clamp proceed onto junction interiors, making a latent crash
+        reachable -- a vehicle transiting a MULTI-LANE junction's internal lane with a pending strategic
+        LC hit `ComputeBestLanes(route, ':A0_2')` (an internal edge is never on an edge-only route). FIX:
+        skip all lane-change decisions (keep-right/strategic/speed-gain) on internal lanes -- SUMO's
+        `MSLaneChanger` runs only on normal edges (mirrors `eac0a5b`, hoisted to cover the strategic
+        path). REGRESSION ANCHOR `scenarios/_diag/multilane-internal-lc-crash` (3x3 -L2, 10 trips;
+        `MultilaneInternalLcCrashDiagTests` -- crashes without the guard, flows 0 stuck == SUMO with it);
+        verified across a ~10-config dense-`-L2` sweep (up to 800 veh) that all now run without crashing.
+        **STILL OPEN (the -L2 FLOW frontier, its own rung, NOT this fix):** dense TLS grids gridlock MORE
+        than SUMO (engine 36 vs SUMO 19 stuck on tls.guess 6x6/150; 137 vs 66 on a 375-veh TLS grid) --
+        all on normal lanes (junction-approach queuing, not mid-junction/keepClear); priority grids are
+        fine (engine <= SUMO).
+    C4-vii-a (cont-internal-lane path) is the only remaining C4-vii RoW strand; anchor `44` stays
+    skip-gated until it lands.
   - **C4-vi. DONE (parity-track, exact @1e-3). Priority-junction far-routed-foe false positive fixed.**
     The crossing approaching-foe arm of `JunctionYieldConstraint` (`Engine.cs`, the
     `foeInternalSeqIndex > foe.LaneSeqIndex` branch) now gates the yield by the foe's
