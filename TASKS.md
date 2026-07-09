@@ -946,10 +946,12 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
         path). REGRESSION ANCHOR `scenarios/_diag/multilane-internal-lc-crash` (3x3 -L2, 10 trips;
         `MultilaneInternalLcCrashDiagTests` -- crashes without the guard, flows 0 stuck == SUMO with it);
         verified across a ~10-config dense-`-L2` sweep (up to 800 veh) that all now run without crashing.
-        **STILL OPEN (the -L2 FLOW frontier, its own rung, NOT this fix):** dense TLS grids gridlock MORE
-        than SUMO (engine 36 vs SUMO 19 stuck on tls.guess 6x6/150; 137 vs 66 on a 375-veh TLS grid) --
-        all on normal lanes (junction-approach queuing, not mid-junction/keepClear); priority grids are
-        fine (engine <= SUMO).
+        **No residual gridlock (checked):** dense TLS grids show MORE engine vehicles queued than SUMO at
+        a mid-run cutoff (36 vs 19 at t=400 on tls.guess 6x6/150; 137 vs 66 on a 375-veh TLS grid) but
+        this is TRANSIENT -- run longer and both fully drain (150 veh: 0 stuck by t=800; 375 veh: 0 by
+        t=1000). The engine just drains slower on dense TLS density (an exact-throughput/-timing gap on
+        the broad -L2 TLS FCD-parity frontier, its own rung), NOT a gridlock defect; all queuing is on
+        normal lanes (not mid-junction/keepClear). Priority grids need no extra time.
     C4-vii-a (cont-internal-lane path) is the only remaining C4-vii RoW strand; anchor `44` stays
     skip-gated until it lands.
   - **C4-vi. DONE (parity-track, exact @1e-3). Priority-junction far-routed-foe false positive fixed.**

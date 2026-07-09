@@ -85,11 +85,14 @@ strategic path). This is the FAITHFUL fix, not a band-aid. REGRESSION ANCHOR:
 grid runs to completion and flows (0 stuck == SUMO). Verified across a ~10-config dense-`-L2` sweep
 (6×6/8×8 priority + TLS, up to 800 veh): all now run without crashing.
 
-**Still open (the -L2 FLOW frontier, NOT a single bug):** on dense TLS grids the engine gridlocks MORE
-than SUMO (e.g. tls.guess 6×6/150 veh: engine 36 stuck vs SUMO 19; a 375-veh TLS grid: 137 vs 66) — all
-on NORMAL lanes (0 mid-junction), i.e. junction-approach queuing, not the crash and not a keepClear
-box-block. Priority grids are fine (engine ≤ SUMO stuck). This is TLS-specific junction-approach/ signal
-parity — its own rung, not part of this fix.
+**No residual gridlock (checked, NOT a bug).** On dense TLS grids the engine has MORE vehicles still
+queued at an arbitrary mid-run cutoff than SUMO (tls.guess 6×6/150 veh: 36 vs 19 at t=400; 375-veh TLS
+grid: 137 vs 66 at t=400) — but this is purely transient: run long enough and BOTH fully drain (150-veh
+grid: 0 stuck / all arrived by t=800; 375-veh grid: 0 / all arrived by t=1000). All the mid-run queuing
+is on NORMAL lanes (0 mid-junction), i.e. red-light waiting / junction-approach throughput, not the
+crash and not a keepClear box-block. The engine simply drains slower than SUMO on dense TLS density —
+an exact-throughput/-timing gap that belongs to the broad -L2 TLS FCD-parity frontier (its own rung),
+NOT a gridlock defect. Priority grids need no extra time (engine ≤ SUMO queued throughout).
 
 ---
 
