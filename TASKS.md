@@ -816,6 +816,42 @@ A3) remain the byte-for-byte correctness anchor (same discipline as rungs 8b/10/
     before a general `-L 2` city runs** -- C2-iii redirects the pool only at `routeEdges[0]`, so a
     vehicle forced onto the wrong lane of a MIDDLE edge still throws (verified on a plain
     `netgenerate -L 2` grid). Parity-reviewer ACCEPT.
+  - **C4-vii. TODO (parity-track, exact @1e-3). Multi-lane junction passage -- vehicles deadlock at
+    the stop line. THE TRUE GATE for multi-lane at scale** (C2-vi unblocked -L2 INSERTION; this
+    unblocks -L2 FLOW). Briefing transcribed from `NEED-multilane-junction-passage.md` (on main,
+    commit 618893c, from the viz/benchmark track). C2-vi fixed multi-lane route->lane resolution, so a
+    general `-L2` city now runs to completion -- but ~60% of vehicles get PERMANENTLY STUCK at
+    junction stop lines. **Reproduced vs SUMO on the identical net+demand:** `netgenerate --grid
+    --grid.number=6 --grid.length=250 -L 2 --tls.guess --seed 7` + `randomTrips -e 300 -p 4
+    --fringe-factor 10 --min-distance 500 --seed 7` + `duarouter --named-routes --ignore-errors` ->
+    engine 27 arrived / 47 stuck (all braked to a junction stop line, speed 0, never proceed); SUMO 75
+    inserted / 0 running / 0 teleports (all arrive, ordinary free-to-moderate traffic).
+    **DISCRIMINATED (three checks, all in the NEED):** (1) NOT TLS-specific -- `--tls.set ""` (all
+    priority junctions) gives the same 47 stuck. (2) NOT a lane-change/wrong-lane failure -- a stuck
+    car (veh 0) is on `E3D3` lane 0 for a STRAIGHT move to `D3C3`, and lane 0 DOES connect onward
+    (`fromLane=0 dir=s`); it is on the right lane, just never granted passage. (3) Single-lane
+    junctions all work (9b/C3/C4/rung10 + the `-L1` benchmark run 0 stuck). The only new variable is
+    2 lanes per edge. **DIAGNOSIS (confirm with instrumentation):** the junction RoW/passage machinery
+    (`Engine.JunctionYieldConstraint` / `FindFoeVehicle` / the `MSLink` conflict geometry in
+    `NetworkModel`/`Engine`, the 9b + C4 family) was built + parity-tested EXCLUSIVELY on SINGLE-LANE
+    junctions. A multi-lane junction has more links per approach (each lane's connection is its own
+    link with its own `linkIndex` + internal lane), and the two through-lanes' internal lanes can be
+    flagged as mutual foes/conflicts in the `<request>` matrix. Most likely: a vehicle on a valid
+    connecting lane yields FOREVER to a foe that never clears -- e.g. it treats the PARALLEL
+    through-lane's internal lane (or a companion link at the same junction) as a blocking foe, or the
+    multi-lane conflict/response bitstring is indexed wrong so a non-conflicting movement reads as
+    conflicting. Even a straight-through movement (which should have priority) is blocked -> points at
+    foe/conflict RESOLUTION, not a legitimate yield. (Distinct from C4-vi's far-routed false-positive.)
+    **First probe (smallest repro):** a single 2-lane priority (and/or TLS) crossroads, one
+    straight-through vehicle, NO real conflicting traffic -- confirm it still brakes to the stop line
+    and never proceeds, then read WHICH foe/link `JunctionYieldConstraint` yields to and why (the
+    `<request>` response/foes bits at the multi-lane link indices vs SUMO's `MSLink`).
+    **Done-condition:** (1) the `-L2` repro flows (stuck-count comparable to SUMO's ~0). (2) NEW anchor:
+    a minimal 2-lane junction where a through vehicle is granted passage against correctly-resolved
+    multi-lane foes (distinct from the single-lane 9b/C4 anchors); sigma=0, SUMO golden `--precision 6`,
+    exact @1e-3. (3) INERT: all committed single-lane junction scenarios (9b/C3/C4/rung10/36/37) +
+    everything stay green (158); `Sim.Bench` hash unchanged. (4) parity-reviewer ACCEPT, faithful to
+    `MSLink`/`MSRightOfWayJunction`/`MSVehicle`. Build the anchor + golden FIRST, then instrument + fix.
   - **C4-vi. DONE (parity-track, exact @1e-3). Priority-junction far-routed-foe false positive fixed.**
     The crossing approaching-foe arm of `JunctionYieldConstraint` (`Engine.cs`, the
     `foeInternalSeqIndex > foe.LaneSeqIndex` branch) now gates the yield by the foe's
