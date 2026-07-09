@@ -1185,6 +1185,7 @@ public sealed class Engine : IEngine
                 v.WillPass = !WillPassRelevant(v, dt)
                     || ComputeMoveIntent(v, neighbors, time, prePass: true).NewSpeed > willPassSpeedEps;
             });
+            ResolveRightBeforeLeftCycles(dt);
             return;
         }
 
@@ -1193,6 +1194,203 @@ public sealed class Engine : IEngine
             v.WillPass = !WillPassRelevant(v, dt)
                 || ComputeMoveIntent(v, neighbors, time, prePass: true).NewSpeed > willPassSpeedEps;
         }
+
+        ResolveRightBeforeLeftCycles(dt);
+    }
+
+    // C4-viii-b (bug C: symmetric right-before-left circular-yield deadlock). SUMO's
+    // MSVehicle::planMoveInternal (MSVehicle.cpp:2818-2839) detects a right-before-left deadlock -- a
+    // LINKSTATE_EQUAL link whose blocker chain (getFirstApproachingFoe) wraps back to itself -- and
+    // breaks it by RANDOMLY aborting one vehicle's request. The base willPass pre-pass here yields the
+    // pathological all-false state for a symmetric cycle (every vehicle brakes to yield in the blanket
+    // pre-pass, so WillPass=false for all, and the real-pass crossing gate's `foeYieldsThisStep`
+    // then lets ALL of them enter and mutually gridlock mid-junction). This post-pass replaces SUMO's
+    // RNG abort with a DETERMINISTIC, order-independent resolution (CLAUDE.md determinism: our result
+    // must not depend on thread/processing order): among the vehicles approaching a junction, find the
+    // directed "yields-to" response cycle(s); within each cycle select a maximal set of mutually
+    // non-conflicting links GREEDILY by ascending link index (the canonical priority SUMO's link
+    // ordering also biases toward) and mark their vehicles WillPass=true (pass), the rest WillPass=false
+    // (yield). The real-pass gate then lets exactly the selected, non-conflicting movements cross while
+    // their foes hold -- e.g. the symmetric 4-way straight cross resolves to the lower-index axis first,
+    // matching SUMO's observed N-S-then-E-W order (scenarios/_diag/sym-rbl-straight).
+    //
+    // INERT wherever no directed response cycle exists: acyclic junctions (a priority major/minor split,
+    // the ASYMMETRIC 2-vehicle right-before-left of scenario 26, any TLS whose simultaneously-green links
+    // never conflict) keep their base WillPass untouched. allway_stop junctions are EXCLUDED (their
+    // mutual response IS a 2-cycle, but they are governed by AllwayStopConstraint's arrival-order arm,
+    // not the willPass crossing gate). Reads only the frozen start-of-step snapshot + the static
+    // <request> matrix, writes only WillPass -> deterministic and parallel-safe.
+    private void ResolveRightBeforeLeftCycles(double dt)
+    {
+        // Collect, per junction, the lead approaching vehicle on each link that is close enough to be
+        // entering this step (WillPassRelevant) and not already committed onto an internal lane.
+        Dictionary<Junction, Dictionary<int, VehicleRuntime>>? byJunction = null;
+        foreach (var v in ActiveVehicles())
+        {
+            var lane = _network!.LanesByHandle[v.LaneHandle];
+            if (lane.EdgeId.Length > 0 && lane.EdgeId[0] == ':')
+            {
+                continue; // already on an internal lane -- entry already committed
+            }
+
+            if (!WillPassRelevant(v, dt))
+            {
+                continue; // too far from its next internal lane to be entering this step
+            }
+
+            if (!TryGetUpcomingJunctionLink(v, out var junction, out var egoLink))
+            {
+                continue;
+            }
+
+            if (junction.Type == "allway_stop" || junction.Requests.Count == 0)
+            {
+                continue;
+            }
+
+            byJunction ??= new Dictionary<Junction, Dictionary<int, VehicleRuntime>>();
+            if (!byJunction.TryGetValue(junction, out var links))
+            {
+                links = new Dictionary<int, VehicleRuntime>();
+                byJunction[junction] = links;
+            }
+
+            // Keep the vehicle closest to entry on each link (largest position along its approach lane).
+            if (!links.TryGetValue(egoLink.Index, out var existing)
+                || v.Kinematics.Pos > existing.Kinematics.Pos)
+            {
+                links[egoLink.Index] = v;
+            }
+        }
+
+        if (byJunction is null)
+        {
+            return;
+        }
+
+        foreach (var (junction, links) in byJunction)
+        {
+            if (links.Count < 2)
+            {
+                continue; // a cycle needs at least two mutually-yielding links
+            }
+
+            // request-by-index lookup for this junction's active links.
+            var reqByIndex = new Dictionary<int, JunctionRequest>();
+            foreach (var r in junction.Requests)
+            {
+                if (links.ContainsKey(r.Index))
+                {
+                    reqByIndex[r.Index] = r;
+                }
+            }
+
+            // A link is a CYCLE member iff, following "yields-to" edges (L -> M when L responds to an
+            // active foe link M), it can reach itself. Bounded DFS per active link.
+            var cycleMembers = new List<int>();
+            foreach (var startIdx in links.Keys)
+            {
+                if (ReachesSelf(startIdx, links, reqByIndex))
+                {
+                    cycleMembers.Add(startIdx);
+                }
+            }
+
+            if (cycleMembers.Count == 0)
+            {
+                continue; // acyclic -- leave base WillPass untouched (inert)
+            }
+
+            // Greedy max-independent-set over the cycle members, ascending link index: select a link if
+            // it conflicts (FoeWith) no already-selected link. Selected -> pass, rest -> yield.
+            cycleMembers.Sort();
+            var selected = new List<int>();
+            foreach (var idx in cycleMembers)
+            {
+                var req = reqByIndex[idx];
+                var conflictsSelected = false;
+                foreach (var s in selected)
+                {
+                    if (req.FoeWith(s))
+                    {
+                        conflictsSelected = true;
+                        break;
+                    }
+                }
+
+                var pass = !conflictsSelected;
+                if (pass)
+                {
+                    selected.Add(idx);
+                }
+
+                links[idx].WillPass = pass;
+            }
+        }
+    }
+
+    // True iff `startIdx` lies on a directed cycle of the "yields-to" graph restricted to `links`
+    // (L -> M when request[L] responds to active foe link M). Bounded DFS (junctions have few links).
+    private static bool ReachesSelf(int startIdx, Dictionary<int, VehicleRuntime> links, Dictionary<int, JunctionRequest> reqByIndex)
+    {
+        var stack = new Stack<int>();
+        var visited = new HashSet<int>();
+        foreach (var m in links.Keys)
+        {
+            if (m != startIdx && reqByIndex.TryGetValue(startIdx, out var r0) && r0.RespondsTo(m))
+            {
+                stack.Push(m);
+            }
+        }
+
+        while (stack.Count > 0)
+        {
+            var cur = stack.Pop();
+            if (cur == startIdx)
+            {
+                return true;
+            }
+
+            if (!visited.Add(cur))
+            {
+                continue;
+            }
+
+            if (!reqByIndex.TryGetValue(cur, out var req))
+            {
+                continue;
+            }
+
+            foreach (var m in links.Keys)
+            {
+                if (m != cur && req.RespondsTo(m))
+                {
+                    stack.Push(m);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Ego's upcoming junction link -- the first internal (':'-edge) lane in the pool at/after
+    // LaneSeqIndex, mapped via LinkByInternalLane. Mirrors JunctionYieldConstraint's Step-1 scan.
+    private bool TryGetUpcomingJunctionLink(VehicleRuntime v, out Junction junction, out JunctionLink egoLink)
+    {
+        for (var i = v.LaneSeqIndex; i < v.LaneSeqLen; i++)
+        {
+            var seqLaneId = _network!.LanesByHandle[_laneSeqPool[v.LaneSeqStart + i]].Id;
+            if (_network.LinkByInternalLane.TryGetValue(seqLaneId, out var link))
+            {
+                junction = link.Junction;
+                egoLink = link.Link;
+                return true;
+            }
+        }
+
+        junction = null!;
+        egoLink = null!;
+        return false;
     }
 
     // C4-viii perf: the pre-pass only needs an ACCURATE WillPass for a vehicle whose WillPass could

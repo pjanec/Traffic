@@ -52,12 +52,21 @@ per-step trajectory differs). golden.fcd.xml is kept as the "SUMO flows, N-S-the
 an @1e-3 target; RungSymRblStraightDiagTests asserts stuck==0 (the _diag stuck-count convention), not
 FCD parity.
 
-FIX (its own rung, statistical-only): port the LINKSTATE_EQUAL cycle detector + random abort. Detect,
-in the willPass pre-pass, when a waiting vehicle's yield chain (foe-it-yields-to, then that foe's
-yield target, per the response matrix) wraps back to itself; roll VehicleRng with threshold 0.25
-(straight) / 0.75 (turn) and, on success, force WillPass=false (abort request) so it yields and the
-cycle unwinds. HIGH regression risk to the ~11 committed crossing scenarios (08/11/26/27/29/31/32/38/
-39/40 + 44), but the detector is INERT wherever no LINKSTATE_EQUAL cycle exists (every committed
-single-foe crossing scenario has a unique priority/arrival winner, no cycle), so it should be provably
-byte-identical there. Gate on: suite byte-identical, Sim.Bench hash unchanged, stuck==0 here,
-parity-reviewer ACCEPT. See C4-VII-REMAINING.md "#2".
+FIX (LANDED -- Engine.ResolveRightBeforeLeftCycles): rather than SUMO's RNG abort (which our own RNG
+stream could not match anyway), a DETERMINISTIC, order-independent equivalent. In the willPass
+pre-pass post-pass, among the vehicles approaching a junction (within reservation distance, not yet on
+an internal lane), detect directed response cycles (a link that, following request.RespondsTo edges
+among active links, reaches itself); within each cycle select a maximal set of mutually-non-conflicting
+links GREEDILY by ascending link index (select a link if it is not FoeWith any already-selected link)
+and set the selected vehicles WillPass=true (pass), the rest WillPass=false (yield). The real-pass
+crossing gate then lets exactly the selected non-conflicting movements cross while their foes hold; the
+existing on-junction leader-following sequences the fine-grained order. For this scenario the lower-
+index axis (N-S) is selected and all four drain (0 stuck == SUMO). allway_stop junctions are EXCLUDED
+(their mutual response is a 2-cycle but they are governed by AllwayStopConstraint). INERT wherever no
+directed cycle exists -- the whole committed suite stays byte-identical and Sim.Bench hash unchanged
+(909605E965BFFE59), which is the parity-reviewer-verified proof. This test asserts stuck==0 (the _diag
+stuck-count convention; exact @1e-3 is unreachable because SUMO's tie-break is RNG-keyed and its stream
+is not ours). NOTE: on a DENSE all-right_before_left grid the fix strictly improves flow (baseline
+195 stuck / 1794 cross-lane overlaps -> 0 stuck / 112 overlaps) but does not reach SUMO's exact
+behaviour (SUMO 100 stuck / 0 overlaps) -- the residual crossing overlaps are the PRE-EXISTING missing
+keepClear box-blocking (bug #3, C4-VII-REMAINING.md), not this change, which strictly reduces them.

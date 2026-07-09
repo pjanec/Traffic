@@ -252,13 +252,17 @@ committed tight-roundabout stuck-count anchor (`_diag`, gauged by stuck ≤ smal
 
 ---
 
-## #2 Symmetric arrival-time RoW — the right-before-left conflict cycle (diagnosed + anchored, NOT fixed)
+## #2 Symmetric arrival-time RoW — the right-before-left conflict cycle (FIXED, deterministic)
 
-**Status: precise diagnosis + isolated committed anchor, no fix landed (deliberate wall).** This is
-"bug C" from `TASKS.md` (the symmetric-4-way left-turn deadlock), isolated here to its cleanest form.
-The fix is a deterministic conflict-cycle RoW resolution — HIGH regression risk to the ~11 committed
-crossing scenarios and needs a SUMO `MSLink_DEBUG_OPENED` trace for exact parity — so it is left as its
-own rung, not landed in the autonomous run.
+**Status: FIXED and landed (`Engine.ResolveRightBeforeLeftCycles`), parity-reviewer ACCEPT.** This is
+"bug C" from `TASKS.md` (the symmetric-4-way deadlock), isolated to its cleanest form and resolved with
+a deterministic, order-independent port of SUMO's deadlock-break. The isolated anchor
+`RungSymRblStraightDiagTests` is un-skipped and green (0 stuck). The whole committed suite stays
+byte-identical and the Sim.Bench hash is unchanged — the post-pass is INERT wherever no directed
+response cycle exists. **Residual (tracked to #3):** on a dense all-`right_before_left` grid the fix
+strictly improves flow (baseline 195 stuck / 1794 cross-lane overlaps → 0 stuck / 112 overlaps) but does
+not reach SUMO's exact behaviour (100 stuck / 0 overlaps); the residual crossing overlaps are the
+pre-existing missing keepClear box-blocking (#3), not this change. Original diagnosis retained below.
 
 ### Isolated anchor (committed, skip-gated)
 `scenarios/_diag/sym-rbl-straight/` — one single-lane `right_before_left` crossroads, four STRAIGHT

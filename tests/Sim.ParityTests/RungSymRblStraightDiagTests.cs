@@ -22,17 +22,18 @@ namespace Sim.ParityTests;
 // if it wraps back to ego it aborts the request RANDOMLY (RandHelper::rand < 0.25 straight / 0.75 turn).
 // Because that tie-break is RNG-keyed and the engine's RNG stream is its own (VehicleRng, never SUMO's
 // per the C1/determinism policy), EXACT @1e-3 FCD parity is NOT achievable -- only stuck-count /
-// statistical parity. This test asserts stuck==0 (the _diag convention), not FCD parity. Fix = port the
-// cycle detector + seeded-RNG abort; HIGH regression risk but inert wherever no LINKSTATE_EQUAL cycle
-// exists. Full diagnosis + fix design: scenarios/_diag/sym-rbl-straight/provenance.txt and
-// C4-VII-REMAINING.md "#2 Symmetric arrival-time RoW".
+// statistical parity, so this test asserts stuck==0 (the _diag convention), not FCD parity.
+// FIX (LANDED -- Engine.ResolveRightBeforeLeftCycles): a DETERMINISTIC, order-independent equivalent of
+// SUMO's RNG abort -- detect the directed response cycle among approaching vehicles and select a maximal
+// non-conflicting set greedily by ascending link index to pass, the rest yield. INERT wherever no cycle
+// exists (whole committed suite byte-identical, Sim.Bench hash unchanged). Full diagnosis:
+// scenarios/_diag/sym-rbl-straight/provenance.txt and C4-VII-REMAINING.md "#2".
 public class RungSymRblStraightDiagTests
 {
     private static readonly string Dir = System.IO.Path.Combine(
         RepoRoot(), "scenarios", "_diag", "sym-rbl-straight");
 
-    [Fact(Skip = "Bug C pending: symmetric arrival-time RoW (right-before-left conflict cycle) -- " +
-                 "see scenarios/_diag/sym-rbl-straight/provenance.txt and C4-VII-REMAINING.md #2.")]
+    [Fact]
     public void SymmetricRightBeforeLeft_AllFourClear_NotGridlocked()
     {
         var engine = new Engine();
