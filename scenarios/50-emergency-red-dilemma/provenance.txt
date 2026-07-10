@@ -1,0 +1,20 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-10T02:29:14Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+state_time=1
+fcd_precision=6
+# ER1 (!canBrake ignore-red arm). Emergency vehicle (vClass=emergency, sigma=0, maxSpeed=25,
+#   jmDriveAfterRedTime=0) cruises WJ at 25 toward J. Light is Green [0,11) then RED directly
+#   (no yellow). At the step planning t=10->11 the vehicle is at pos 255 (seen 45 < brakeDist
+#   ~57.5), too close to stop, so canBrakeBeforeStopLine is false and it PROCEEDS through the
+#   red, crossing onto JE by t=12 at free-flow (25). jmDriveAfterRedTime=0 isolates
+#   MSVehicle::ignoreRed's !canBrake arm (MSVehicle.cpp:7302): 0>=0 takes the red-arm branch
+#   but 0>redDuration is always false, so the ONLY reason ignoreRed returns true is !canBrake.
+#   Net = scenarios/30-yellow-decision (speed 25) with the tlLogic yellow phase removed.
+#   Euler, sigma=0, teleport off, seed 42. Non-vacuous: a stop-at-red engine halts at ~298.999.
+# vtype defaults: golden.vtype.json (libsumo/TraCI dump); vClass=emergency (A1 table).
+# input file hashes (sha256):
+input=net.net.xml sha256=af092fb6544637955719748148aac03493f3ef75105ddcb537336c966eb5ff37
+input=rou.rou.xml sha256=7d141dc4484802fd41925dd2fa8bd82c08bc68047f3e4ea8c41ccda6baa762cb
+input=config.sumocfg sha256=1d9f993faf8f1c31f2330f5ff6ef309d83d3c7268b0680ed3e93526cc2ae0883

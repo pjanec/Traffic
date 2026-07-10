@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- ER1 (emergency privilege: !canBrake ignore-red arm). An emergency vehicle (vClass=emergency,
+         sigma=0, maxSpeed capped to 25 for scenario-30 geometry) cruises WJ at 25 m/s toward J. The
+         light is GREEN for [0,11) then turns RED directly (no yellow). At the step planning t=10->11
+         the vehicle is at pos 255 (seen 45 from the stop line < brakeDist ~57.5), so it is physically
+         too close to stop: canBrakeBeforeStopLine is false and it PROCEEDS through the red, crossing
+         onto JE at free-flow (the dilemma-zone "go").
+         jmDriveAfterRedTime="0" isolates MSVehicle::ignoreRed's `!canBrake` arm (MSVehicle.cpp:7302):
+         ignoreRedTime=0 is >= 0 so the red-arm branch is taken, but `0 > redDuration` is always false
+         (privilege never fires), so the ONLY reason ignoreRed returns true is `!canBrake`. Contrast
+         to scenario 30 (yellow, plain passenger, proceeds via the line-2754 canBrakeBeforeStopLine
+         gate). -->
+    <vType id="emg" vClass="emergency" sigma="0" maxSpeed="25" jmDriveAfterRedTime="0"/>
+    <route id="r0" edges="WJ JE"/>
+    <vehicle id="veh0" type="emg" route="r0" depart="0" departPos="5" departSpeed="25" departLane="0"/>
+</routes>

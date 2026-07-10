@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-07 08:01:49 by Eclipse SUMO netconvert Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <node-files value="tl.nod.xml"/>
+        <edge-files value="tl.edg.xml"/>
+    </input>
+
+    <output>
+        <output-file value="tl.net.xml"/>
+    </output>
+
+    <junctions>
+        <no-turnarounds value="true"/>
+    </junctions>
+
+</configuration>
+-->
+
+<net version="1.20" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,600.00,0.00" origBoundary="0.00,0.00,600.00,0.00" projParameter="!"/>
+
+    <edge id=":J_0" function="internal">
+        <lane id=":J_0_0" index="0" speed="25.00" length="0.10" shape="300.00,-1.60 300.00,-1.60"/>
+    </edge>
+
+    <edge id="JE" from="J" to="E" priority="-1">
+        <lane id="JE_0" index="0" speed="25.00" length="300.00" shape="300.00,-1.60 600.00,-1.60"/>
+    </edge>
+    <edge id="WJ" from="W" to="J" priority="-1">
+        <lane id="WJ_0" index="0" speed="25.00" length="300.00" shape="0.00,-1.60 300.00,-1.60"/>
+    </edge>
+
+    <tlLogic id="J" type="static" programID="0" offset="0">
+        <phase duration="11" state="G"/>
+        <phase duration="100" state="r"/>
+    </tlLogic>
+
+    <junction id="E" type="dead_end" x="600.00" y="0.00" incLanes="JE_0" intLanes="" shape="600.00,-3.20 600.00,0.00"/>
+    <junction id="J" type="traffic_light" x="300.00" y="0.00" incLanes="WJ_0" intLanes=":J_0_0" shape="300.00,0.00 300.00,-3.20 300.00,0.00">
+        <request index="0" response="0" foes="0" cont="0"/>
+    </junction>
+    <junction id="W" type="dead_end" x="0.00" y="0.00" incLanes="" intLanes="" shape="0.00,0.00 0.00,-3.20"/>
+
+    <connection from="WJ" to="JE" fromLane="0" toLane="0" via=":J_0_0" tl="J" linkIndex="0" dir="s" state="O"/>
+
+    <connection from=":J_0" to="JE" fromLane="0" toLane="0" dir="s" state="M"/>
+
+</net>

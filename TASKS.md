@@ -328,8 +328,20 @@ buffer absorb them); neither is a rewrite. Order within each group respects the 
   every other vType — rung 10 byte-identical); `TrafficLightState.GetPhaseElapsed` gives `redDuration`;
   `RedLightConstraint` returns +inf when the vehicle ignores red. Also the first real-SUMO validation
   of A1's emergency vClass table (ParameterCrossCheck on scenario 16). `RungA3ParityTests` green;
-  `dotnet test` = 61. Gated ACCEPT. **DEFERRED (each its own future rung + scenario):** the `!canBrake`
-  ignore-red arm; **ignore-FOE** at junctions — note `jmIgnoreJunctionFoeProb` only bypasses the
+  `dotnet test` = 61. Gated ACCEPT.
+  - **ER1 DONE (`!canBrake` ignore-red arm, PARITY).** `scenarios/50-emergency-red-dilemma` + golden:
+    an emergency vehicle (`vClass=emergency`, `maxSpeed=25`, `jmDriveAfterRedTime="0"`) cruises WJ at
+    25 toward J; the light is Green [0,11) then RED directly (no yellow), and at the step planning
+    t=10→11 the vehicle (pos 255, seen 45 < brakeDist ~57.5) is too close to stop, so it PROCEEDS
+    through the red at free-flow, crossing onto JE by t=12. KEY: SUMO's `MSVehicle::ignoreRed`
+    (MSVehicle.cpp:7302) `!canBrake` arm is only reachable for a privileged vehicle (`ignoreRedTime>=0`),
+    but for the stop-line brake the outer `MSVehicle.cpp:2754` `&& canBrakeBeforeStopLine` gate already
+    makes ANY vehicle proceed when it cannot brake — and the engine already models this via
+    `RedLightConstraint`'s `if (!canBrakeBeforeStopLine) return +inf` (added in C6's yellow decision,
+    scenario 30 covered only YELLOW). So ER1 is a NON-VACUOUS RED-arm COVERAGE add with NO engine diff;
+    `jmDriveAfterRedTime="0"` isolates the `!canBrake` return in SUMO (0≥0 takes the red branch, `0>redDuration`
+    never fires). `RungER1ParityTests` green; `dotnet test` = 183. parity-reviewer ACCEPT.
+  - **DEFERRED (each its own future rung + scenario):** **ignore-FOE** at junctions — note `jmIgnoreJunctionFoeProb` only bypasses the
   on-junction link-leader path (`checkLinkLeader`), NOT 9b's `opened()`/approaching stop-line yield,
   so a real "emergency ignores a priority foe" needs the `opened()`-level ignore too; and behavior
   **(ii) give-way** (other vehicles moving aside — the LC blue-light layer). "priority *road*"
