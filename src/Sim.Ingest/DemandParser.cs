@@ -141,6 +141,102 @@ public static class DemandParser
                 Stops: stops));
         }
 
+        // F1 (deterministic flow demand): a <flow> is a template that expands to many <vehicle>s
+        // over [begin, end). Only the DETERMINISTIC forms are handled here (number / period /
+        // vehsPerHour); the probabilistic `probability` form is a later statistical-parity rung and
+        // is rejected loudly rather than silently mis-expanded. Expansion happens at LOAD (cold
+        // path) into concrete VehicleDefs with ids "<flowId>.<k>" (SUMO's convention), which then
+        // flow through the SAME depart-gated insertion path as hand-listed <vehicle>s -- so the
+        // engine is untouched and any rou.xml with no <flow> is byte-identical to before this rung.
+        foreach (var flowEl in root.Elements("flow"))
+        {
+            var flowId = RequireAttribute(flowEl, "id");
+            if (ParseNullableDouble(flowEl, "probability") is not null)
+            {
+                throw new InvalidDataException(
+                    $"<flow id='{flowId}'> uses probability=, which is a probabilistic (statistical-parity) " +
+                    "insertion form not yet supported; use number, period, or vehsPerHour.");
+            }
+
+            var begin = ParseNullableDouble(flowEl, "begin") ?? 0.0;
+            var end = ParseNullableDouble(flowEl, "end");
+            var number = ParseNullableInt(flowEl, "number");
+            var periodAttr = ParseNullableDouble(flowEl, "period");
+            var vehsPerHour = ParseNullableDouble(flowEl, "vehsPerHour");
+
+            // Resolve the insertion PERIOD (seconds between departs). Exactly one rate source.
+            double period;
+            if (periodAttr is double p)
+            {
+                if (p <= 0.0) throw new InvalidDataException($"<flow id='{flowId}'> period must be > 0.");
+                period = p;
+            }
+            else if (vehsPerHour is double vph)
+            {
+                if (vph <= 0.0) throw new InvalidDataException($"<flow id='{flowId}'> vehsPerHour must be > 0.");
+                period = 3600.0 / vph;
+            }
+            else if (number is int nEven && end is double eEven)
+            {
+                if (nEven <= 0) throw new InvalidDataException($"<flow id='{flowId}'> number must be > 0.");
+                if (eEven <= begin) throw new InvalidDataException($"<flow id='{flowId}'> end must be > begin.");
+                period = (eEven - begin) / nEven; // N vehicles spread evenly over [begin, end)
+            }
+            else
+            {
+                throw new InvalidDataException(
+                    $"<flow id='{flowId}'> needs one of period, vehsPerHour, or number+end.");
+            }
+
+            if (number is null && end is null)
+            {
+                throw new InvalidDataException($"<flow id='{flowId}'> needs a bound: number or end.");
+            }
+
+            var flowRouteId = ResolveRouteId(flowEl, flowId, routes, routesById);
+            var flowTypeId = flowEl.Attribute("type")?.Value;
+            if (flowTypeId is null)
+            {
+                flowTypeId = DefaultVehTypeId;
+                needsDefaultVehType = true;
+            }
+
+            var flowDepartPos = ParseNullableDouble(flowEl, "departPos") ?? 0.0;
+            var flowDepartSpeed = ParseNullableDouble(flowEl, "departSpeed") ?? 0.0;
+            var flowDepartLane = ParseNullableInt(flowEl, "departLane") ?? 0;
+
+            for (var k = 0; ; k++)
+            {
+                if (number is int n && k >= n)
+                {
+                    break;
+                }
+
+                var depart = begin + k * period;
+                // Half-open [begin, end): the eps keeps a depart landing exactly on `end` out (and
+                // absorbs float drift in begin + k*period). Only applies when `number` is unbounded.
+                if (number is null && end is double e && depart >= e - 1e-9)
+                {
+                    break;
+                }
+
+                // Backstop against a misconfigured unbounded/huge flow (never a real scenario).
+                if (k > 1_000_000)
+                {
+                    throw new InvalidDataException($"<flow id='{flowId}'> expands to over 1,000,000 vehicles.");
+                }
+
+                vehicles.Add(new VehicleDef(
+                    Id: $"{flowId}.{k}",
+                    TypeId: flowTypeId,
+                    RouteId: flowRouteId,
+                    Depart: depart,
+                    DepartPos: flowDepartPos,
+                    DepartSpeed: flowDepartSpeed,
+                    DepartLaneIndex: flowDepartLane));
+            }
+        }
+
         // C2-iv: synthesize DEFAULT_VEHTYPE when referenced-but-undeclared -- SUMOVTypeParameter's
         // built-in default (vClass passenger, every param at its class default incl. sigma 0.5;
         // VTypeDefaults.Resolve fills the nulls). If the user DID declare their own DEFAULT_VEHTYPE,
@@ -184,4 +280,29 @@ public static class DemandParser
     private static string RequireAttribute(XElement element, string name) =>
         element.Attribute(name)?.Value
         ?? throw new InvalidDataException($"<{element.Name}> is missing required attribute '{name}'.");
+
+    // F1: resolve a <vehicle>/<flow>'s route -- either a `route=` reference to a top-level
+    // <route id=...> or a nested <route edges="..."/> (the embedded form, synthesized into a named
+    // route keyed "!<ownerId>" so route-by-id lookups downstream are unchanged). Mirrors the
+    // inline <vehicle> route logic; factored so <flow> resolves routes identically.
+    private static string ResolveRouteId(
+        XElement el, string ownerId, List<Route> routes, Dictionary<string, Route> routesById)
+    {
+        var routeId = el.Attribute("route")?.Value;
+        if (routeId is not null)
+        {
+            return routeId;
+        }
+
+        var embeddedRouteEl = el.Element("route")
+            ?? throw new InvalidDataException(
+                $"<{el.Name.LocalName} id='{ownerId}'> has neither a route= attribute nor a nested <route>.");
+        routeId = $"!{ownerId}";
+        var embeddedRoute = new Route(
+            routeId,
+            RequireAttribute(embeddedRouteEl, "edges").Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        routes.Add(embeddedRoute);
+        routesById[routeId] = embeddedRoute;
+        return routeId;
+    }
 }

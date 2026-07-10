@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- F1 equivalence fixture (flow form). A single deterministic flow: 5 passenger cars on a
+         500 m single lane, one every 6 s over [0, 30). Expands to f.0@0, f.1@6, f.2@12, f.3@18,
+         f.4@24 (f.5 would be @30 = end, half-open exclusion). The sibling explicit.rou.xml lists
+         those same 5 vehicles by hand; RungF1FlowEquivalenceTests asserts the two produce an
+         IDENTICAL trajectory (engine-vs-engine, no SUMO golden needed). -->
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <flow id="f" type="car" route="r0" begin="0" end="30" period="6"
+          departPos="0" departSpeed="0" departLane="0"/>
+</routes>

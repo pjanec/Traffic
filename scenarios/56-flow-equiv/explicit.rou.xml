@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- F1 equivalence fixture (explicit form). The exact hand-listed expansion of flow.rou.xml's
+         <flow id="f" ... period="6" begin="0" end="30">: ids f.<k>, departs k*6 while < 30. Must
+         yield a byte-identical trajectory to the flow form. -->
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="f.0" type="car" route="r0" depart="0"  departPos="0" departSpeed="0" departLane="0"/>
+    <vehicle id="f.1" type="car" route="r0" depart="6"  departPos="0" departSpeed="0" departLane="0"/>
+    <vehicle id="f.2" type="car" route="r0" depart="12" departPos="0" departSpeed="0" departLane="0"/>
+    <vehicle id="f.3" type="car" route="r0" depart="18" departPos="0" departSpeed="0" departLane="0"/>
+    <vehicle id="f.4" type="car" route="r0" depart="24" departPos="0" departSpeed="0" departLane="0"/>
+</routes>
