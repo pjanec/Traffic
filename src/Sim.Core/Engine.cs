@@ -79,6 +79,12 @@ public sealed class Engine : IEngine
     // trivial +infinity no-op and every parity scenario's constraints list is unaffected.
     private readonly Dictionary<string, ExternalObstacle> _obstacles = new();
 
+    // W1 (warm-start): number of steps advanced so far on the current timeline (via Run or WarmUp),
+    // reset to 0 by LoadScenario. Advance resets the timeline state machines and starts the clock at
+    // _config.Begin only while this is 0, so WarmUp(W) followed by Run(N) is one continuous run
+    // (no mid-timeline reset), while a fresh engine's first Run is byte-identical to before W1.
+    private int _elapsedSteps;
+
     // Rung ER3 (give-way): true iff the loaded demand contains at least one vType with an active
     // blue-light siren (ResolvedVType.HasBluelight). Computed once per LoadScenario. The whole
     // give-way subsystem (DetectGiveWaySide and the ER4/ER5 execution arms) short-circuits when
@@ -392,6 +398,9 @@ public sealed class Engine : IEngine
         _laneSeqArrival.Clear();
         _stopsByEntity.Clear();
         _avoidedByEntity.Clear();
+        // W1: a freshly (re)loaded scenario is a fresh timeline -- the next Run/WarmUp resets the
+        // state machines and starts the clock at Begin.
+        _elapsedSteps = 0;
         // Rung ER3: recompute the give-way master switch for this scenario (reset first so a
         // re-LoadScenario on the same Engine never inherits the previous demand's answer).
         _anyBluelight = false;
@@ -480,35 +489,70 @@ public sealed class Engine : IEngine
 
     public TrajectorySet Run(int steps)
     {
+        var trajectory = new TrajectorySet();
+        Advance(trajectory, steps);
+        return trajectory;
+    }
+
+    // W1 (warm-start): advance the simulation `steps` steps WITHOUT emitting any trajectory,
+    // leaving the engine in a fully populated, valid start-of-step state. A subsequent Run(n)
+    // then continues seamlessly from that state -- the clock and every stateful machine
+    // (per-vehicle RngState/accumulators, actuated-TLS, rail-crossing phases) carry over rather
+    // than restart, because Advance only resets the timeline on a FRESH start (_elapsedSteps==0).
+    // Deterministic by construction (the engine is deterministic), so `WarmUp(W); Run(N)` yields
+    // exactly the tail of a single `Run(W+N)` -- the basis for starting from an "already-driving"
+    // populated network (use a <flow> demand to fill it). Zero added allocation vs Run (same loop
+    // body, Export phase skipped).
+    public void WarmUp(int steps) => Advance(null, steps);
+
+    // Shared driver for Run/WarmUp. `trajectory==null` => warm-up (the per-step Export is skipped).
+    // Resets the timeline state machines only on a fresh start so a warm-up + run is one continuous
+    // timeline; for a fresh engine (_elapsedSteps==0, the case every existing Run() call is) this is
+    // byte-identical to the pre-W1 Run(): reset, then step from _config.Begin.
+    private void Advance(TrajectorySet? trajectory, int steps)
+    {
         if (_network is null || _demand is null || _config is null)
         {
-            throw new InvalidOperationException("LoadScenario must be called before Run.");
+            throw new InvalidOperationException("LoadScenario must be called before Run/WarmUp.");
         }
 
-        var trajectory = new TrajectorySet();
         var dt = _config.StepLength;
+        if (_elapsedSteps == 0)
+        {
+            ResetTimelineStateMachines();
+        }
 
-        // C6-ii: reset every actuated phase machine (and its detectors) to its initial state so a
-        // re-Run() on the same loaded Engine starts the timeline from scratch. No-op when there are
-        // no actuated programs.
+        for (var i = 0; i < steps; i++)
+        {
+            var time = _config.Begin + _elapsedSteps * dt;
+            AdvanceOneStep(trajectory, time, dt);
+            _elapsedSteps++;
+        }
+    }
+
+    // C6-ii / R5: reset every actuated phase machine (and its detectors) and every rail-crossing
+    // phase machine to its initial state (green, next switch at Begin) so a fresh run starts the
+    // timeline from scratch. No-op when there are no actuated programs / no crossings.
+    private void ResetTimelineStateMachines()
+    {
         foreach (var actuated in _actuatedLogics.Values)
         {
             actuated.Reset();
         }
 
-        // R5 (rail crossing): reset every crossing's phase state machine so a re-Run() starts the
-        // timeline from scratch (green, next switch at Begin). No-op when there are no crossings.
         for (var c = 0; c < _railCrossingViaLaneHandles.Length; c++)
         {
             _railCrossingStep[c] = 0;
-            _railCrossingNextSwitch[c] = _config.Begin;
+            _railCrossingNextSwitch[c] = _config!.Begin;
             _railCrossingState[c] = 'G';
         }
+    }
 
-        for (var step = 0; step < steps; step++)
+    // One simulation step. `trajectory==null` skips the Export phase (warm-up). Byte-identical to
+    // the pre-W1 inline loop body otherwise (same phase order, same calls).
+    private void AdvanceOneStep(TrajectorySet? trajectory, double time, double dt)
+    {
         {
-            var time = _config.Begin + step * dt;
-
             // D6 (FastDataPlane ECS readiness -- phased systems over queries, matching FDP's
             // `SystemPhase`-ordered systems): the per-step body below is the SAME sequence of
             // passes as before this rung, now labeled by the `SystemPhase` each belongs to
@@ -536,7 +580,12 @@ public sealed class Engine : IEngine
             // the `TrajectorySet`/emit allocation and the `Run(int)->TrajectorySet` return
             // contract are untouched here -- that streaming/zero-alloc-export concern belongs to
             // D9's export seam, not D6).
-            EmitTrajectory(trajectory, time);
+            // W1: skipped in warm-up (trajectory==null) -- the only difference between a warmed and
+            // an emitted step; everything else (Input/Simulation/PostSimulation) runs identically.
+            if (trajectory is not null)
+            {
+                EmitTrajectory(trajectory, time);
+            }
 
             // [SystemPhase.Input] Reroute-around-prolonged-blockage. Runs ONCE per step, BEFORE
             // Simulation/PlanMovements, so a vehicle that reroutes this step immediately plans
@@ -610,8 +659,6 @@ public sealed class Engine : IEngine
             // TargetLaneBlockedByObstacle.
             DecideSpeedGainChanges(time, dt);
         }
-
-        return trajectory;
     }
 
     // Rung 6: gap-gated departure insertion, ported from
