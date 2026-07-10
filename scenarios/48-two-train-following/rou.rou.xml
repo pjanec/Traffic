@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Two-train following (rung R2). Both vClass="rail", carFollowModel="Krauss".
+         The leader is capped to maxSpeed=5 m/s so the faster follower (capped only by
+         the 13.89 track speed) catches it and settles into the Krauss steady-state gap
+         with rail params (decel=1.3, minGap=5, length=135): this exercises the real
+         leader vsafe constraint with rail defaults, not just free-flow accel. Rail
+         sigma default is 0 so no explicit sigma override is needed for determinism. -->
+    <vType id="leader"   vClass="rail" carFollowModel="Krauss" maxSpeed="5.00"/>
+    <vType id="follower" vClass="rail" carFollowModel="Krauss"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="train0" type="leader"   route="r0" depart="0" departPos="300" departSpeed="0" departLane="0"/>
+    <vehicle id="train1" type="follower" route="r0" depart="0" departPos="0"   departSpeed="0" departLane="0"/>
+</routes>
