@@ -55,6 +55,12 @@
     moped: "#a3a3a3",
     emergency: "#dc2626",
     pedestrian: "#eab308",
+    // EXTERNAL-AGENT demo (Sim.ExtDemo): agents injected OUTSIDE SUMO via the B1/B5 obstacle API
+    // (AddObstacle/AddMovingObstacle), never a real SUMO vehicle. Deliberately loud/unmistakable
+    // colors, distinct from every real vClass above (magenta pedestrian marker, lime "obstacle
+    // car" box) -- see drawVehicle's ext_pedestrian circle special-case below.
+    ext_pedestrian: "#ff2d95",
+    ext_car: "#a3ff12",
   };
   var DEFAULT_COLOR = "#9ca3af";
 
@@ -580,8 +586,6 @@
     ctx.save();
     ctx.translate(p[0], p[1]);
     ctx.rotate(angleRad - Math.PI / 2);
-    // (x,y) is the vehicle's FRONT-CENTER reference point (VIZ_SPEC.md); offset the box back by
-    // half its length so it sits behind the reference point along its own heading.
     // True-scale box, but floored to a small on-screen minimum so a real-size car (5 m x 1.8 m)
     // is still visible when the whole network is in view (e.g. a 1 km single lane), instead of
     // collapsing to a sub-pixel dot. At normal/zoomed-in scales the real dimensions dominate, so
@@ -593,7 +597,17 @@
     ctx.strokeStyle = "rgba(0,0,0,0.55)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.rect(-lengthPx, -widthPx / 2, lengthPx, widthPx);
+    if (info.vClass === "ext_pedestrian") {
+      // External-agent demo: draw a pedestrian as a small filled circle (not an oriented box --
+      // a person has no "heading" the way a car does) so it reads unmistakably as something
+      // other than SUMO traffic at a glance, even at the ~0.5x0.5m real footprint's tiny scale.
+      var r = Math.max(Math.max(lengthPx, widthPx) / 2, 4);
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+    } else {
+      // (x,y) is the vehicle's FRONT-CENTER reference point (VIZ_SPEC.md); offset the box back
+      // by half its length so it sits behind the reference point along its own heading.
+      ctx.rect(-lengthPx, -widthPx / 2, lengthPx, widthPx);
+    }
     ctx.fill();
     ctx.stroke();
     ctx.restore();

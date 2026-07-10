@@ -1,0 +1,38 @@
+{
+  "//": "Schema documented in src/Sim.ExtDemo/ExternalAgent.cs. Each agent is registered with the",
+  "//1": "engine as a longitudinal-only obstacle (AddObstacle for a pedestrian, AddMovingObstacle",
+  "//2": "for a car); latFrom/latTo are used ONLY by this demo's viz, never by the engine. ped1",
+  "//3": "crosses BOTH lanes (blockLaneIds) -- a real crossing pedestrian blocks the whole road,",
+  "//4": "not just the lane it is nominally registered on, else a SUMO car on the other lane",
+  "//5": "would just lane-change around a footprint the engine has no lateral field to see.",
+  "agents": [
+    {
+      "id": "ped1",
+      "kind": "pedestrian",
+      "laneId": "e0_1",
+      "blockLaneIds": ["e0_0"],
+      "startPos": 150.0,
+      "length": 0.6,
+      "width": 0.5,
+      "startTime": 8.0,
+      "endTime": 16.0,
+      "speed": 0.0,
+      "latFrom": -1.6,
+      "latTo": 4.8
+    },
+    {
+      "id": "slowcar1",
+      "kind": "car",
+      "laneId": "e0_0",
+      "startPos": 80.0,
+      "length": 4.5,
+      "width": 1.9,
+      "startTime": 0.0,
+      "endTime": 1000.0,
+      "speed": 3.0,
+      "maxDecel": 4.5,
+      "latFrom": 0.0,
+      "latTo": 0.0
+    }
+  ]
+}

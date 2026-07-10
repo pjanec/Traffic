@@ -215,6 +215,25 @@ internal static class Program
         var vehicles = new Dictionary<string, VehicleInfoPayload>();
         foreach (var vehicleId in trajectorySet.VehicleIds)
         {
+            // External-agent naming convention (Sim.ExtDemo/CombinedFcdObserver.RenderId): an
+            // agent injected OUTSIDE SUMO via the B1/B5 obstacle API is never a real vehicle in
+            // this scenario's rou.xml (adding one there would make the ENGINE itself simulate it
+            // as a normal car -- exactly what it must not be), so the usual rou.xml join below
+            // can never resolve it. Recognize it by its "ext_pedestrian_"/"ext_car_" id prefix
+            // instead and assign fixed dimensions/vClass directly -- the vClass string doubles as
+            // the palette key template.js's VCLASS_COLORS.ext_pedestrian/ext_car resolve against.
+            if (vehicleId.StartsWith("ext_pedestrian_", StringComparison.Ordinal))
+            {
+                vehicles[vehicleId] = new VehicleInfoPayload("ext_pedestrian", "ext_pedestrian", 0.5, 0.5);
+                continue;
+            }
+
+            if (vehicleId.StartsWith("ext_car_", StringComparison.Ordinal))
+            {
+                vehicles[vehicleId] = new VehicleInfoPayload("ext_car", "ext_car", 4.5, 1.9);
+                continue;
+            }
+
             ResolvedVType resolved;
             string typeId;
             if (vehicleTypeById.TryGetValue(vehicleId, out var t) && demand.VTypesById.TryGetValue(t, out var vType))

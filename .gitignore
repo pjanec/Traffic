@@ -27,3 +27,10 @@ scenarios/_bench/city-*/engine.summary.xml
 scenarios/_bench/city-*/engine.tripinfo.xml
 scenarios/_bench/city-organic-L2/replay.html
 scenarios/_bench/city-mixed-1k/replay.html
+
+# Sim.ExtDemo (external-agent visual test): the combined FCD and its replay.html are regenerated
+# on demand (`dotnet run --project src/Sim.ExtDemo` / `src/Sim.Viz`), never committed -- only the
+# scenario inputs (net/rou/config/external-agents.json) and NOTES.md/provenance.txt are.
+scenarios/_bench/ext-agents-demo/engine.fcd.xml
+scenarios/_bench/ext-agents-demo/replay.html
+scenarios/_bench/ext-agents-demo/playwright_screenshot.png

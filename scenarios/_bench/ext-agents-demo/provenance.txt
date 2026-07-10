@@ -1,0 +1,21 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-10T00:12:26Z
+command=netconvert --node-files nodes.nod.xml --edge-files edges.edg.xml --output-file net.net.xml --no-turnarounds true --junctions.corner-detail 0
+# No golden.fcd.xml here: this is a Sim.ExtDemo VISUAL-TEST fixture (external, non-SUMO agents
+#   injected via the B1/B5 obstacle API), not a parity scenario -- there is no SUMO run that
+#   includes the external agents to diff against (same "no golden" status as
+#   scenarios/14-external-obstacle). See NOTES.md for what this scenario demonstrates and how to
+#   reproduce the behavioral-proof run.
+# net: hand-authored 2-lane 400m straight road (nodes.nod.xml/edges.edg.xml -> net.net.xml via
+#   netconvert, --no-turnarounds, --junctions.corner-detail 0), same pattern as scenarios/34-
+#   keepclear and 38-keepclear-crosstraffic.
+# rou: two SUMO passenger cars (sigma=0), one per lane, both departing at rest -- see rou.rou.xml.
+# external-agents.json: schema documented in src/Sim.ExtDemo/ExternalAgent.cs.
+# vtype defaults: default passenger vClass (VTypeDefaults.RawDefaultsByVClass["passenger"]), no
+#   overrides beyond sigma="0".
+# input file hashes (sha256):
+input=net.net.xml sha256=18ae0104a006e53c944cb4b6ac83c83b461a261e10051d47ff6d76ea410f0fbb
+input=rou.rou.xml sha256=0bf4b5bffce1d94e3d5c7efee0a2e3644132321b719451f35fb79d6334a5b905
+input=config.sumocfg sha256=53f49f1759ee97b9633681d41da2293c785033015164e2a6571e2b8feda4e06a
+input=external-agents.json sha256=1b8078478314955d6f835a3670daa779f884db18b8b89eefa1caae2b8b4aa3d9

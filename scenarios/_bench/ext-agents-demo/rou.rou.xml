@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Sim.ExtDemo fixture: two SUMO cars on a 2-lane 400m straight road, each reacting to a
+         DIFFERENT external (non-SUMO) agent injected via external-agents.json:
+           - car_ped    (lane e0_1) approaches a pedestrian that steps into its lane and crosses,
+                        must brake to a stop, then resume once the pedestrian clears.
+           - car_follow (lane e0_0) comes up behind a slow external car and must settle into
+                        following it, well below free-flow speed.
+         Both vehicles depart at rest so their free-flow baseline (external-agents.json absent or
+         emptied) is trivial to diff against the with-agents run; see NOTES.md. -->
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="car_ped" type="car" route="r0" depart="0" departPos="0" departSpeed="0" departLane="1"/>
+    <vehicle id="car_follow" type="car" route="r0" depart="0" departPos="0" departSpeed="0" departLane="0"/>
+</routes>
