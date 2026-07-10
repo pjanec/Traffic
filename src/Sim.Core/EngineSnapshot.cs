@@ -42,21 +42,28 @@ public sealed partial class Engine
                 "SaveSnapshot: network has actuated traffic lights; actuated-TLS phase/detector state is not yet captured.");
         }
 
-        // F2a guard (lifted in F2b): a probabilistic <flow> keeps generating after a snapshot is
-        // restored, so its per-flow RNG state + arrival counter must be captured or a restored run
-        // would restart the stream (re-drawing from the seed and re-using "<flowId>.0" ids). The
-        // already-generated vehicles ARE captured (they are ordinary runtimes below), so an
-        // IN-MEMORY WarmUp+Run warm-start is fully supported; only the FILE round-trip of a demand
-        // that still has an active flow is deferred. Throw rather than silently desync the stream.
-        if (_demand.ProbabilisticFlows.Count > 0)
-        {
-            throw new NotSupportedException(
-                "SaveSnapshot: demand has probabilistic <flow> generation; per-flow RNG/counter capture is not yet supported (use in-memory WarmUp for now).");
-        }
-
         var root = new XElement(SnapshotRoot,
             new XAttribute("elapsedSteps", _elapsedSteps.ToString(CultureInfo.InvariantCulture)),
             new XAttribute("time", (_config.Begin + _elapsedSteps * _config.StepLength).ToString("R", CultureInfo.InvariantCulture)));
+
+        // F2b: each probabilistic <flow>'s own insertion RNG (raw SplitMix64 word) + arrival counter,
+        // so a restored run CONTINUES the same Bernoulli stream (same future arrivals, same "<id>.<k>"
+        // numbering) instead of restarting from the seed. Index-aligned with _demand.ProbabilisticFlows
+        // (LoadScenario rebuilds that list identically from the same rou). Absent when no flow exists.
+        for (var i = 0; i < _probFlowRng.Length; i++)
+        {
+            root.Add(new XElement("probFlow",
+                new XAttribute("index", i.ToString(CultureInfo.InvariantCulture)),
+                new XAttribute("rng", _probFlowRng[i].RawState.ToString(CultureInfo.InvariantCulture)),
+                new XAttribute("counter", _probFlowCounter[i].ToString(CultureInfo.InvariantCulture))));
+        }
+
+        // F2b: which active vehicles came from a probabilistic flow (their ids are NOT in the demand's
+        // static vehicle list -- they were materialized at runtime by GenerateProbabilisticFlows).
+        // These have no template in _demand, so their snapshot record is self-contained (it carries
+        // the VehicleDef fields + stable EntityIndex) and LoadSnapshot RE-CREATES them before
+        // overlaying dynamic state -- see LoadSnapshot's flow-vehicle pre-pass.
+        var demandIds = new HashSet<string>(_demand.Vehicles.Select(d => d.Id), StringComparer.Ordinal);
 
         // Engine-level rail-crossing phase machine (R5), indexed by the crossing order
         // BuildRailCrossingInfo rebuilds identically on the same net -> restore by index.
@@ -71,18 +78,53 @@ public sealed partial class Engine
 
         foreach (var v in _vehicles)
         {
+            var isFlow = !demandIds.Contains(v.Def.Id);
+
+            // A demand vehicle that has not yet departed re-inserts from its own Def in the continued
+            // run, so it needs no record. A flow-generated one has NO Def in _demand, so even a
+            // not-yet-inserted (queued) one must be captured or it would be lost on restore.
+            if (!v.Inserted && !isFlow)
+            {
+                continue;
+            }
+
+            // F2b: a flow-generated vehicle's self-contained VehicleDef fields + stable EntityIndex,
+            // written on EVERY flow record (inserted, queued, or arrived) so LoadSnapshot can
+            // reconstruct it at the SAME EntityIndex (which keeps future flow arrivals' seeding, and
+            // thus determinism, identical to a single continuous run). Empty for demand vehicles.
+            XAttribute[] FlowMeta() => isFlow
+                ? new[]
+                {
+                    new XAttribute("flowGenerated", "true"),
+                    new XAttribute("entityIndex", v.EntityIndex.ToString(CultureInfo.InvariantCulture)),
+                    new XAttribute("typeId", v.Def.TypeId),
+                    new XAttribute("routeId", v.Def.RouteId),
+                    new XAttribute("depart", v.Def.Depart.ToString("R", CultureInfo.InvariantCulture)),
+                    new XAttribute("departPos", v.Def.DepartPos.ToString("R", CultureInfo.InvariantCulture)),
+                    new XAttribute("departSpeed", v.Def.DepartSpeed.ToString("R", CultureInfo.InvariantCulture)),
+                    new XAttribute("departLane", v.Def.DepartLaneIndex.ToString(CultureInfo.InvariantCulture)),
+                }
+                : Array.Empty<XAttribute>();
+
             if (!v.Inserted)
             {
-                continue; // not yet departed -> it inserts normally in the continued run.
+                // Flow-generated but still queued: capture its identity so it re-queues (and inserts
+                // at its own depart) in the continued run. No dynamic state yet (never planned).
+                root.Add(new XElement("vehicle",
+                    new XAttribute("id", v.Def.Id),
+                    new XAttribute("inserted", "false"),
+                    FlowMeta()));
+                continue;
             }
 
             if (v.Arrived)
             {
-                // Already finished its route: capture only the lifecycle flag so LoadSnapshot does
-                // not re-insert it. No dynamic state to restore.
+                // Already finished its route: capture the lifecycle flag (plus flow identity so a flow
+                // vehicle still reoccupies its EntityIndex) so LoadSnapshot does not re-insert it.
                 root.Add(new XElement("vehicle",
                     new XAttribute("id", v.Def.Id),
-                    new XAttribute("arrived", "true")));
+                    new XAttribute("arrived", "true"),
+                    FlowMeta()));
                 continue;
             }
 
@@ -101,6 +143,7 @@ public sealed partial class Engine
             root.Add(new XElement("vehicle",
                 new XAttribute("id", v.Def.Id),
                 new XAttribute("arrived", "false"),
+                FlowMeta(),
                 new XAttribute("laneSeqIndex", v.LaneSeqIndex.ToString(CultureInfo.InvariantCulture)),
                 new XAttribute("pos", v.Kinematics.Pos.ToString("R", CultureInfo.InvariantCulture)),
                 new XAttribute("speed", v.Kinematics.Speed.ToString("R", CultureInfo.InvariantCulture)),
@@ -156,6 +199,46 @@ public sealed partial class Engine
             _railCrossingState[idx] = RequireAttr(rc, "state")[0];
         }
 
+        // F2b: restore each probabilistic flow's insertion RNG + arrival counter so the continued run
+        // resumes the same Bernoulli stream. Index-aligned with _demand.ProbabilisticFlows (rebuilt by
+        // the prior LoadScenario), which also sized/seeded these arrays -- we overwrite that seeding.
+        foreach (var pf in root.Elements("probFlow"))
+        {
+            var idx = int.Parse(RequireAttr(pf, "index"), CultureInfo.InvariantCulture);
+            if (idx < 0 || idx >= _probFlowRng.Length)
+            {
+                throw new InvalidDataException($"snapshot probFlow index {idx} out of range for this demand.");
+            }
+
+            _probFlowRng[idx] = new VehicleRng(ulong.Parse(RequireAttr(pf, "rng"), CultureInfo.InvariantCulture));
+            _probFlowCounter[idx] = int.Parse(RequireAttr(pf, "counter"), CultureInfo.InvariantCulture);
+        }
+
+        // F2b: RE-CREATE the flow-generated vehicles (no _demand template exists for them) BEFORE the
+        // dynamic-state overlay, in ascending captured EntityIndex order. LoadScenario has already
+        // created the demand vehicles at indices 0..M-1; the flow vehicles reoccupy M.. exactly as in
+        // the original run, so their (and future arrivals') per-vehicle seeding stays identical.
+        foreach (var fv in root.Elements("vehicle")
+                     .Where(e => e.Attribute("flowGenerated")?.Value == "true")
+                     .OrderBy(e => int.Parse(RequireAttr(e, "entityIndex"), CultureInfo.InvariantCulture)))
+        {
+            var expectedIndex = int.Parse(RequireAttr(fv, "entityIndex"), CultureInfo.InvariantCulture);
+            if (expectedIndex != _vehicles.Count)
+            {
+                throw new InvalidDataException(
+                    $"snapshot flow vehicle '{RequireAttr(fv, "id")}' EntityIndex {expectedIndex} does not match the reconstruction order (expected {_vehicles.Count}).");
+            }
+
+            CreateRuntime(new VehicleDef(
+                Id: RequireAttr(fv, "id"),
+                TypeId: RequireAttr(fv, "typeId"),
+                RouteId: RequireAttr(fv, "routeId"),
+                Depart: ParseR(fv, "depart"),
+                DepartPos: ParseR(fv, "departPos"),
+                DepartSpeed: ParseR(fv, "departSpeed"),
+                DepartLaneIndex: int.Parse(RequireAttr(fv, "departLane"), CultureInfo.InvariantCulture)));
+        }
+
         var byId = new Dictionary<string, VehicleRuntime>(_vehicles.Count, StringComparer.Ordinal);
         foreach (var v in _vehicles)
         {
@@ -175,6 +258,15 @@ public sealed partial class Engine
             {
                 v.Inserted = true;
                 v.Arrived = true;
+                continue;
+            }
+
+            // F2b: a flow vehicle captured while still queued (never inserted). It was already
+            // re-created above with its Def (fresh RngState/Kinematics = its original pre-insertion
+            // state), so leave it un-inserted -- the continued run's InsertDepartingVehicles places
+            // it at its own depart exactly as the original run would.
+            if (ve.Attribute("inserted")?.Value == "false")
+            {
                 continue;
             }
 

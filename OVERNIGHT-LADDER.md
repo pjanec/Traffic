@@ -104,10 +104,12 @@ recenter). No SUMO golden (SUMO's oncoming traffic does not cooperate — this i
   WarmUp continuity, snapshot guard). SUMO-STREAM statistical parity (matching SUMO's exact insertion
   stream vs an ensemble → network golden regen) is the DEFERRED cross-check, grouped with C1
   `sigma>0`.
-- **F2b** probabilistic-flow FILE snapshot — capture each active flow's per-flow RNG (`RawState`) +
-  arrival counter in `SaveSnapshot`/`LoadSnapshot`, and lift the `EngineSnapshot` guard that
-  currently throws while a flow is active. Small, offline, tested by a save→load→continue equivalence
-  on `prob.rou.xml` (the counter/RNG must survive so ids don't collide and the stream continues).
-  NOT yet done.
+- **F2b** probabilistic-flow FILE snapshot: **LANDED (offline).** `SaveSnapshot`/`LoadSnapshot` now
+  capture each flow's per-flow RNG (`RawState`) + arrival counter AND the already-generated flow
+  vehicles themselves (self-contained `<vehicle flowGenerated=…>` records carrying their VehicleDef
+  fields + stable EntityIndex, incl. queued/arrived ones), reconstructed on load at their original
+  EntityIndex so future arrivals seed identically. The F2a guard is lifted. `RungF2bProbabilistic
+  FlowSnapshotTests` proves save→fresh-load→continue equals a single WarmUp+Run point-for-point; the
+  existing W2 rail+train snapshot tests + bench hash confirm inertness for non-flow snapshots.
 - **W3** SUMO `--save-state` parity cross-check for the snapshot (load SUMO's saved state, diff ours;
   network). Optional hardening. Network-only.

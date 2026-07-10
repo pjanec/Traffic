@@ -96,14 +96,31 @@ public class RungF2ProbabilisticFlowTests
     }
 
     [Fact]
-    public void SaveSnapshot_IsGuarded_WhileAProbabilisticFlowIsActive()
+    public void SaveSnapshot_WhileAProbabilisticFlowIsActive_CapturesTheFlowState()
     {
+        // F2b lifted the F2a guard: a snapshot taken while a flow is generating is now supported and
+        // records the per-flow RNG + counter (round-trip determinism is covered by
+        // RungF2bProbabilisticFlowSnapshotTests). Here just confirm it writes a probFlow record.
         var engine = Load();
         engine.Run(10);
-        var path = Path.Combine(Path.GetTempPath(), $"f2guard_{Guid.NewGuid():N}.snapshot.xml");
-        var ex = Assert.Throws<NotSupportedException>(() => engine.SaveSnapshot(path));
-        Assert.Contains("probabilistic", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.False(File.Exists(path));
+        var path = Path.Combine(Path.GetTempPath(), $"f2snap_{Guid.NewGuid():N}.snapshot.xml");
+        try
+        {
+            engine.SaveSnapshot(path);
+            Assert.True(File.Exists(path));
+            var doc = System.Xml.Linq.XDocument.Load(path);
+            var probFlow = Assert.Single(doc.Root!.Elements("probFlow"));
+            Assert.Equal("0", probFlow.Attribute("index")!.Value);
+            Assert.NotNull(probFlow.Attribute("rng"));
+            Assert.NotNull(probFlow.Attribute("counter"));
+        }
+        finally
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
     }
 
     private static string RepoRoot()
