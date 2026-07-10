@@ -88,9 +88,34 @@ public sealed record VehicleDef(
     public IReadOnlyList<StopDef> Stops { get; init; } = Stops ?? Array.Empty<StopDef>();
 }
 
+// F2 (probabilistic flow demand): a <flow> with `probability=` is NOT expanded to concrete
+// VehicleDefs at load (its arrivals are decided per-step at runtime by a Bernoulli draw), so it is
+// carried through as a template. `Probability` is the per-second insertion probability (SUMO's
+// SUMO_ATTR_PROB); the engine draws once per active flow per step from a per-flow seeded VehicleRng
+// and inserts a vehicle "<Id>.<k>" (running counter k) with probability `Probability * stepLength`.
+// This is DETERMINISTIC and reproducible (given the engine seed), which is what serves the
+// warm-start "deterministically precompute a populated network" use case; matching SUMO's exact
+// insertion STREAM (statistical parity vs a SUMO ensemble) is a separate, network-only cross-check.
+public sealed record ProbabilisticFlow(
+    string Id,
+    string TypeId,
+    string RouteId,
+    double Begin,
+    double End,
+    double Probability,
+    double DepartPos,
+    double DepartSpeed,
+    int DepartLaneIndex);
+
 public sealed record DemandModel(
     IReadOnlyList<VType> VTypes,
     IReadOnlyDictionary<string, VType> VTypesById,
     IReadOnlyList<Route> Routes,
     IReadOnlyDictionary<string, Route> RoutesById,
-    IReadOnlyList<VehicleDef> Vehicles);
+    IReadOnlyList<VehicleDef> Vehicles,
+    IReadOnlyList<ProbabilisticFlow>? ProbabilisticFlows = null)
+{
+    // Same "records can't default a reference-type param to an allocated empty collection" pattern
+    // as VehicleDef.Stops: callers that predate F2 omit the arg and get an empty list, never null.
+    public IReadOnlyList<ProbabilisticFlow> ProbabilisticFlows { get; init; } = ProbabilisticFlows ?? Array.Empty<ProbabilisticFlow>();
+}

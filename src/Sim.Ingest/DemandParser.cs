@@ -91,6 +91,7 @@ public static class DemandParser
         }
 
         var vehicles = new List<VehicleDef>();
+        var probFlows = new List<ProbabilisticFlow>();
         var needsDefaultVehType = false;
         foreach (var vehicleEl in root.Elements("vehicle"))
         {
@@ -153,18 +154,67 @@ public static class DemandParser
         foreach (var flowEl in root.Elements("flow"))
         {
             var flowId = RequireAttribute(flowEl, "id");
-            if (ParseNullableDouble(flowEl, "probability") is not null)
-            {
-                throw new InvalidDataException(
-                    $"<flow id='{flowId}'> uses probability=, which is a probabilistic (statistical-parity) " +
-                    "insertion form not yet supported; use number, period, or vehsPerHour.");
-            }
-
             var begin = ParseNullableDouble(flowEl, "begin") ?? 0.0;
             var end = ParseNullableDouble(flowEl, "end");
             var number = ParseNullableInt(flowEl, "number");
             var periodAttr = ParseNullableDouble(flowEl, "period");
             var vehsPerHour = ParseNullableDouble(flowEl, "vehsPerHour");
+            var probability = ParseNullableDouble(flowEl, "probability");
+
+            // Shared route/type/depart resolution -- identical for the deterministic and the
+            // probabilistic forms (a probability flow is inserted per-step at runtime, but resolves
+            // its route/type/depart placement exactly like a hand-listed <vehicle>).
+            var resolvedRouteId = ResolveRouteId(flowEl, flowId, routes, routesById);
+            string ResolveFlowType()
+            {
+                var t = flowEl.Attribute("type")?.Value;
+                if (t is null)
+                {
+                    needsDefaultVehType = true;
+                    return DefaultVehTypeId;
+                }
+
+                return t;
+            }
+
+            var departPos = ParseNullableDouble(flowEl, "departPos") ?? 0.0;
+            var departSpeed = ParseNullableDouble(flowEl, "departSpeed") ?? 0.0;
+            var departLane = ParseNullableInt(flowEl, "departLane") ?? 0;
+
+            // F2 (probabilistic flow): `probability=` is a per-second Bernoulli insertion, decided at
+            // runtime by the engine from a per-flow seeded RNG -- NOT expanded here. It is mutually
+            // exclusive with the deterministic rate forms (period / vehsPerHour / number).
+            if (probability is double prob)
+            {
+                if (periodAttr is not null || vehsPerHour is not null || number is not null)
+                {
+                    throw new InvalidDataException(
+                        $"<flow id='{flowId}'> combines probability= with period/vehsPerHour/number; use exactly one insertion form.");
+                }
+
+                if (prob <= 0.0 || prob > 1.0)
+                {
+                    throw new InvalidDataException($"<flow id='{flowId}'> probability must be in (0, 1].");
+                }
+
+                var probEnd = end ?? double.PositiveInfinity;
+                if (probEnd <= begin)
+                {
+                    throw new InvalidDataException($"<flow id='{flowId}'> end must be > begin.");
+                }
+
+                probFlows.Add(new ProbabilisticFlow(
+                    Id: flowId,
+                    TypeId: ResolveFlowType(),
+                    RouteId: resolvedRouteId,
+                    Begin: begin,
+                    End: probEnd,
+                    Probability: prob,
+                    DepartPos: departPos,
+                    DepartSpeed: departSpeed,
+                    DepartLaneIndex: departLane));
+                continue;
+            }
 
             // Resolve the insertion PERIOD (seconds between departs). Exactly one rate source.
             double period;
@@ -195,17 +245,11 @@ public static class DemandParser
                 throw new InvalidDataException($"<flow id='{flowId}'> needs a bound: number or end.");
             }
 
-            var flowRouteId = ResolveRouteId(flowEl, flowId, routes, routesById);
-            var flowTypeId = flowEl.Attribute("type")?.Value;
-            if (flowTypeId is null)
-            {
-                flowTypeId = DefaultVehTypeId;
-                needsDefaultVehType = true;
-            }
-
-            var flowDepartPos = ParseNullableDouble(flowEl, "departPos") ?? 0.0;
-            var flowDepartSpeed = ParseNullableDouble(flowEl, "departSpeed") ?? 0.0;
-            var flowDepartLane = ParseNullableInt(flowEl, "departLane") ?? 0;
+            var flowRouteId = resolvedRouteId;
+            var flowTypeId = ResolveFlowType();
+            var flowDepartPos = departPos;
+            var flowDepartSpeed = departSpeed;
+            var flowDepartLane = departLane;
 
             for (var k = 0; ; k++)
             {
@@ -250,7 +294,7 @@ public static class DemandParser
             vTypesById[DefaultVehTypeId] = defaultVehType;
         }
 
-        return new DemandModel(vTypes, vTypesById, routes, routesById, vehicles);
+        return new DemandModel(vTypes, vTypesById, routes, routesById, vehicles, probFlows);
     }
 
     private static double? ParseNullableDouble(XElement element, string name)

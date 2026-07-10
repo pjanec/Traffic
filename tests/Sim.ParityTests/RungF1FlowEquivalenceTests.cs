@@ -71,12 +71,28 @@ public class RungF1FlowEquivalenceTests
     }
 
     [Fact]
-    public void ProbabilisticFlow_IsRejected_UntilTheStatisticalRung()
+    public void ProbabilisticFlow_IsParsedAsATemplate_NotExpanded()
     {
-        var ex = Assert.Throws<InvalidDataException>(() => DemandParser.ParseXml(
+        // F2: a probability= flow is NOT expanded to concrete VehicleDefs at load (its arrivals are
+        // decided per-step at runtime); it is carried through as a ProbabilisticFlow template.
+        var m = DemandParser.ParseXml(
             "<routes><vType id='c' vClass='passenger' sigma='0'/><route id='r' edges='e0'/>" +
-            "<flow id='p' type='c' route='r' begin='0' end='30' probability='0.1'/></routes>"));
-        Assert.Contains("probability", ex.Message);
+            "<flow id='p' type='c' route='r' begin='0' end='30' probability='0.1'/></routes>");
+        Assert.Empty(m.Vehicles);
+        var flow = Assert.Single(m.ProbabilisticFlows);
+        Assert.Equal("p", flow.Id);
+        Assert.Equal(0.1, flow.Probability);
+        Assert.Equal(0.0, flow.Begin);
+        Assert.Equal(30.0, flow.End);
+
+        // probability= is mutually exclusive with the deterministic rate forms.
+        Assert.Throws<InvalidDataException>(() => DemandParser.ParseXml(
+            "<routes><vType id='c' vClass='passenger' sigma='0'/><route id='r' edges='e0'/>" +
+            "<flow id='p' type='c' route='r' begin='0' end='30' probability='0.1' period='5'/></routes>"));
+        // and must be in (0, 1].
+        Assert.Throws<InvalidDataException>(() => DemandParser.ParseXml(
+            "<routes><vType id='c' vClass='passenger' sigma='0'/><route id='r' edges='e0'/>" +
+            "<flow id='p' type='c' route='r' begin='0' end='30' probability='1.5'/></routes>"));
     }
 
     private static string RepoRoot()

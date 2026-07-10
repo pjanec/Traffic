@@ -42,6 +42,18 @@ public sealed partial class Engine
                 "SaveSnapshot: network has actuated traffic lights; actuated-TLS phase/detector state is not yet captured.");
         }
 
+        // F2a guard (lifted in F2b): a probabilistic <flow> keeps generating after a snapshot is
+        // restored, so its per-flow RNG state + arrival counter must be captured or a restored run
+        // would restart the stream (re-drawing from the seed and re-using "<flowId>.0" ids). The
+        // already-generated vehicles ARE captured (they are ordinary runtimes below), so an
+        // IN-MEMORY WarmUp+Run warm-start is fully supported; only the FILE round-trip of a demand
+        // that still has an active flow is deferred. Throw rather than silently desync the stream.
+        if (_demand.ProbabilisticFlows.Count > 0)
+        {
+            throw new NotSupportedException(
+                "SaveSnapshot: demand has probabilistic <flow> generation; per-flow RNG/counter capture is not yet supported (use in-memory WarmUp for now).");
+        }
+
         var root = new XElement(SnapshotRoot,
             new XAttribute("elapsedSteps", _elapsedSteps.ToString(CultureInfo.InvariantCulture)),
             new XAttribute("time", (_config.Begin + _elapsedSteps * _config.StepLength).ToString("R", CultureInfo.InvariantCulture)));

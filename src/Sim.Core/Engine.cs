@@ -97,6 +97,16 @@ public sealed partial class Engine : IEngine
     // (all committed scenarios + the bench) takes zero opposite-direction work and stays identical.
     private bool _anyLcOpposite;
 
+    // F2 (probabilistic flow): per-<flow probability=> runtime insertion state, index-aligned with
+    // _demand.ProbabilisticFlows. `_probFlowRng[i]` is that flow's own seeded Bernoulli stream (one
+    // draw per active flow per step); `_probFlowCounter[i]` is its running arrival counter (the k in
+    // "<flowId>.<k>"). Both are seeded/reset ONCE per LoadScenario (like each vehicle's RngState),
+    // NOT per Run, so a WarmUp(W) + Run(N) generates one continuous, deterministic arrival stream.
+    // Empty for every scenario with no probability flow (GenerateProbabilisticFlows short-circuits
+    // on Length==0), so all committed scenarios + the bench stay byte-identical.
+    private VehicleRng[] _probFlowRng = Array.Empty<VehicleRng>();
+    private int[] _probFlowCounter = Array.Empty<int>();
+
     // Rung OV1/OV2: the MINIMUM clear-ahead distance for an overtake even when the oncoming lane
     // looks empty/very distant -- a floor beneath OV2's speed-based gap-acceptance requirement.
     private const double OvertakeMinClearDist = 30.0;
@@ -263,6 +273,12 @@ public sealed partial class Engine : IEngine
     // 0x63='c') packed big-endian into a ulong -- memorable and self-documenting, not itself
     // load-bearing (any nonzero salt distinct across call sites would do).
     private const ulong SpeedFactorRngSalt = 0x5370656564466163UL;
+
+    // F2 (probabilistic flow): a distinct salt so each <flow probability=> gets its own per-flow
+    // insertion RNG stream, seeded off (Seed, flowIndex) and fully independent of every per-vehicle
+    // stream (RngState / SpeedFactorRngSalt) -- ("Flo2Rng " packed big-endian; any distinct nonzero
+    // salt would do).
+    private const ulong ProbFlowRngSalt = 0x466C6F32526E6720UL;
 
     // D9 (FastDataPlane ECS readiness -- info/replication export SEAM, TASKS.md line ~651):
     // the registered `ISimExportObserver`s notified once per active vehicle, once per
@@ -442,80 +458,103 @@ public sealed partial class Engine : IEngine
         _anyLcOpposite = false;
         foreach (var def in _demand.Vehicles)
         {
-            var rawVType = _demand.VTypesById[def.TypeId];
-            // vType defaults resolver (CLAUDE.md rule 6: match vType/init first): only vClass
-            // and any explicit overrides (e.g. rou.xml's sigma="0") come from the raw parse;
-            // everything else is a resolved SUMO vClass default (VTypeDefaults.Resolve).
-            var vType = VTypeDefaults.Resolve(rawVType);
-            // Rung ER3: flip the give-way master switch on if any vehicle is a bluelight EV.
-            _anyBluelight |= vType.HasBluelight;
-            // Rung OV1: flip the opposite-overtake master switch on if any vType allows it.
-            _anyLcOpposite |= vType.LcOpposite;
-            // D3: EntityIndex is this vehicle's stable index in _vehicles, set once here -- see
-            // VehicleRuntime.EntityIndex's own comment.
-            var entityIndex = _vehicles.Count;
-            // D5: the FDP-shaped handle, set once here alongside EntityIndex -- Generation
-            // stays 0 (see Entity.cs / VehicleRuntime.Entity's own comments).
-            // C1-i: seeded ONCE here, from the engine's global Seed + this vehicle's own stable
-            // EntityIndex -- see VehicleRuntime.RngState's and Engine.Seed's own comments. Every
-            // vehicle gets an independent stream regardless of insertion/plan order or thread
-            // scheduling (UseParallelPlan's parallel-safety argument).
-            var rngState = VehicleRng.SeedFor(Seed, entityIndex);
+            CreateRuntime(def);
+        }
 
-            // C7-i: the per-vehicle speedFactor draw (MSVehicleType::computeChosenSpeedDeviation,
-            // MSVehicleControl.cpp:113's once-at-build call site) -- drawn from its OWN salted,
-            // local RNG (never stored/reused after this one draw, matching SUMO's own one-shot
-            // call), completely independent of `rngState` above (VehicleRuntime.RngState / C1's
-            // per-step dawdle stream -- see VehicleRng.SeedFor's 3-arg overload and
-            // VehicleRuntime.SpeedFactor's own comments for why this independence matters).
-            // ScenarioConfig.SpeedDev is the dev SUMOVTypeParameter.cpp:374-378's
-            // `default.speeddev` override resolves to (every existing scenario sets it to 0, so
-            // NormcDistribution.SampleNormc's dev<=0 branch returns `vType.SpeedFactor` --
-            // 1.0 -- with NO draw at all, byte-identical to every pre-C7 rung).
-            var speedFactorRng = VehicleRng.SeedFor(Seed, entityIndex, SpeedFactorRngSalt);
-            var speedFactor = NormcDistribution.ComputeChosenSpeedDeviation(
-                mean: vType.SpeedFactor, dev: _config.SpeedDev, min: 0.2, max: 2.0, rng: ref speedFactorRng);
+        // F2 (probabilistic flow): allocate + seed each <flow probability=>'s own insertion RNG and
+        // zero its arrival counter, ONCE per load (independent per-flow streams -- see the field
+        // comments). Empty when there are no probability flows, so this is inert for every existing
+        // scenario. Seeded from (Seed, flowIndex, ProbFlowRngSalt), so the stream never aliases any
+        // per-vehicle RngState/speedFactor stream.
+        _probFlowRng = new VehicleRng[_demand.ProbabilisticFlows.Count];
+        _probFlowCounter = new int[_demand.ProbabilisticFlows.Count];
+        for (var i = 0; i < _probFlowRng.Length; i++)
+        {
+            _probFlowRng[i] = VehicleRng.SeedFor(Seed, i, ProbFlowRngSalt);
+        }
+    }
 
-            var runtime = new VehicleRuntime
+    // Materializes one VehicleDef into a live VehicleRuntime and appends it to _vehicles, assigning
+    // the next stable EntityIndex and seeding every once-at-creation per-vehicle field exactly as
+    // SUMO builds a vehicle at its depart time. Factored out of LoadScenario so the F2 probabilistic
+    // flow (GenerateProbabilisticFlows) creates a runtime at RUNTIME through the SAME path -- a
+    // vehicle generated by a flow is indistinguishable from a hand-listed one (same RngState /
+    // speedFactor seeding off its EntityIndex, same stop side-table, same master-switch updates).
+    private void CreateRuntime(VehicleDef def)
+    {
+        var rawVType = _demand!.VTypesById[def.TypeId];
+        // vType defaults resolver (CLAUDE.md rule 6: match vType/init first): only vClass
+        // and any explicit overrides (e.g. rou.xml's sigma="0") come from the raw parse;
+        // everything else is a resolved SUMO vClass default (VTypeDefaults.Resolve).
+        var vType = VTypeDefaults.Resolve(rawVType);
+        // Rung ER3: flip the give-way master switch on if any vehicle is a bluelight EV.
+        _anyBluelight |= vType.HasBluelight;
+        // Rung OV1: flip the opposite-overtake master switch on if any vType allows it.
+        _anyLcOpposite |= vType.LcOpposite;
+        // D3: EntityIndex is this vehicle's stable index in _vehicles, set once here -- see
+        // VehicleRuntime.EntityIndex's own comment.
+        var entityIndex = _vehicles.Count;
+        // D5: the FDP-shaped handle, set once here alongside EntityIndex -- Generation
+        // stays 0 (see Entity.cs / VehicleRuntime.Entity's own comments).
+        // C1-i: seeded ONCE here, from the engine's global Seed + this vehicle's own stable
+        // EntityIndex -- see VehicleRuntime.RngState's and Engine.Seed's own comments. Every
+        // vehicle gets an independent stream regardless of insertion/plan order or thread
+        // scheduling (UseParallelPlan's parallel-safety argument).
+        var rngState = VehicleRng.SeedFor(Seed, entityIndex);
+
+        // C7-i: the per-vehicle speedFactor draw (MSVehicleType::computeChosenSpeedDeviation,
+        // MSVehicleControl.cpp:113's once-at-build call site) -- drawn from its OWN salted,
+        // local RNG (never stored/reused after this one draw, matching SUMO's own one-shot
+        // call), completely independent of `rngState` above (VehicleRuntime.RngState / C1's
+        // per-step dawdle stream -- see VehicleRng.SeedFor's 3-arg overload and
+        // VehicleRuntime.SpeedFactor's own comments for why this independence matters).
+        // ScenarioConfig.SpeedDev is the dev SUMOVTypeParameter.cpp:374-378's
+        // `default.speeddev` override resolves to (every existing scenario sets it to 0, so
+        // NormcDistribution.SampleNormc's dev<=0 branch returns `vType.SpeedFactor` --
+        // 1.0 -- with NO draw at all, byte-identical to every pre-C7 rung).
+        var speedFactorRng = VehicleRng.SeedFor(Seed, entityIndex, SpeedFactorRngSalt);
+        var speedFactor = NormcDistribution.ComputeChosenSpeedDeviation(
+            mean: vType.SpeedFactor, dev: _config!.SpeedDev, min: 0.2, max: 2.0, rng: ref speedFactorRng);
+
+        var runtime = new VehicleRuntime
+        {
+            Def = def,
+            VType = vType,
+            EntityIndex = entityIndex,
+            Entity = new Entity(entityIndex, 0),
+            RngState = rngState,
+            SpeedFactor = speedFactor,
+            // C11-iv: MSCFModel_IDM::VehicleVariables ctor default (MSCFModel_IDM.h:191)
+            // `levelOfService(1.)` -- set for every vehicle (harmless/inert for non-IDMM
+            // vTypes, see VehicleRuntime.LevelOfService's own comment).
+            LevelOfService = 1.0,
+            // C8-ii: sentinel so a vehicle's FIRST plan is always an action step (it re-plans
+            // on insertion), regardless of its depart time -- see VehicleRuntime.LastActionTime.
+            LastActionTime = double.NegativeInfinity,
+        };
+
+        // Rung 5 (D3: side table): seed this vehicle's own stop queue (StopRuntime) from its
+        // immutable Def, ONLY when it actually has stops. Reached/RemainingDuration start at
+        // their defaults (false/0) -- ProcessNextStop only initializes RemainingDuration once
+        // the stop is actually reached.
+        if (def.Stops.Count > 0)
+        {
+            var stops = new Queue<StopRuntime>();
+            foreach (var stopDef in def.Stops)
             {
-                Def = def,
-                VType = vType,
-                EntityIndex = entityIndex,
-                Entity = new Entity(entityIndex, 0),
-                RngState = rngState,
-                SpeedFactor = speedFactor,
-                // C11-iv: MSCFModel_IDM::VehicleVariables ctor default (MSCFModel_IDM.h:191)
-                // `levelOfService(1.)` -- set for every vehicle (harmless/inert for non-IDMM
-                // vTypes, see VehicleRuntime.LevelOfService's own comment).
-                LevelOfService = 1.0,
-                // C8-ii: sentinel so a vehicle's FIRST plan is always an action step (it re-plans
-                // on insertion), regardless of its depart time -- see VehicleRuntime.LastActionTime.
-                LastActionTime = double.NegativeInfinity,
-            };
-
-            // Rung 5 (D3: side table): seed this vehicle's own stop queue (StopRuntime) from its
-            // immutable Def, ONLY when it actually has stops. Reached/RemainingDuration start at
-            // their defaults (false/0) -- ProcessNextStop only initializes RemainingDuration once
-            // the stop is actually reached.
-            if (def.Stops.Count > 0)
-            {
-                var stops = new Queue<StopRuntime>();
-                foreach (var stopDef in def.Stops)
+                stops.Enqueue(new StopRuntime
                 {
-                    stops.Enqueue(new StopRuntime
-                    {
-                        LaneId = stopDef.LaneId,
-                        StartPos = stopDef.StartPos,
-                        EndPos = stopDef.EndPos,
-                        Duration = stopDef.Duration,
-                    });
-                }
-
-                _stopsByEntity[entityIndex] = stops;
+                    LaneId = stopDef.LaneId,
+                    StartPos = stopDef.StartPos,
+                    EndPos = stopDef.EndPos,
+                    Duration = stopDef.Duration,
+                });
             }
 
-            _vehicles.Add(runtime);
+            _stopsByEntity[entityIndex] = stops;
         }
+
+        _vehicles.Add(runtime);
     }
 
     // D3: front-of-queue lookup against the side table, returning the same "no stops" empty
@@ -596,6 +635,13 @@ public sealed partial class Engine : IEngine
             // passes as before this rung, now labeled by the `SystemPhase` each belongs to
             // (SystemPhase.cs). CLAUDE.md rule 2 / the D6 briefing: preserve calculation order
             // EXACTLY -- this reorganizes how the loop reads, never what runs or when.
+
+            // [SystemPhase.Input] F2 (probabilistic flow): materialize any <flow probability=>
+            // arrivals decided by this step's Bernoulli draw as depart-now VehicleDefs BEFORE the
+            // insertion pass below picks them up -- mirrors SUMO's MSInsertionControl generating flow
+            // vehicles ahead of the insertion attempt. Inert (no draw, no allocation) when the demand
+            // has no probability flow, so every committed scenario's Input phase is byte-identical.
+            GenerateProbabilisticFlows(time, dt);
 
             // [SystemPhase.Input] Newly-departed vehicles enter the simulation. Runs before this
             // step's Export so a vehicle inserted THIS step is immediately included in the
@@ -696,6 +742,53 @@ public sealed partial class Engine : IEngine
             // does earlier this same step -- see DecideSpeedGainChanges' own header comment and
             // TargetLaneBlockedByObstacle.
             DecideSpeedGainChanges(time, dt);
+        }
+    }
+
+    // F2 (probabilistic flow): for each active <flow probability=>, draw ONCE from that flow's own
+    // seeded stream this step and, on a hit, materialize one depart-now VehicleDef ("<flowId>.<k>",
+    // k the flow's running counter) via CreateRuntime -- the depart-gated InsertDepartingVehicles
+    // pass then places it exactly like any hand-listed vehicle. The per-step probability is
+    // `Probability * dt` (Probability is per-second, mirroring SUMO's SUMO_ATTR_PROB * TS), clamped
+    // to [0,1]; a flow is active over [Begin, End). EXACTLY ONE draw per active flow per step
+    // (whether or not it fires) keeps each flow's stream advancing deterministically, so a
+    // WarmUp(W)+Run(N) yields the same arrivals as a single Run(W+N). Short-circuits with zero work
+    // when the demand has no probability flow, so every committed scenario is byte-identical.
+    private void GenerateProbabilisticFlows(double time, double dt)
+    {
+        var flows = _demand!.ProbabilisticFlows;
+        if (flows.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < flows.Count; i++)
+        {
+            var flow = flows[i];
+            // Active-window test is half-open [Begin, End), the same convention F1's deterministic
+            // expansion uses. A flow outside its window takes no draw at all (its stream is frozen
+            // until it becomes active), so Begin/End shift the stream deterministically too.
+            if (time < flow.Begin || time >= flow.End)
+            {
+                continue;
+            }
+
+            var perStep = Math.Min(1.0, flow.Probability * dt);
+            // One draw per active flow per step -- advances the stream whether or not it fires.
+            if (_probFlowRng[i].NextDouble() >= perStep)
+            {
+                continue;
+            }
+
+            var k = _probFlowCounter[i]++;
+            CreateRuntime(new VehicleDef(
+                Id: $"{flow.Id}.{k}",
+                TypeId: flow.TypeId,
+                RouteId: flow.RouteId,
+                Depart: time,
+                DepartPos: flow.DepartPos,
+                DepartSpeed: flow.DepartSpeed,
+                DepartLaneIndex: flow.DepartLaneIndex));
         }
     }
 

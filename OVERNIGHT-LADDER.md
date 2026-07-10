@@ -94,8 +94,20 @@ recenter). No SUMO golden (SUMO's oncoming traffic does not cooperate — this i
 
 ## Tail — network / statistical (highest friction; LAST)
 
-- **F2** probabilistic `<flow probability=p>`: per-second Bernoulli from a per-flow seeded
-  `VehicleRng` (never `System.Random`). STATISTICAL parity (arrival-rate/headway distributions vs a
-  SUMO ensemble → network golden regen). Groups with the C1 `sigma>0` statistical track.
+- **F2a** probabilistic `<flow probability=p>` — the DETERMINISTIC mechanism: **LANDED (offline).**
+  Per-second Bernoulli from a per-flow seeded `VehicleRng` (never `System.Random`), one draw per
+  active flow per step, arrivals `"<flowId>.<k>"` materialized at runtime through the shared
+  `CreateRuntime` path. Gated inert (empty `ProbabilisticFlows` ⇒ byte-identical; bench hash
+  unchanged). This is what the warm-start "deterministically precompute a populated network" ask
+  needs: `WarmUp(W)` fills the net from the flow, `Run(N)` continues the same stream. Fixture
+  `scenarios/56-flow-equiv/prob.rou.xml` + `RungF2ProbabilisticFlowTests` (determinism, rate band,
+  WarmUp continuity, snapshot guard). SUMO-STREAM statistical parity (matching SUMO's exact insertion
+  stream vs an ensemble → network golden regen) is the DEFERRED cross-check, grouped with C1
+  `sigma>0`.
+- **F2b** probabilistic-flow FILE snapshot — capture each active flow's per-flow RNG (`RawState`) +
+  arrival counter in `SaveSnapshot`/`LoadSnapshot`, and lift the `EngineSnapshot` guard that
+  currently throws while a flow is active. Small, offline, tested by a save→load→continue equivalence
+  on `prob.rou.xml` (the counter/RNG must survive so ids don't collide and the stream continues).
+  NOT yet done.
 - **W3** SUMO `--save-state` parity cross-check for the snapshot (load SUMO's saved state, diff ours;
-  network). Optional hardening.
+  network). Optional hardening. Network-only.
