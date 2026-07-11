@@ -9,6 +9,60 @@ this file assumes them.
 
 ---
 
+## SESSION RESULTS (on-target Windows, 16-core/24-thread) — read this before §2–§4
+
+An on-target session ran the plan below. Its findings **supersede the SoA recommendation in
+§4** — read them first.
+
+**Toolchain / gates:** now **229 passed, 1 skipped** (added one determinism test pinning the
+parallel-export path byte-identical). Determinism hash unchanged: `909605E965BFFE59`.
+
+**Bottleneck: CONFIRMED memory-bandwidth, not GC.** `dotnet-counters`: `% Time in GC` avg 6.5%;
+Server GC A/B a wash (5.83 vs 5.85s) → GC is not the wall. CPU avg **11.4% of 24 cores** (~2.9
+busy) → box not saturated (a bandwidth wall leaves cores stalled, not busy). Per-phase 1→8t
+scaling: `plan` peaks **3.43×@8t** then regresses; `willPass` **2.56×@8t** then regresses;
+16/24 threads are *slower* than 8 (HT oversubscription). Sweet spot for city-3000 = **8 threads**.
+
+**Three byte-identical wins committed** (each: 3 gates green + parity-reviewer ACCEPT):
+- `perf(export)` — serial emit by default (opt-in `Engine.ParallelExport`); parallel emit was a
+  net loss here (0.56–0.71× at every thread count). ~3% @8t.
+- `perf(plan)` — dense active-index list; the parallel loops dispatched over all `_vehicles` and
+  touched ~40% dead (not-departed/arrived) scattered object headers per step just to skip them.
+  ~2.5% @8t (9/12 paired rounds).
+- `perf(insert)` — int `LaneHandle` filter (was string `LaneId`) + `LanesByHandle[h]` re-resolution
+  (drops a per-candidate closure alloc) in `TryInsertOnLane`. ~noisy few %.
+
+**vs single-threaded SUMO 1.20.0 on THIS box** (measured; SUMO installed from the win64 zip):
+SUMO 1-thread ≈ 17–18 s. Engine **step-loop** (the hot path): serial ~1.3×, **8-thread ~2.4–3×
+faster**. Whole-process is dragged to ~1.4× ONLY because `Sim.BenchCity`'s own post-processing
+(build a dict of ~5M points + `OrderBy` per vehicle + tripinfo/summary XML) adds ~4.6 s that SUMO
+doesn't do — that is a benchmark-harness artifact, NOT engine cost. Engine `LoadScenario` ≈ 1.1 s.
+
+**SoA (§4): TWO NEGATIVE RESULTS — do NOT re-attempt the mirror approach.**
+1. Caching `Pos` inline in the `LaneNeighborQuery` buckets (so sort/binary-search stop chasing
+   pointers): **null** (−0.1% wall). The search/sort chases were not the cost.
+2. Full foe-field SoA *probe* on the dominant hot read (`LeaderFollowSpeedConstraint`): pack
+   Pos/Speed/LatOffset/Length/Decel/Width/isCacc into `EntityIndex`-keyed arrays, have the
+   leader lookup return an index, read the leader entirely from the arrays (zero foe-object
+   touch). Byte-identical, but **REGRESSED ~3–4%** (plan phase got *worse*). Root cause: refreshing
+   the arrays each step reads every active vehicle's scattered `Kinematics`/`VType` — the *same*
+   traffic it was meant to avoid — then the plan reads it *again*. Net memory traffic goes **up**.
+   The "cheap sequential refresh from objects" premise in §4 is **false** on this workload.
+   For SoA to help it must be the **source of truth** (remove `Kinematics` from `VehicleRuntime`,
+   `ExecuteMoves` writes the arrays, hundreds of read/write sites migrate) — a massive, high-risk
+   rewrite with now-*demonstrated-uncertain* payoff. Not justified for the current ~2.4× at 8t.
+
+**Practical conclusion:** in this reference-object architecture the hot-path bandwidth wall is
+the ceiling (~2.4× SUMO @8t) for byte-identical work; the remaining lever is a source-of-truth
+SoA/struct rewrite (huge, risky) or SIMD (marginal, gather-heavy — see DESIGN.md). Load (~1.1 s)
+is XML-parsing-bound (a vType-resolve memoization was tried: no-op).
+
+**Measurement note:** the box is noisy (~8% run-to-run, thermal drift). Only **interleaved paired
+A/B of two snapshotted builds** (build both, alternate runs, count paired wins) reliably resolves
+sub-5% changes — single-config medians taken minutes apart are confounded by drift.
+
+---
+
 ## 0. The iron law (never negotiable)
 
 A change is only acceptable if **either**:
