@@ -20,17 +20,50 @@ the sequential-access gain it buys.** This was shown repeatedly (below). The big
 (a) a *value-type* contiguous store kept in stable spatial order (no per-step reorder), or (b)
 fast-mode independent regions that parallelize the *serial tail* — both are major rewrites.
 
-## What SHIPPED (byte-identical, committed)
+## What SHIPPED (byte-identical, committed) — region-parallel plan + willPass + execute + refill
 
-**`perf(region)` — region-parallel plan/willPass** (`Engine.RegionPlan`, `--region [--region-grid G]`,
-off by default → deterministic path untouched, hash `909605E965BFFE59`, 229 tests, city-3000 trip-SHA
-match + aggregate PASS). Groups active vehicles into a G×G spatial grid over the lane-centroid
-bounding box and runs one task per region (dynamic scheduling balances occupancy), so a worker's
-working set (its vehicles + mostly-in-region leaders) is smaller/more L2-resident than the
-per-vehicle work-stealing loop's spatially-incoherent slice. **Measured: ~2.6% @8t (best at G16=256
-regions), ~4–6% @16t; neutral/worse @24t (HT).** Modest — the scattered heap objects mean a region's
-vehicles are still N scattered cache lines, not a contiguous block, so the working-set benefit is
-partial.
+`Engine.RegionPlan` (`--region [--region-grid G]`, off by default → deterministic path untouched,
+hash `909605E965BFFE59`, 229 tests, city-3000 trip-SHA match + aggregate PASS). Active vehicles are
+grouped into a G×G spatial grid over the lane-centroid bounding box; **each region owns a DISJOINT set
+of lanes**, so its buckets/vehicles are touched by only its task — no locks. Dynamic scheduling over
+regions balances occupancy (the "automatic chunk load management"). The KEY structural win: **vehicle
+handoff between regions is FREE** — `BuildRegionActive` re-buckets by current lane every step, so a
+vehicle that crossed into another region is simply grouped there next step; no explicit state transfer.
+
+Region-parallelized phases (all byte-identical), measured @8t:
+- **plan + willPass** (the bandwidth-bound phases) — modest per-phase (~3%); the scattered heap
+  objects mean a region's vehicles are still N scattered cache lines, so the working-set benefit is
+  partial.
+- **`perf(region)` ExecuteMoves — execute 284 → 130 ms (−54%, ~2.2×).** Per-vehicle moves are
+  independent; arrivals go through a now-thread-safe command buffer (a lock on the rare Destroy/
+  ChangeLane appends) and apply order-independently at Flush. Gated on no actuated TLS.
+- **`perf(region)` neighbour Refill — refill 248 → 175 ms (−29%).** Each region refills its disjoint
+  lanes; `RefillRegion` is byte-identical to the serial Refill.
+
+**Cumulative: ~8.7% wall @8t (region grid G24 = 576 regions — FINER grids win: smaller working sets +
+better load balance; the sweet spot scales with vehicle count). From 3.06× → ~3.35× SUMO.** Real,
+safe, byte-identical progress — but not yet 4×.
+
+## The remaining lever to 4× (fast-mode) — NOT built (risk/return point)
+
+The math: SUMO sim-tick ~17.2 s; tick @8t ~5.6 s (=3.06×); 4× needs ≤4.3 s. The serial tail is
+~2.3 s @8t; **execute + refill are now region-parallel (byte-identical), but the biggest serial phase,
+INSERT (~720–950 ms), is not** — it is order-dependent (cross-lane insertion safety) and races on the
+shared `_laneSeqPool` (each insertion appends its lane sequence). Region-parallelizing it naively is **not just fast-mode but NON-DETERMINISTIC**, and that is the real
+blocker: a follower approaching a junction from region B checks (via `TryInsertOnLane`'s cross-junction
+scan) whether a leader on region A's lane has been inserted yet — so whether it inserts or waits
+depends on the A-vs-B thread *timing*, giving run-to-run-variable trajectories. `--fast-gate` requires
+a *deterministic* fast path (it diffs fast vs the deterministic baseline), so a non-deterministic
+insert can't be validated that way. Making it deterministic needs a two-phase scheme (gather all
+candidates, then insert in a deterministic cross-region order) that reclaims the parallelism only for
+the per-candidate route-resolution/leader-scan work (~360 ms of insert's ~500–720 ms is the
+per-insertion route resolution — parallelizable under a lock on the shared `_laneSeqPool` append),
+NOT the ordering decision. That's the honest, bounded path: **region-parallel the per-insertion WORK
+(deterministic, fast-mode where the cross-region ordering is approximated by a fixed region order),
+not the ordering.** Combined with fast-mode speedGain/foeIndex, parallelizing the tail could still
+approach ~4× — but it is delicate (determinism + the pool race) and was left un-built overnight to
+keep the system working. The shipped region foundation (disjoint lanes, free handoff, thread-safe
+command buffer, `RefillRegion`) is what it builds on.
 
 ## What was tried and FAILED (reverted — do not repeat)
 
