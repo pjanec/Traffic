@@ -70,6 +70,7 @@ internal static class Program
         var forceSerial = false;
         var maxParallelism = -1;
         var noFcd = false;
+        var profile = false;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;
         string? aggregateTolerancePath = null;
@@ -119,6 +120,10 @@ internal static class Program
                     // silently shifts the following flag into --fcd-out's value). Prefer this in scripts.
                     noFcd = true;
                     break;
+                case "--profile":
+                    // Turn on the engine's per-phase wall-time accounting and print the breakdown.
+                    profile = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"error: unrecognized argument: {args[i]}");
                     return 2;
@@ -152,6 +157,8 @@ internal static class Program
         {
             engine.MaxParallelism = maxParallelism; // cap worker threads for a scaling sweep
         }
+
+        engine.ProfilePhases = profile; // per-phase wall-time accounting (printed below)
 
         engine.LoadScenario(net, rou, cfg);
 
@@ -245,6 +252,18 @@ internal static class Program
         Console.WriteLine($"mean trip duration : {(trips.Count > 0 ? trips.Average(t => t.Duration) : 0.0):F2} s");
         Console.WriteLine($"stuck (ever, >= {stuckWindowSeconds:F0}s @<{stuckSpeedThreshold:F2}m/s): {stuck.EverStuckCount}");
         Console.WriteLine($"stuck (still, at sim end)                : {stuck.StillStuckAtEndCount}");
+        if (profile && engine.PhaseTicks.Count > 0)
+        {
+            var totalTicks = (double)engine.PhaseTicks.Values.Sum();
+            var toMs = 1000.0 / Stopwatch.Frequency;
+            Console.WriteLine("phase breakdown (share of the accounted per-step work):");
+            foreach (var kv in engine.PhaseTicks.OrderByDescending(kv => kv.Value))
+            {
+                Console.WriteLine(
+                    $"  {kv.Key,-10} {kv.Value * toMs,9:F1} ms   {kv.Value / totalTicks,6:P1}");
+            }
+        }
+
         Console.WriteLine($"wrote {tripinfoOut}");
         Console.WriteLine($"wrote {summaryOut}");
         if (!string.IsNullOrEmpty(fcdOut))

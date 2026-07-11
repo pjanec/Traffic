@@ -232,6 +232,30 @@ public sealed partial class Engine : IEngine
     // (_vehicles is append-only, so Count is monotonic -- no stale slot survives).
     private TrajectoryPoint?[] _emitScratch = Array.Empty<TrajectoryPoint?>();
 
+    // Perf diagnostics: opt-in per-phase wall-time accounting for the Run loop. OFF by default and
+    // effectively free then (one bool test per phase per step -- GetTimestamp is not even called, no
+    // allocation, no Stopwatch object). Sim.BenchCity --profile turns it on and prints the breakdown,
+    // so the parallelization effort targets the phases that actually dominate the serial fraction
+    // rather than guessing. Never read by the engine itself -> zero behavioral effect, parity-inert.
+    public bool ProfilePhases;
+    private readonly Dictionary<string, long> _phaseTicks = new();
+    public IReadOnlyDictionary<string, long> PhaseTicks => _phaseTicks;
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private long PhaseStart() => ProfilePhases ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+
+    private void PhaseEnd(string name, long start)
+    {
+        if (!ProfilePhases)
+        {
+            return;
+        }
+
+        var elapsed = System.Diagnostics.Stopwatch.GetTimestamp() - start;
+        _phaseTicks.TryGetValue(name, out var acc);
+        _phaseTicks[name] = acc + elapsed;
+    }
+
     // C6-ii: per-TLS stateful actuated phase machines, keyed by tlLogic id -- built once in
     // LoadScenario for every tlLogic whose Type == "actuated", empty for a network with only
     // 'static' programs (so RedLightConstraint's actuated branch is never entered and the static
@@ -781,7 +805,9 @@ public sealed partial class Engine : IEngine
             // step's Export so a vehicle inserted THIS step is immediately included in the
             // trajectory point emitted below (matching golden.fcd.xml's presence set: a vehicle
             // is present starting at its own depart-time row, not one step late).
+            var pInsert = PhaseStart();
             InsertDepartingVehicles(time);
+            PhaseEnd("insert", pInsert);
 
             // [SystemPhase.Input] C10-i: advance any in-progress continuous lane-change maneuver
             // (lanechange.duration > 0) by one step BEFORE this frame is emitted, so the emitted lane
@@ -802,7 +828,9 @@ public sealed partial class Engine : IEngine
             // an emitted step; everything else (Input/Simulation/PostSimulation) runs identically.
             if (trajectory is not null)
             {
+                var pEmit = PhaseStart();
                 EmitTrajectory(trajectory, time);
+                PhaseEnd("emit", pEmit);
             }
 
             // [SystemPhase.Input] Reroute-around-prolonged-blockage. Runs ONCE per step, BEFORE
@@ -850,24 +878,34 @@ public sealed partial class Engine : IEngine
             }
 
             var neighbors = _neighborQuery!;
+            var pRefill = PhaseStart();
             neighbors.Refill(ActiveVehicles());
+            PhaseEnd("refill", pRefill);
             // Perf (super-linear fix): (re)build the O(1) foe-approach index from the SAME frozen
             // start-of-step routes the plan phase reads. Both readers of it -- ComputeWillPass and
             // PlanMovements (via ComputeMoveIntent -> JunctionYieldConstraint -> FindFoeVehicle) -- run
             // below, before any structural (route) mutation, so this one build serves the whole step.
+            var pFoe = PhaseStart();
             BuildFoeApproachIndex();
+            PhaseEnd("foeIndex", pFoe);
             // C4-viii: cache each vehicle's willPass (does it intend to ENTER its upcoming junction link
             // this step) from the frozen snapshot BEFORE PlanMovements, so JunctionYieldConstraint's
             // crossing arm can skip a foe that is itself braking-to-stop this step -- SUMO's
             // setApproaching-before-opened() ordering. See ComputeWillPass's header.
+            var pWill = PhaseStart();
             ComputeWillPass(neighbors, time);
+            PhaseEnd("willPass", pWill);
+            var pPlan = PhaseStart();
             PlanMovements(neighbors, time);
+            PhaseEnd("plan", pPlan);
 
             // [SystemPhase.PostSimulation] Apply every vehicle's own MoveIntent, integrate
             // position, flush arrival through the command buffer. `time` is threaded through for
             // C6-ii's induction-loop detector feed (the move this executes produces the FCD frame
             // at `time + dt`, which is the SIMTIME MSInductLoop stamps entry/leave with).
+            var pExec = PhaseStart();
             ExecuteMoves(time, dt);
+            PhaseEnd("execute", pExec);
 
             // [SystemPhase.PostSimulation] Rung A2 (speed-gain/overtaking lane change): SUMO's
             // own per-step order is planMovements -> executeMovements -> changeLanes
@@ -880,7 +918,9 @@ public sealed partial class Engine : IEngine
             // active-windows (StartTime/EndTime) at the SAME instant ObstacleConstraint already
             // does earlier this same step -- see DecideSpeedGainChanges' own header comment and
             // TargetLaneBlockedByObstacle.
+            var pGain = PhaseStart();
             DecideSpeedGainChanges(time, dt);
+            PhaseEnd("speedGain", pGain);
         }
     }
 
