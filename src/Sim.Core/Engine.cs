@@ -232,6 +232,16 @@ public sealed partial class Engine : IEngine
     // (_vehicles is append-only, so Count is monotonic -- no stale slot survives).
     private TrajectoryPoint?[] _emitScratch = Array.Empty<TrajectoryPoint?>();
 
+    // Perf (on-target measurement): opt-in for the parallel Export path (EmitTrajectory's
+    // compute-into-scratch-then-append branch). OFF by default because on the 16-core/24-thread
+    // target box it is a consistent NET LOSS -- measured serial emit ~421 ms vs parallel 588-755 ms
+    // per city-3000 run at every thread count (the per-vehicle geometry is memory-light, so the
+    // Parallel.For dispatch + scratch write/re-read cost dominates any compute win). Byte-identical
+    // either way (the parallel path is provably equal to the serial append -- see _emitScratch's
+    // header), so this only chooses the faster SCHEDULE; the deterministic output is untouched. Left
+    // reachable (set true) so the parallel path can be re-measured on higher-bandwidth hardware.
+    public bool ParallelExport;
+
     // Perf diagnostics: opt-in per-phase wall-time accounting for the Run loop. OFF by default and
     // effectively free then (one bool test per phase per step -- GetTimestamp is not even called, no
     // allocation, no Stopwatch object). Sim.BenchCity --profile turns it on and prints the breakdown,
@@ -6300,7 +6310,7 @@ public sealed partial class Engine : IEngine
         // byte-identical (TrajectorySet's query surface is by-(vehicle,time), emission-order
         // independent -- see _emitScratch's header). Size-gated by ShouldParallelizePlan so every
         // small parity scenario stays on the serial path.
-        if (_exportObservers.Count == 0 && ShouldParallelizePlan())
+        if (ParallelExport && _exportObservers.Count == 0 && ShouldParallelizePlan())
         {
             if (_emitScratch.Length < _vehicles.Count)
             {

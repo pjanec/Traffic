@@ -31,10 +31,26 @@ public class RungD8ParallelDeterminismTests
         Assert.Equal(hashSequential, hashParallel);
     }
 
-    private static (ulong Hash, int PeakConcurrent) RunAndHash(bool useParallelPlan)
+    // Perf (on-target measurement): the parallel Export path (EmitTrajectory's
+    // compute-into-scratch-then-append branch, Engine.ParallelExport) is OFF by default because it
+    // is a net loss on the target box -- so nothing in the default offline loop reaches it, and its
+    // body could rot silently. This pins its byte-identity: with UseParallelPlan=true forcing
+    // ShouldParallelizePlan() (hence the emit size-gate) true, ParallelExport=true takes that branch
+    // over the SAME dense scenario, and its (vehicle,time)-keyed trajectory MUST equal the fully
+    // sequential run's -- the parallel path only reorders emission, which the hash is invariant to.
+    [Fact]
+    public void DenseScenario_ParallelExport_IsByteIdenticalToSequential()
+    {
+        var (hashSequential, _) = RunAndHash(useParallelPlan: false);
+        var (hashParallelExport, _) = RunAndHash(useParallelPlan: true, parallelExport: true);
+
+        Assert.Equal(hashSequential, hashParallelExport);
+    }
+
+    private static (ulong Hash, int PeakConcurrent) RunAndHash(bool useParallelPlan, bool parallelExport = false)
     {
         var dir = Path.Combine(RepoRoot(), "scenarios", "_bench", "highway-dense");
-        var engine = new Engine { UseParallelPlan = useParallelPlan };
+        var engine = new Engine { UseParallelPlan = useParallelPlan, ParallelExport = parallelExport };
         engine.LoadScenario(
             Path.Combine(dir, "net.net.xml"),
             Path.Combine(dir, "rou.rou.xml"),

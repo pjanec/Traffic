@@ -71,6 +71,7 @@ internal static class Program
         var maxParallelism = -1;
         var noFcd = false;
         var profile = false;
+        var parallelExport = false;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;
         string? aggregateTolerancePath = null;
@@ -124,6 +125,11 @@ internal static class Program
                     // Turn on the engine's per-phase wall-time accounting and print the breakdown.
                     profile = true;
                     break;
+                case "--parallel-export":
+                    // Opt into the parallel Export path (off by default -- a net loss on the target
+                    // box; byte-identical either way). Here to A/B the schedule on other hardware.
+                    parallelExport = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"error: unrecognized argument: {args[i]}");
                     return 2;
@@ -159,6 +165,7 @@ internal static class Program
         }
 
         engine.ProfilePhases = profile; // per-phase wall-time accounting (printed below)
+        engine.ParallelExport = parallelExport; // opt-in parallel Export (off = faster on target box)
 
         engine.LoadScenario(net, rou, cfg);
 
