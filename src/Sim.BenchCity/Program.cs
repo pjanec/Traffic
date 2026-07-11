@@ -63,6 +63,7 @@ internal static class Program
         var stuckWindowSeconds = 120.0;
         var stuckSpeedThreshold = 0.1;
         var forceSerial = false;
+        var maxParallelism = -1;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;
         string? aggregateTolerancePath = null;
@@ -103,6 +104,10 @@ internal static class Program
                     // for a clean serial-vs-SUMO comparison independent of core count / affinity.
                     forceSerial = true;
                     break;
+                case "--max-parallelism" when i + 1 < args.Length:
+                    // Cap the engine's Parallel.For degree -- sweep 1..coreCount for a scaling curve.
+                    maxParallelism = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                    break;
                 default:
                     Console.Error.WriteLine($"error: unrecognized argument: {args[i]}");
                     return 2;
@@ -130,6 +135,11 @@ internal static class Program
         if (forceSerial)
         {
             engine.UseParallelPlan = false; // pin the serial path (ShouldParallelizePlan -> false)
+        }
+
+        if (maxParallelism > 0)
+        {
+            engine.MaxParallelism = maxParallelism; // cap worker threads for a scaling sweep
         }
 
         engine.LoadScenario(net, rou, cfg);

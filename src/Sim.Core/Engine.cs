@@ -327,6 +327,23 @@ public sealed partial class Engine : IEngine
         set => _forceParallelPlan = value;
     }
 
+    // Perf (core-scaling measurement): caps the degree of parallelism of the plan/willPass/emit
+    // Parallel.For loops. Default -1 == unlimited (TPL's own default -- byte-identical to a
+    // Parallel.For with no options), so this is inert unless a benchmark sets it. Set to N to pin the
+    // engine to at most N worker threads, which is how Sim.BenchCity's --max-parallelism sweeps a
+    // 1..coreCount scaling curve on one machine (results are order-independent, so the thread count
+    // never changes the trajectory -- only the wall-clock). Cached as a ParallelOptions so the hot
+    // loops allocate nothing per step.
+    private System.Threading.Tasks.ParallelOptions _parallelOptions = new() { MaxDegreeOfParallelism = -1 };
+    public int MaxParallelism
+    {
+        get => _parallelOptions.MaxDegreeOfParallelism;
+        set => _parallelOptions = new System.Threading.Tasks.ParallelOptions
+        {
+            MaxDegreeOfParallelism = value > 0 ? value : -1,
+        };
+    }
+
     // Below this vehicle count a step's plan phase runs serially -- the Parallel.ForEach partition/
     // task overhead is not worth amortizing, and it keeps every committed parity scenario (all far
     // smaller) on the serial path. Post-L0 measurement: parallel already wins from ~150 concurrent
@@ -1826,7 +1843,7 @@ public sealed partial class Engine : IEngine
             // per-index work-stealing balances the sparse case (its higher overhead is worth it, and
             // is now negligible next to the plan work post-L0). Each iteration writes only its own
             // v.Intent (race-free, see UseParallelPlan's header); byte-identical to serial.
-            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, _parallelOptions, i =>
             {
                 var v = _vehicles[i];
                 if (!v.Inserted || v.Arrived || v.ReuseIntent)
@@ -2558,7 +2575,7 @@ public sealed partial class Engine : IEngine
         {
             // L1: per-index Parallel.For, matching PlanMovements (see there for why chunking was
             // reverted). Each iteration writes only its own vehicle's fields (race-free); byte-identical.
-            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, _parallelOptions, i =>
             {
                 PrePlanVehicle(_vehicles[i], neighbors, time, dt, willPassSpeedEps, eligible);
             });
@@ -6251,7 +6268,7 @@ public sealed partial class Engine : IEngine
             }
 
             var scratch = _emitScratch;
-            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, i =>
+            System.Threading.Tasks.Parallel.For(0, _vehicles.Count, _parallelOptions, i =>
             {
                 var v = _vehicles[i];
                 if (!v.Inserted || v.Arrived)
