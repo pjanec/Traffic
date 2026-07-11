@@ -92,6 +92,32 @@ internal junction lanes excluded). This makes any non-byte-identical fast-mode c
   still-uncertain payoff. This — or spatial partitioning *paired with region-local memory layout* —
   is the only credible path to 4×; the serial-tail/fast-mode work alone cannot reach it.
 
+**UPDATE — the source-of-truth SoA was BUILT and MEASURED, and it REGRESSES. Do not retry per-field
+SoA.** Implemented the full write-through design (no refresh pass): neighbor buckets return an
+EntityIndex, EntityIndex-keyed arrays (`_soaPos/Speed/LatOffset/Length/Decel/Width/IsCacc`) written
+through at insertion + end of `ExecuteMoves` + snapshot restore (the snapshot test caught a missing
+write site — fixed), and `LeaderFollowSpeedConstraint` reads the leader entirely from the arrays
+(zero foe-object touch). **Fully byte-identical** (229 tests, hash `909605E965BFFE59`, city-3000
+serial-vs-parallel trip SHA match, aggregate PASS). Interleaved paired A/B @8t: **plan phase −5.4%
+(worse), wall neutral-to-worse (4/12 rounds).** Root cause, and the general lesson: **the gap math
+reads ~7 fields of a SINGLE leader (Pos/Speed/LatOffset/Length/Decel/Width/isCacc) — an AoS-shaped
+access.** The `VehicleRuntime` object already packs those into 1–2 cache lines; **per-field SoA
+splits them into 7 separate arrays = 7 cache lines for one foe read.** SoA-per-field wins for
+streaming ONE field over MANY entities; it is the WRONG layout for MANY fields of ONE foe. An
+AoS-struct-array (`HotFields[]` indexed by EntityIndex) would be ~neutral, not a win: the real cost
+is the **random leader access** (`leaderIdx` is arbitrary → ~1 random cache line), which is ~1 line
+regardless of AoS/SoA and is only removable by **spatial memory reordering** (physically sorting
+vehicles by position each step so a follower's leader is adjacent in memory) — a far more invasive
+change with its own per-step reordering overhead and uncertain net payoff.
+
+**Bottom line on 4× (@8 cores, hot-path):** not reachable via the data-layout or serial-tail levers
+explored this session. The parallel phases are capped by random-neighbor-access bandwidth (SoA
+doesn't fix it — wrong access shape); the serial tail (44%) is order-dependent / lock-contended.
+The only untried theoretical paths are (a) **spatial memory reordering** of the vehicle store, or
+(b) an aggressive **fast-mode** that approximates/skips work (validated by the shipped `--fast-gate`)
+— both high-effort, high-risk, uncertain. Shipped this session: 3 byte-identical wins + the
+fast-mode scaffold + behavioral gate; measured hot-path **3.06× SUMO @8t**.
+
 ---
 
 ## 0. The iron law (never negotiable)
