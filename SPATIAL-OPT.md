@@ -33,6 +33,20 @@ first genuine wall-mover, though NOT 4× on its own. (An INCREMENTAL re-sort cou
 the full 115 ms sort, since same-lane pos-order is stable — no in-lane passing — so only structural
 movers are out of order; that would push the build below ~150 ms.)
 
+**Incremental-re-sort floor (measured):** an INSERTION sort by (lane,pos) over the already-ordered
+`_packed` adds only **~25 ms** (packed 305 → ~330 ms) — vs Array.Sort's ~115 ms. So the sort itself is
+nearly free on ordered data. **BUT that is the zero-mover FLOOR.** The real incremental case is
+churn-dominated, and a **FLAT** (lane,pos) array handles lane changes badly: a vehicle crossing a lane
+boundary (A→B, ~400×/step on city-3000 as vehicles reach lane ends) moves between lane *segments* — a
+LARGE displacement in the flat array (lane B's handle is arbitrary vs A's), so insertion-sorting ~400
+large displacements/step would be expensive. **The flat-array incremental re-sort's floor is cheap but
+its real cost is churn-dominated.** The fix is a **SEGMENTED per-lane PERSISTENT structure** (a lane
+change is an O(1) move between segments; same-lane order is stable so never re-sorts) concatenated into
+`_packed` each step (O(N) sequential copy) — essentially making the neighbor buckets persistent +
+incrementally maintained. That is the real design; its true per-step cost is only knowable by building
+it. Net-gain estimate therefore spans **~6 % (flat, full Array.Sort) to ~8–13 % (segmented, if churn
+cooperates), plus willPass** — real, bounded, but NOT 4×, and the segmented store is a substantial build.
+
 **Verdict:** the sequential-leader mechanism works, but a **rebuild-from-scratch gather each step**
 cannot win — it re-pays the exact bandwidth it saves. **A real win requires a PERSISTENT
 spatially-ordered hot store**: keep `_packed` (or equivalent) sorted by (lane, pos) *across* steps and
