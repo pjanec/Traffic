@@ -1086,11 +1086,13 @@ public sealed partial class Engine : IEngine
             // L0d: manual lane-by-index scan instead of `edge.Lanes.First(l => l.Index == ...)`, whose
             // predicate captured `v` into a fresh closure per candidate. Same first-match result.
             string laneId = null!;
+            var laneHandle = -1;
             for (var li = 0; li < edge.Lanes.Count; li++)
             {
                 if (edge.Lanes[li].Index == v.Def.DepartLaneIndex)
                 {
                     laneId = edge.Lanes[li].Id;
+                    laneHandle = edge.Lanes[li].Handle;
                     break;
                 }
             }
@@ -1102,7 +1104,7 @@ public sealed partial class Engine : IEngine
                 continue;
             }
 
-            if (!TryInsertOnLane(v, laneId))
+            if (!TryInsertOnLane(v, laneHandle))
             {
                 blockedLanes.Add(laneId);
             }
@@ -1113,7 +1115,7 @@ public sealed partial class Engine : IEngine
     // comment for the full derivation/scope). Returns true and performs the insertion iff
     // there is no leader on the lane or gap >= 0; otherwise leaves `v` untouched and returns
     // false (queued for a later step).
-    private bool TryInsertOnLane(VehicleRuntime v, string laneId)
+    private bool TryInsertOnLane(VehicleRuntime v, int laneHandle)
     {
         // R3 (rail bidi): MSLane::isInsertionSuccess (MSLane.cpp:843-846 for the departure lane,
         // :999-1002 for each forward route lane up to the first rail signal) refuses to insert a
@@ -1138,9 +1140,14 @@ public sealed partial class Engine : IEngine
         // D6: the "inserted, not arrived" half of the guard is now the ActiveVehicles() query;
         // the lane filter stays inline (it is specific to this call site, not the reusable
         // predicate).
+        // Perf: filter on the dense int LaneHandle, not the string LaneId. LaneHandle is kept in
+        // lockstep with LaneId at every write site (VehicleRuntime.LaneHandle / D2), so
+        // `other.LaneHandle == laneHandle` iff `other.LaneId == the departure lane` -- byte-identical,
+        // but this runs ~active-count times per insertion candidate, so it replaces that many per-step
+        // string comparisons with a single int compare.
         foreach (var other in ActiveVehicles())
         {
-            if (other.LaneId != laneId)
+            if (other.LaneHandle != laneHandle)
             {
                 continue;
             }
@@ -1167,8 +1174,11 @@ public sealed partial class Engine : IEngine
         }
 
         var route = _demand!.RoutesById[v.Def.RouteId];
-        var edge = _network!.EdgesById[route.Edges[0]];
-        var lane = edge.Lanes.First(l => l.Index == v.Def.DepartLaneIndex);
+        // The departure lane is `laneHandle` (resolved by the caller as the edge's lane whose Index
+        // == DepartLaneIndex). LanesByHandle[laneHandle] is that exact lane (dense array index, no
+        // per-candidate `edge.Lanes.First(...)` predicate-closure alloc), byte-identical to the old
+        // resolution: same edge (route.Edges[0]), same first-matching lane index.
+        var lane = _network!.LanesByHandle[laneHandle];
 
         v.LaneId = lane.Id;
         // D2: keep LaneHandle in lockstep with LaneId at every write site -- the lane just
