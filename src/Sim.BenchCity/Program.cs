@@ -72,6 +72,8 @@ internal static class Program
         var noFcd = false;
         var profile = false;
         var parallelExport = false;
+        var fast = false;
+        var fastGate = false;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;
         string? aggregateTolerancePath = null;
@@ -130,6 +132,18 @@ internal static class Program
                     // box; byte-identical either way). Here to A/B the schedule on other hardware.
                     parallelExport = true;
                     break;
+                case "--fast":
+                    // Opt into Engine.FastMode (off by default). NOT SUMO-byte-identical; validate
+                    // behavior with --fast-gate, never against the goldens.
+                    fast = true;
+                    break;
+                case "--fast-gate":
+                    // Run the deterministic AND the fast engine on this scenario and assert fast mode
+                    // is BEHAVIORALLY sound: 0 gridlock, aggregate parity vs the deterministic run
+                    // (arrived / mean duration / mean speed / trip-duration KS) within a tight
+                    // tolerance, and no vehicle overlaps. Prints PASS/FAIL and returns.
+                    fastGate = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"error: unrecognized argument: {args[i]}");
                     return 2;
@@ -149,6 +163,15 @@ internal static class Program
 
         var config = ScenarioConfigParser.Parse(cfg);
         var steps = stepsOverride ?? (int)Math.Round((config.End - config.Begin) / config.StepLength);
+
+        // Fast-mode behavioral gate: run deterministic + fast on this scenario and assert fast mode
+        // is BEHAVIORALLY sound (0 gridlock, aggregate parity vs the deterministic run, no overlaps).
+        // Self-contained -- returns before the normal single-run benchmark below.
+        if (fastGate)
+        {
+            return RunFastGate(net, rou, cfg, steps, config, stuckWindowSeconds, stuckSpeedThreshold);
+        }
+
         fcdOut = noFcd ? "" : (fcdOut ?? Path.Combine(scenarioDir, "engine.fcd.xml"));
         tripinfoOut ??= Path.Combine(scenarioDir, "engine.tripinfo.xml");
         summaryOut ??= Path.Combine(scenarioDir, "engine.summary.xml");
@@ -166,6 +189,7 @@ internal static class Program
 
         engine.ProfilePhases = profile; // per-phase wall-time accounting (printed below)
         engine.ParallelExport = parallelExport; // opt-in parallel Export (off = faster on target box)
+        engine.FastMode = fast; // opt-in fast mode (off = deterministic/byte-identical path)
 
         engine.LoadScenario(net, rou, cfg);
 
@@ -316,6 +340,174 @@ internal static class Program
         Console.WriteLine(
             $"{m.Metric,-12}: reference={m.Reference:F3} candidate={m.Candidate:F3} " +
             $"relError={m.RelError:F4} (tol={m.Tolerance:F4}, {(m.WithinTolerance ? "PASS" : "FAIL")})");
+
+    // A same-lane, same-time longitudinal separation below this (metres) is treated as a vehicle
+    // overlap/stacking. It is FAR below any vehicle length + minGap (legitimate bumper-to-bumper
+    // spacing is >= ~5 m), so a violation is a genuine collision (e.g. a racy fast-mode lane change
+    // dropping two cars into one gap), never legitimate close following.
+    private const double OverlapMinSeparation = 1.0;
+
+    // The automated behavioral gate for Engine.FastMode. Fast mode is NOT SUMO-byte-identical, so it
+    // is validated behaviorally: it must (1) not gridlock, (2) stay within a TIGHT aggregate
+    // tolerance of the deterministic run (the byte-identical-to-SUMO baseline), and (3) never overlap
+    // vehicles. Deterministic and fast are each run once on the same scenario and compared.
+    private static int RunFastGate(
+        string net, string rou, string cfg, int steps, ScenarioConfig config,
+        double stuckWindow, double stuckSpeed)
+    {
+        Console.WriteLine("=== FAST-MODE BEHAVIORAL GATE (deterministic baseline vs --fast) ===");
+
+        var det = ExtractRun(net, rou, cfg, steps, config, stuckWindow, stuckSpeed, fastMode: false);
+        var fast = ExtractRun(net, rou, cfg, steps, config, stuckWindow, stuckSpeed, fastMode: true);
+
+        var detOverlaps = CountOverlaps(det.ByVehicle);
+        var fastOverlaps = CountOverlaps(fast.ByVehicle);
+
+        // Tight tolerance vs the deterministic run (NOT the loose ~0.35 SUMO bar): fast mode's
+        // deterministic-tie-break scheduling should perturb the macroscopic behaviour only slightly.
+        var tol = new AggregateToleranceConfig
+        {
+            ArrivedRelTol = 0.02,
+            MeanDurationRelTol = 0.03,
+            MeanSpeedRelTol = 0.03,
+            DistributionDistanceTol = 0.05,
+        };
+        var cmp = AggregateComparator.Compare(det.Trips, det.Summary, fast.Trips, fast.Summary, tol);
+
+        Console.WriteLine(
+            $"deterministic : departed={det.ByVehicle.Count} arrived={det.Trips.Count} " +
+            $"stuck(ever/end)={det.EverStuck}/{det.StillStuck} overlaps={detOverlaps}");
+        Console.WriteLine(
+            $"fast          : departed={fast.ByVehicle.Count} arrived={fast.Trips.Count} " +
+            $"stuck(ever/end)={fast.EverStuck}/{fast.StillStuck} overlaps={fastOverlaps}");
+        Console.WriteLine("--- fast vs deterministic (tight tolerance) ---");
+        PrintMetric(cmp.Arrived);
+        PrintMetric(cmp.MeanDuration);
+        PrintMetric(cmp.MeanSpeed);
+        Console.WriteLine(
+            $"distributionDistance (KS): {cmp.DistributionDistance:F4}  " +
+            $"(tol={cmp.DistributionDistanceTolerance:F4}, {(cmp.DistributionWithinTolerance ? "PASS" : "FAIL")})");
+
+        // Sanity: the deterministic baseline must be gridlock-free, else the gate's premise (compare
+        // fast to a KNOWN-GOOD baseline) is invalid. (A small non-zero baseline overlap count on
+        // normal edges is tolerated -- the criterion below is RELATIVE, so any model-inherent
+        // baseline overlaps are the yardstick, not zero.)
+        if (det.EverStuck != 0 || det.StillStuck != 0)
+        {
+            Console.WriteLine(
+                $"FAST-GATE: INVALID BASELINE (deterministic gridlocked, stuck={det.EverStuck}/{det.StillStuck}) " +
+                "-- fix the scenario before trusting the gate.");
+            return 3;
+        }
+
+        var gridlockOk = fast.EverStuck == 0 && fast.StillStuck == 0;
+        // RELATIVE overlap criterion: fast mode must introduce NO overlaps beyond the deterministic
+        // baseline (which may carry a few model-inherent ones). A racy fast-mode lane change that
+        // stacks two cars shows up as fastOverlaps > detOverlaps.
+        var overlapOk = fastOverlaps <= detOverlaps;
+        var aggregateOk = cmp.IsMatch;
+        var pass = gridlockOk && overlapOk && aggregateOk;
+
+        Console.WriteLine($"  gridlock : {(gridlockOk ? "PASS" : "FAIL")}  (fast stuck ever/end = {fast.EverStuck}/{fast.StillStuck})");
+        Console.WriteLine($"  overlaps : {(overlapOk ? "PASS" : "FAIL")}  (fast={fastOverlaps} vs baseline={detOverlaps}, normal edges only)");
+        Console.WriteLine($"  aggregate: {(aggregateOk ? "PASS" : "FAIL")}");
+        Console.WriteLine($"FAST-GATE: {(pass ? "PASS" : "FAIL")}");
+        return pass ? 0 : 1;
+    }
+
+    // Run one engine (deterministic or fast) to completion and extract the behavioral records the
+    // gate compares: per-vehicle trajectory, arrived-trip records, per-step summary, and stuck counts.
+    // Mirrors Main's inline extraction (same arrival heuristic / stuck detector), factored for reuse.
+    private static (List<TripInfoRecord> Trips, List<SummaryStepRecord> Summary,
+        Dictionary<string, List<TrajectoryPoint>> ByVehicle, int EverStuck, int StillStuck) ExtractRun(
+        string net, string rou, string cfg, int steps, ScenarioConfig config,
+        double stuckWindow, double stuckSpeed, bool fastMode)
+    {
+        var engine = new Engine { FastMode = fastMode };
+        engine.LoadScenario(net, rou, cfg);
+        var traj = engine.Run(steps);
+
+        var byVehicle = new Dictionary<string, List<TrajectoryPoint>>();
+        foreach (var id in traj.VehicleIds)
+        {
+            byVehicle[id] = traj.PointsFor(id).Values.OrderBy(p => p.Time).ToList();
+        }
+
+        var finalStepTime = byVehicle.Count > 0 ? byVehicle.Values.Max(pts => pts[^1].Time) : config.End;
+        var arrivalCutoff = finalStepTime - (config.StepLength / 2.0);
+
+        var trips = new List<TripInfoRecord>();
+        foreach (var (id, points) in byVehicle)
+        {
+            if (points.Count == 0)
+            {
+                continue;
+            }
+
+            var depart = points[0].Time;
+            var lastSeen = points[^1].Time;
+            if (lastSeen >= arrivalCutoff)
+            {
+                continue; // still running at the run's end -- not an arrival
+            }
+
+            trips.Add(new TripInfoRecord(id, depart, lastSeen - depart, points[^1].Speed));
+        }
+
+        trips.Sort((a, b) => a.Depart.CompareTo(b.Depart));
+        var summary = BuildSummarySteps(byVehicle, config);
+        var stuck = StuckDetector.Detect(byVehicle, config.StepLength, stuckWindow, stuckSpeed, finalStepTime);
+        return (trips, summary, byVehicle, stuck.EverStuckCount, stuck.StillStuckAtEndCount);
+    }
+
+    // Count same-lane, same-time vehicle pairs separated by less than OverlapMinSeparation -- a
+    // length-free overlap/collision proxy (see that constant's comment).
+    private static int CountOverlaps(Dictionary<string, List<TrajectoryPoint>> byVehicle)
+    {
+        var byTimeLane = new Dictionary<(double Time, string Lane), List<double>>();
+        foreach (var points in byVehicle.Values)
+        {
+            foreach (var p in points)
+            {
+                // Skip junction-interior (internal, ':'-prefixed) lanes: their geometry makes a
+                // longitudinal (lane, pos) proximity a poor collision proxy (crossing paths, very
+                // short lanes). Overlaps that matter for fast mode happen on normal edges.
+                if (p.Lane.Length > 0 && p.Lane[0] == ':')
+                {
+                    continue;
+                }
+
+                var key = (p.Time, p.Lane);
+                if (!byTimeLane.TryGetValue(key, out var list))
+                {
+                    list = new List<double>();
+                    byTimeLane[key] = list;
+                }
+
+                list.Add(p.Pos);
+            }
+        }
+
+        var overlaps = 0;
+        foreach (var list in byTimeLane.Values)
+        {
+            if (list.Count < 2)
+            {
+                continue;
+            }
+
+            list.Sort();
+            for (var i = 1; i < list.Count; i++)
+            {
+                if (list[i] - list[i - 1] < OverlapMinSeparation)
+                {
+                    overlaps++;
+                }
+            }
+        }
+
+        return overlaps;
+    }
 
     // Buckets every observed frame by its Time, computing SUMO-summary-schema aggregates:
     // `running` = vehicles present that step, `meanSpeed` = their average speed, `arrived` =

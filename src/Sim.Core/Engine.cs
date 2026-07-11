@@ -270,6 +270,19 @@ public sealed partial class Engine : IEngine
     // reachable (set true) so the parallel path can be re-measured on higher-bandwidth hardware.
     public bool ParallelExport;
 
+    // Perf (opt-in FAST MODE -- CLAUDE.md iron law, the "fast-mode flag" escape hatch): OFF by
+    // default, and when false the deterministic/byte-identical path is COMPLETELY untouched (the
+    // committed goldens and the determinism hash 909605E965BFFE59 are unaffected). When true, the
+    // engine is permitted to use faster, NOT-SUMO-byte-identical schedules for the order-dependent
+    // serial phases (e.g. parallelizing insert/speed-gain/foe-index with a deterministic
+    // lowest-EntityIndex tie-break instead of SUMO's exact processing order). Fast mode is still
+    // fully DETERMINISTIC (thread-count-independent), just not trajectory-identical to SUMO; it is
+    // validated BEHAVIORALLY, not byte-identically -- see Sim.BenchCity `--fast-gate`: 0 gridlock,
+    // aggregate parity (arrived / mean duration / mean speed / trip-duration KS) within a tight
+    // tolerance of the deterministic run, and no vehicle overlaps. No committed parity test or
+    // scenario ever sets this, so every golden stays on the exact SUMO-faithful path.
+    public bool FastMode;
+
     // Perf diagnostics: opt-in per-phase wall-time accounting for the Run loop. OFF by default and
     // effectively free then (one bool test per phase per step -- GetTimestamp is not even called, no
     // allocation, no Stopwatch object). Sim.BenchCity --profile turns it on and prints the breakdown,
