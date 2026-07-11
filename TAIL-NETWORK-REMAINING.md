@@ -1,11 +1,26 @@
-# TAIL-NETWORK-REMAINING.md — the network-only tail (F2 SUMO-stream parity + W3)
+# TAIL-NETWORK-REMAINING.md — the network tail (F2 SUMO-stream parity + W3) — DONE
 
-Everything offline-landable in the three requested features (flow insertion, warm-start snapshot,
-opposite-direction overtaking) is on `main` and green. What remains needs the **network-enabled
-golden-regeneration loop** (`scripts/regen-goldens.sh`: installs SUMO fresh, runs it, commits the
-golden), which the offline autonomous loop deliberately cannot reach (CLAUDE.md "Two loops, kept
-strictly separate"). This note is the handoff so a network-side session can finish it without
-re-deriving anything. Same discipline as `C4-VII-REMAINING.md` / `OV-REMAINING.md`.
+**Status: COMPLETE.** Both items below (T1, T2) were landed once a network-enabled session (SUMO
+1.20.0 available) ran the golden-regeneration loop. This note is kept as the record of what was done
+and why. The findings (esp. T1's measurement subtlety) are worth reading before touching this area.
+
+## Outcome (both on `main`, green)
+
+- **T1 DONE** — ensemble statistical parity of the `<flow probability=>` insertion-count distribution
+  vs SUMO. `scenarios/58-flow-probability` (50-seed committed `golden.ensemble`) +
+  `RungT1ProbabilisticFlowEnsembleTests`. Engine mean 8.42 / std 2.16 vs SUMO 8.68 / 2.36, within a
+  statistical `parityMode` tolerance. **Key finding:** comparing *completed trips* (tripinfo, which
+  omits cars that don't finish the edge before `end`) made it look like a 2.6× gap (SUMO 3.22 vs ours
+  8.42); comparing *insertions* (distinct FCD ids, = the extended-run tripinfo count) shows they
+  already match. Our probabilistic insertion + entry-lane gating are faithful; no engine change.
+- **T2 DONE** — `SaveSnapshot` vs SUMO `--save-state` mid-run cross-check. `golden.state.mid.xml` for
+  `12-overtake` (t=15, one vehicle mid-lane-change) and `22-idm-carfollow` (t=30) +
+  `RungT2SnapshotStateParityTests`. Pos/speed/posLat agree within 1e-2. Calibration: SUMO
+  `--save-state.times T` writes the state ENTERING step T = our `Run(T-1)`. No engine change.
+
+The original handoff (kept below for context) framed these as network-only because the *offline* test
+loop must never install SUMO; when a network session is available, running SUMO to commit the goldens
+is exactly the sanctioned golden-regeneration loop.
 
 ## Landed offline (on `main`)
 

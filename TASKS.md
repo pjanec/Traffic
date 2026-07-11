@@ -2310,6 +2310,15 @@ where a network golden is called out. Full per-rung diagnosis lives in the refer
   in a separate session, on `main`) plus the engine-level rail-crossing / clock state. Guards throw
   `NotSupportedException` for the not-yet-captured cases (stops, reroute, actuated TLS). Tests
   `RungW1WarmUpTests`, `RungW2SnapshotTests`.
+- **[net] SUMO cross-checks (T1, T2)** — the network-golden parity checks, DONE (SUMO 1.20.0 runs in
+  this env). **T1** ensemble statistical parity of the `<flow probability=>` INSERTION-COUNT
+  distribution vs SUMO (`scenarios/58-flow-probability`, 50-seed committed `golden.ensemble`,
+  `RungT1ProbabilisticFlowEnsembleTests`; engine mean 8.42/std 2.16 vs SUMO 8.68/2.36 — confirms our
+  probabilistic insertion + entry-lane gating already match SUMO; the earlier "2.6× gap" was a
+  measurement artifact, completed-trips vs insertions). **T2** `SaveSnapshot` vs SUMO `--save-state`
+  mid-run cross-check (`golden.state.mid.xml` for `12-overtake` t=15 and `22-idm-carfollow` t=30,
+  `RungT2SnapshotStateParityTests`; pos/speed/posLat agree within 1e-2 — the state-boundary hardening
+  on top of the in-engine round-trip determinism). Both no engine change (bench hash unchanged).
 
 ### Remaining (deferred, with diagnosis in the markdowns — do these next)
 
@@ -2321,14 +2330,12 @@ where a network golden is called out. Full per-rung diagnosis lives in the refer
   **D3** the coupled OV2/OV4 decision that would enable a genuine reduced-clearance side-by-side pass
   (OV2 must account for the oncoming's cooperative shift; re-add D1 together with this, as D1 would
   then bind). Each needs a fixture that forces the currently-vacuous path to bind.
-- **[net] Network-only tail — see `TAIL-NETWORK-REMAINING.md`.** Needs the network-enabled
-  golden-regen loop (SUMO install), so NOT offline-landable: **T1** F2 SUMO-stream *statistical*
-  parity (author a `probability=` scenario, run a SUMO ensemble, commit the arrival-count / headway
-  distribution golden + a statistical `parityMode`, assert our per-flow stream falls in band — like
-  the C1 `sigma>0` track; NOT a point-for-point FCD diff, since our per-flow RNG is deliberately not
-  SUMO's); **T2** W3 SUMO `--save-state` cross-check (diff our `SaveSnapshot` against SUMO's native
-  saved state at time `t` on the physically-modeled fields, within the scenario's trajectory
-  tolerance — optional hardening on top of the already-proven in-engine round-trip determinism).
+- **[overtake] OV deferred are the ONLY remaining Group-E items — see `OV-REMAINING.md`.** They are
+  OFFLINE (no SUMO needed), needing engine work + a fixture that forces the currently-vacuous path to
+  bind: **D2** first (the concrete OV3 return-gap bug), then **D3** (coupled OV2/OV4 side-by-side
+  pass) with **D1** (cross-lane brake) re-added once D3 makes it bind.
+
+The `[net]` tail (T1/T2) is DONE — see the landed list above and `TAIL-NETWORK-REMAINING.md`.
 
 **Suggested Group-E order (done this session, in order):** F1 → W1 → W2 → OV1 → OV2 → OV3 → OV3b →
-OV4 → F2a → F2b. Remaining: OV D1–D3 (offline, needs binding fixtures) then the [net] tail (T1/T2).
+OV4 → F2a → F2b → T1 → T2. Remaining: OV D1–D3 (offline, needs binding fixtures).

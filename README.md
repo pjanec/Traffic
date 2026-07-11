@@ -130,11 +130,10 @@ position, hexagonal footprints, spatial hash, SIMD — this is "phase 2") · U-t
 train reversal · advanced actuated-TLS features (switching rules, TraCI overrides, jam logic). See
 `TASKS.md` and `DESIGN.md` for the full ledger and the phase-1/phase-2 seam analysis.
 
-**\[net\] tail** (implemented offline, awaiting a network-side golden — see `TAIL-NETWORK-REMAINING.md`):
-the probabilistic-`<flow>` arrival stream and the warm-start snapshot are validated engine-vs-engine
-(determinism, arrival-rate band, round-trip); a SUMO **ensemble** golden for the flow's arrival
-distribution and a SUMO `--save-state` cross-check of the snapshot are the remaining network-only
-parity steps.
+The probabilistic-`<flow>` arrival stream and the warm-start snapshot also carry **SUMO cross-checks**:
+an ensemble statistical parity of the insertion-count distribution vs a 50-seed SUMO golden
+(`scenarios/58-flow-probability`), and a `SaveSnapshot`-vs-SUMO-`--save-state` mid-run cross-check
+(`golden.state.mid.xml`) — both green.
 
 ---
 
