@@ -38,15 +38,21 @@ follow-up session can resume without re-deriving it. Same discipline as `C4-VII-
 
 ## Deferred, with diagnosis (do these next)
 
-### D1 — cross-lane hard-brake backstop: prototyped, REVERTED (untestable under conservative OV2)
-A `OppositeOncomingConstraint` (brake while spilled if a laterally-overlapping oncoming is close) and
-a hard-safety intent drop (`LatOffset > 0.8 && nearestAhead < 60 → abort`) were implemented and are
-inert-safe, but **never bind** in any constructible fixture: OV2's gap acceptance is conservative
-enough that it drops the intent long before an oncoming reaches the hard-abort/brake range (in the
-adversarial fixture it aborted with the oncoming still ~238 m away). Adding defense-in-depth code
-with no non-vacuous test is speculative, so it was reverted (Engine.cs left byte-identical to OV3).
-If a future scenario shows OV2 committing optimistically (e.g. a *dynamic* new oncoming appearing
-inside the committed window), re-add the constraint AND a fixture that forces it to bind.
+### D1 — cross-lane hard-brake backstop: STILL NOT NEEDED (confirmed vacuous, now under D3)
+A `OppositeOncomingConstraint` (brake while spilled if a laterally-overlapping oncoming is close) plus
+a hard-safety intent drop were prototyped and reverted for OV3 because they never bind. D3 (below)
+was expected to make them bind — an overtaker that commits OPTIMISTICALLY (betting on cooperation)
+could face a spilled head-on. It was re-investigated with the two-overtaker head-on fixture
+(`scenarios/59-overtake-cooperative/headon.rou.xml`) at several spacings. Result: **still no
+collision, still no bind.** D3's coupled acceptance only commits when the nearest oncoming is NOT
+currently spilled toward ego (`CooperativeSideBySideSafe`'s not-spilled check); the moment an opposing
+overtaker spills, both egos' next-step acceptance drops the intent and both ABORT (recenter) and pass
+in their own lanes — the abort is the safety response, an explicit brake adds nothing. Confirmed
+collision-free across head-on spacings from ~120 m down to the tightest that still commits.
+`RungD3CooperativeOvertakeTests.TwoOvertakersHeadOn_...` locks this in. So D1 stays UNBUILT (adding an
+untestable brake would repeat the original speculative-code mistake). Re-open only if a *dynamic* new
+spilled oncoming can appear INSIDE the committed window faster than the one-step abort can react (none
+constructible on the current straight-road bidi model).
 
 ### D2 — OV3 RETURN-GAP enforcement — DONE
 Past ~t=21 in `ov3b-adversarial`, once the oncoming cleared, ego re-committed and overtook the
@@ -61,13 +67,17 @@ BEHIND the leader) returns true there, so the OV3b abort-mid-spill behaviour is 
 non-`lcOpposite`. `RungD2ReturnGapTests` runs the FULL `ov3b-adversarial` run: no pair overlaps, and
 ego recenters only with a safe gap (it now recenters ~15-20 m ahead, at t=27, not 3.6 m).
 
-### D3 — coupled OV2/OV4 decision (a genuine side-by-side pass): NOT started
-OV4 (above) widens the corridor but OV2 decides independently and conservatively, so the overtaker
-never actually passes side-by-side with a spilled body while the oncoming is alongside — OV2 has
-already completed or dropped the pass by then. To let the cooperation ENABLE a tighter overtake
-(SUMO's opposite-overtake does let vehicles pass with reduced lateral clearance), OV2's gap
-acceptance would need to account for the oncoming's shift — e.g. reduce `requiredClear` when the
-oncoming is known/expected to cooperate, or model the reduced-clearance side-by-side envelope. This
-couples two per-ego decisions across vehicles (an overtaker betting on an oncoming's future
-cooperation), which needs care under the plan/execute contract and a fixture that forces a real
-side-by-side pass. Do this together with re-adding the D1 cross-lane brake (which WOULD then bind).
+### D3 — coupled OV2/OV4 decision (a genuine side-by-side pass) — DONE
+On a lane wide enough that a spilled overtaker and a cooperatively-shifted oncoming leave a safe
+lateral corridor, the gap acceptance keeps the overtaker committed against an oncoming the
+conservative (complete-and-return-before-arrival) rule would abort for, so the two pass SIDE BY SIDE
+(overtaker spilled, oncoming shifted to its outer edge), then both recentre. Implemented in
+`DetectOvertake`: after the conservative `nearestAhead > requiredClear` test, if the nearest oncoming
+will cooperate (`CooperativeSideBySideSafe`: not itself spilled toward ego, AND the corridor
+`laneSeparation + oncomingCoopShift - egoSpill - combinedHalfWidths >= CooperativeSideBySideMargin`)
+and there is at least `OvertakeMinClearDist` head-on room to reach lateral clearance, ACCEPT. The
+corridor predicate is NEGATIVE on scenario 57's 3.2 m lanes (−0.2 m) and positive on the 3.8 m lanes
+of `scenarios/59-overtake-cooperative` (+0.7 m), so D3 self-gates: every existing OV fixture is
+byte-identical (bench hash unchanged). Only place OV2 bets on another vehicle's cooperation; bounded
+by the not-spilled check (see D1). `RungD3CooperativeOvertakeTests`: the overtaker does not abort, the
+closest head-on approach is with both off-centre and a safe corridor, no collision, both recentre.

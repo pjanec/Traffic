@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- D3 safety fixture: two lcOpposite overtakers approach head-on, each held up behind its own
+         slow leader, positioned so both commit and spill toward the shared centre line at the same
+         time. Neither cooperates (both are overtaking), so as soon as each sees the other spilled the
+         coupled gap acceptance drops the intent and both abort (recenter) and pass in their own lanes.
+         The property test asserts they never physically overlap; D3's optimistic side-by-side
+         commitment is bounded by the same not-spilled/abort check, so it cannot cause a head-on. -->
+    <vType id="slow" vClass="passenger" sigma="0" maxSpeed="6"/>
+    <vType id="fast" vClass="passenger" sigma="0" maxSpeed="13.89" lcOpposite="true"/>
+    <route id="ab" edges="AB"/>
+    <route id="ba" edges="BA"/>
+    <vehicle id="leaderA"    type="slow" route="ab" depart="0" departPos="100" departSpeed="0" departLane="0"/>
+    <vehicle id="overtakerA" type="fast" route="ab" depart="0" departPos="60"  departSpeed="0" departLane="0"/>
+    <vehicle id="leaderB"    type="slow" route="ba" depart="0" departPos="840" departSpeed="0" departLane="0"/>
+    <vehicle id="overtakerB" type="fast" route="ba" depart="0" departPos="800" departSpeed="0" departLane="0"/>
+</routes>

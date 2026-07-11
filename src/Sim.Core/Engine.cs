@@ -137,6 +137,12 @@ public sealed partial class Engine : IEngine
     // fires only for a genuine centre-line-crossing overtake, never for ordinary lateral motion.
     private const double CooperativeShiftSpillThreshold = 1.0;
 
+    // Rung D3 (coupled OV2/OV4): the minimum lateral corridor (m) left between a spilled overtaker and
+    // a cooperatively-shifted oncoming for OV2 to accept a side-by-side pass. Positive only on roads
+    // wide enough for the shifted pass -- negative on scenario 57's 3.2 m lanes, so D3 never engages
+    // there and every existing OV fixture is byte-identical.
+    private const double CooperativeSideBySideMargin = 0.3;
+
     // Rung ER3 (give-way): SUMO's device.bluelight.reactiondist default (MSDevice_Bluelight.cpp:58)
     // -- the range within which surrounding drivers perceive the siren and start clearing the way.
     private const double GiveWayReactionDist = 25.0;
@@ -2123,6 +2129,7 @@ public sealed partial class Engine : IEngine
         var oppLane = _network.LanesById[oppLaneId];
         var nearestAhead = double.PositiveInfinity;
         var nearestOncomingSpeed = 0.0;
+        VehicleRuntime? nearestOncoming = null;
         foreach (var o in ActiveVehicles())
         {
             if (o.LaneId != oppLaneId)
@@ -2136,6 +2143,7 @@ public sealed partial class Engine : IEngine
             {
                 nearestAhead = aheadDist;
                 nearestOncomingSpeed = o.Kinematics.Speed;
+                nearestOncoming = o;
             }
         }
 
@@ -2157,7 +2165,55 @@ public sealed partial class Engine : IEngine
             OvertakeMinClearDist,
             (egoFreeSpeed + nearestOncomingSpeed) * overtakeTime + OvertakeSafetyGap);
 
-        return nearestAhead > requiredClear;
+        if (nearestAhead > requiredClear)
+        {
+            return true;
+        }
+
+        // Rung D3 (coupled OV2/OV4 -- cooperative side-by-side pass). The conservative rule above
+        // requires the pass to complete AND return before the head-on arrives, so the overtaker and
+        // oncoming never share a longitudinal position while ego is spilled. But if the nearest
+        // oncoming will COOPERATE -- a normal (non-spilled) vehicle that OV4 pulls to its own outer
+        // edge -- and the road is wide enough that ego's spill and the oncoming's shift leave a safe
+        // lateral corridor (CooperativeSideBySideSafe), the two can pass SIDE BY SIDE. Then ego only
+        // needs enough head-on room to reach lateral clearance before contact (OvertakeMinClearDist),
+        // not the full complete-and-return distance. This is the only place OV2 bets on another
+        // vehicle's cooperation; it is safe because (a) the geometry check refuses on any lane too
+        // narrow for the shifted pass (so scenario 57 and every existing OV fixture are unaffected --
+        // their clearance is negative), and (b) an oncoming that is itself spilled toward ego (an
+        // opposing overtaker) fails the not-spilled check, so ego never commits into a head-on spill.
+        if (nearestOncoming is not null
+            && nearestAhead > OvertakeMinClearDist
+            && CooperativeSideBySideSafe(v, lane, oppLane, nearestOncoming))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    // Rung D3: is a cooperative side-by-side pass geometrically safe against this oncoming? True iff
+    // (a) the oncoming will cooperate -- it is not itself spilled toward ego across the centre line
+    // (its committed LatOffset, read from the frozen snapshot, is at or below the spill threshold) --
+    // and (b) ego's overtake spill and the oncoming's OV4 outer-edge shift leave a non-negative
+    // lateral corridor with margin. The corridor width is, in the straight-road model,
+    //   laneSeparation + oncomingCoopShift - egoSpill - (egoHalfWidth + oncomingHalfWidth)
+    // where laneSeparation is the gap between the two lane centres, egoSpill = Width + OvertakeSpillGap
+    // (the OV3 spill), and oncomingCoopShift = oppLaneHalfWidth - oncomingHalfWidth (the OV4 drift to
+    // the outer edge). On a lane too narrow for the shifted pass this is negative, so this returns
+    // false and OV2 stays fully conservative (byte-identical to pre-D3 for every existing scenario).
+    private static bool CooperativeSideBySideSafe(VehicleRuntime ego, Lane egoLane, Lane oppLane, VehicleRuntime oncoming)
+    {
+        if (oncoming.Kinematics.LatOffset > CooperativeShiftSpillThreshold)
+        {
+            return false; // the oncoming is itself overtaking (spilled toward ego) -> will not cooperate
+        }
+
+        var laneSeparation = Math.Abs(oppLane.Shape[0].Y - egoLane.Shape[0].Y);
+        var egoSpill = ego.VType.Width + OvertakeSpillGap;
+        var oncomingCoopShift = Math.Max(0.0, oppLane.Width / 2.0 - oncoming.VType.Width / 2.0);
+        var corridor = laneSeparation + oncomingCoopShift - egoSpill - (ego.VType.Width / 2.0 + oncoming.VType.Width / 2.0);
+        return corridor >= CooperativeSideBySideMargin;
     }
 
     // Rung D2 (OV3 return-gap enforcement). After an overtaker has nosed ahead of the leader it was
