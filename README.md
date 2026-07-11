@@ -154,11 +154,11 @@ behavioral deviations permitted are those ECS parallelism structurally forces �
   allocation-free (route-wide best-lanes in **one** backward pass instead of O(N²), `ReadOnlySpan` +
   by-value struct callbacks, pooled / `[ThreadStatic]` scratch). Total engine allocation at city scale
   fell **−69 % (city-mixed-1k: 3.78 → 1.16 GiB over a 700-step run)**, all byte-identical.
-- **Parallel by default at scale & deterministic** — the plan phase reads only frozen start-of-step
-  state and writes only its own intent, so it is race-free by construction; it **auto-parallelizes
-  above 256 concurrent vehicles** (tiny parity scenarios stay serial) for a **~2.4× city-scale
-  speedup**, and single-threaded and parallel runs produce a byte-identical determinism hash
-  (`909605E965BFFE59`).
+- **Parallel by default at scale & deterministic** — the plan *and* export phases read only frozen
+  start-of-step state and write only their own vehicle's intent/frame, so they are race-free by
+  construction; they **auto-parallelize above 256 concurrent vehicles** (tiny parity scenarios stay
+  serial) for a **~2.7× city-scale speedup** (`city-3000`: 44.3 s single-thread → 16.4 s on 4 cores),
+  and single-threaded and parallel runs produce a byte-identical determinism hash (`909605E965BFFE59`).
 - **FastDataPlane-shaped** — int-handle identity, value-type components, immutable network blueprints,
   phased systems and an `IWorld`/`ICommandBuffer` seam make the engine droppable into an external ECS
   later *without* adding a dependency now. "The gap is representation, not architecture."
@@ -238,11 +238,24 @@ crossings, bidirectional single-track, traction model) — see *What is simulate
 
 Struct-of-arrays + zero-alloc hot path targets large scenarios. The scaling ladder
 (`scenarios/_bench/SCALING.md`) exercises the engine against SUMO up to **~15,000 peak concurrent**
-vehicles. `city-3000` (7,632 vehicles, 1,200 steps, ~4,300 concurrent) now runs in **~21 s
-(parallel)** vs single-threaded **SUMO's ~43 s** on the identical net — **~2× faster** and matching
-SUMO's outcome (see below). The perf work closed a ~39× gap (it was ~28 min before the O(N²)
-junction/keepClear scans were profiled and indexed away), and killing the saturation gridlock removed
-the remaining slowdown.
+vehicles. `city-3000` (7,632 vehicles, 1,200 steps, ~4,300 concurrent) runs in **~16 s on a 4-core
+VM** vs single-threaded **SUMO's ~35 s** on the identical net — **~2.15× faster** and matching SUMO's
+outcome (see below). The perf work closed a ~39× gap (it was ~28 min before the O(N²) junction/keepClear
+scans were profiled and indexed away), and killing the saturation gridlock removed the remaining
+slowdown.
+
+**Scaling & the SUMO baseline.** SUMO is single-threaded, so on the same multi-core hardware the engine
+wins by parallelizing — and it scales: `city-3000` measures **44.3 s → 26.4 s → 16.4 s** on 1 → 2 → 4
+cores (an Amdahl serial fraction of ~16 %, so the many-core ceiling is ~5× SUMO). Two byte-identical
+optimizations drive the latest gains: the **Export phase now runs in parallel** (per-vehicle geometry
+into a reusable index-keyed buffer; the comparator/determinism hash are (vehicle, time)-keyed so
+emission order is irrelevant), and the **willPass pre-pass is fused into `PlanMovements`** — the engine
+used to run *two* full plan passes over every near-junction vehicle (a pre-pass to compute each
+vehicle's junction-entry intent, then the real plan), architectural overhead SUMO avoids by running
+`setApproaching` inline. The fused pass caches the pre-pass intent and reuses it wherever it is provably
+identical (gated so any special-feature scenario — sigma>0, IDMM, bluelight, opposite-overtake,
+obstacles, action-step skipping — falls back to the exact two-pass path). Both keep all 227 committed
+goldens byte-identical and the `Sim.Bench` determinism hash unchanged (single == parallel).
 
 **Engine vs real SUMO on the same scenario.** `Sim.BenchCity` compares an engine run against a
 committed SUMO 1.20.0 reference (`--sumo-summary`/`--sumo-tripinfo`/`--aggregate-tolerance`) on
