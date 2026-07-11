@@ -1,4 +1,11 @@
-# NEED — saturated-junction gridlock: the engine lacks SUMO's IMPATIENCE (waiting → force through)
+# NEED — saturated-junction gridlock: it's the EXIT-RESERVATION cascade, not the yield/impatience
+
+> **TL;DR (read the UPDATE section first):** the city-3000 gridlock is NOT the approaching-foe yield.
+> A faithful, byte-identical impatience port cleared 103k approaching-yields with ZERO effect on the
+> stuck count — the bottleneck is the on-junction `adaptToJunctionLeader` / checkRewindLinkLanes
+> exit-reservation cascade (`C4-VII-REMAINING.md #3`). The impatience analysis below stands as a
+> separate faithful gap, but is not the fix.
+
 
 **For the SUMO parity coding session.** Found while profiling/optimizing the scaled-city benchmark.
 This is a **behavioral RoW-core gap**, not a perf issue (the perf work is done and byte-identical).
@@ -37,6 +44,36 @@ constraint produced the binding `min` speed for slow (<0.3 m/s) vehicles within 
   leaders), junctionYield **25 %** (the queue heads yielding), keepClear 9 %, crossJunction 7 %,
   **redLight 0 %** (NOT a traffic-light timing issue). → the roots are `JunctionYieldConstraint`
   over-yields; everything else is cars correctly following the stalled heads.
+
+## UPDATE — the approaching-foe yield is NOT the bottleneck (impatience ruled OUT, measured)
+
+The impatience port below was IMPLEMENTED and tested. It is faithful and **byte-identical on the 227
+goldens** (impatience is 0 for any non-waiting vehicle, so the crossing-arm arrival-time escape is inert
+on the low-density goldens) — but it **does not move city-3000 at all** (2162 arrived / 2231 stuck,
+bit-identical). Instrumentation shows why: the impatience escape **cleared the approaching-foe yield
+103,084 times** (99 % of impatient approaching-evals) and the stuck count did not change by one vehicle.
+That is only possible if the approaching-foe yield was **never the binding minimum** for the stuck
+vehicles — clearing it (raising it to +inf) leaves `vStop` unchanged because a LOWER constraint already
+bound them. So the whole approaching-foe family (far-foe C4-vi, willPass C4-viii, AND impatience) is a
+DEAD END for this gridlock; do not spend more effort there.
+
+**The real bottleneck (redirected):** the 25 % junctionYield binding in the tally below is the
+**on-junction `adaptToJunctionLeader`** arm (ego car-following a foe physically stopped ON the junction
+interior), and the 59 % leaderFollow are the queues behind those. Vehicles enter junctions they cannot
+clear (exit lane already full), stall on the interior, and block the crossing traffic that must
+`adaptToJunctionLeader`-follow them → cascade. Only 41 are still ON an interior AT the final step, but
+the transient junction occupancy during the run is what backs everything up. This is the
+**checkRewindLinkLanes EXIT-RESERVATION cascade (`C4-VII-REMAINING.md #3`)** — keep a vehicle OUT of a
+junction whose downstream exit is filling — not the RoW/yield decision. The naive #3 reservation
+prototype (subtract the vehicles behind the front-stopped one) made it slightly WORSE (2231→2292)
+because it only adds stop-line holding without the real `myHaveToWaitOnNextLink` availableSpace
+accounting. The faithful #3 port (a genuine `availableSpace` accumulation across the best-lanes
+continuation, subtracting APPROACHING vehicles with a set link reservation, holding ego at the entry
+when cumulative leftSpace < 0) is the remaining lever — a deep architectural addition, HIGH regression
+risk, its own rung (see `C4-VII-REMAINING.md #3` for the full sketch + the reverted attempts).
+
+The impatience material below is retained because it is a genuine (byte-identical) SUMO-faithful gap
+worth closing on its own merits — but it is NOT the city-3000 fix.
 
 ## Root cause: the engine hardcodes `impatience == 0`; SUMO defaults it ON
 
