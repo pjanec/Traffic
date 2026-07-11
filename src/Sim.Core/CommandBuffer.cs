@@ -52,13 +52,23 @@ internal sealed class CommandBuffer : ICommandBuffer
 
     private readonly List<Command> _commands = new();
 
+    // Domain decomposition: the recording methods below may be called concurrently (region-parallel
+    // execute/speed-gain). Guard the shared backing list with a lock -- commands are rare (arrivals /
+    // lane changes, a handful per step), so contention is negligible, and Flush applies them
+    // order-independently (each command targets a distinct vehicle), so the non-deterministic record
+    // ORDER does not affect the result. Uncontended (serial default) the lock is ~free.
+    private readonly object _recordLock = new();
+
     // Discrete lane-index snap (lanechange.duration=0): the ego vehicle's current lane
     // becomes `newLaneHandle`/`newLaneId`. Mirrors the inline `v.LaneId = ...; v.LaneHandle =
     // ...;` pairs this replaces (D2's "keep LaneHandle in lockstep with LaneId" invariant is
     // preserved -- both fields are always recorded/applied together).
     public void ChangeLane(VehicleRuntime v, int newLaneHandle, string newLaneId)
     {
-        _commands.Add(new Command { Kind = Kind.ChangeLane, Vehicle = v, IntArg0 = newLaneHandle, StringArg0 = newLaneId });
+        lock (_recordLock)
+        {
+            _commands.Add(new Command { Kind = Kind.ChangeLane, Vehicle = v, IntArg0 = newLaneHandle, StringArg0 = newLaneId });
+        }
     }
 
     // C10-i: START a continuous lane-change maneuver (lanechange.duration > 0) instead of the
@@ -67,7 +77,10 @@ internal sealed class CommandBuffer : ICommandBuffer
     // maneuver target/duration onto the vehicle's own Lc* fields at flush time.
     public void StartLaneChangeManeuver(VehicleRuntime v, int targetLaneHandle, string targetLaneId, int totalSteps)
     {
-        _commands.Add(new Command { Kind = Kind.StartLaneChangeManeuver, Vehicle = v, IntArg0 = targetLaneHandle, StringArg0 = targetLaneId, IntArg1 = totalSteps });
+        lock (_recordLock)
+        {
+            _commands.Add(new Command { Kind = Kind.StartLaneChangeManeuver, Vehicle = v, IntArg0 = targetLaneHandle, StringArg0 = targetLaneId, IntArg1 = totalSteps });
+        }
     }
 
     // Route/lane-sequence-slice swap (reroute): repoints the vehicle's `[LaneSeqStart,
@@ -87,7 +100,10 @@ internal sealed class CommandBuffer : ICommandBuffer
     // the next step onward, exactly like the inline `v.Arrived = true` this replaces).
     public void Destroy(VehicleRuntime v)
     {
-        _commands.Add(new Command { Kind = Kind.Destroy, Vehicle = v });
+        lock (_recordLock)
+        {
+            _commands.Add(new Command { Kind = Kind.Destroy, Vehicle = v });
+        }
     }
 
     // Applies every recorded command, in record order, then clears the buffer for reuse.

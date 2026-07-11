@@ -5503,9 +5503,42 @@ public sealed partial class Engine : IEngine
     //    identical to Euler). Byte-identical to the old code when Ballistic=false.
     private void ExecuteMoves(double time, double dt)
     {
+        // Domain decomposition: region-parallel execute when opted in AND there are no actuated TLS
+        // (whose induction-loop detector feed is a shared write -- ExecuteMoveVehicle skips it on this
+        // path anyway, but gate to be safe). Per-vehicle moves are independent (each writes only its
+        // own Kinematics/lane); arrivals go through the now-thread-safe command buffer and apply
+        // order-independently at Flush, so the result is byte-identical regardless of thread timing.
+        if (RegionPlan && _actuatedLogics.Count == 0)
+        {
+            var vehicles = _vehicles;
+            System.Threading.Tasks.Parallel.For(0, _regionCount, _parallelOptions, r =>
+            {
+                var list = _regionActive[r];
+                for (var idx = 0; idx < list.Count; idx++)
+                {
+                    ExecuteMoveVehicle(vehicles[list[idx]], time, dt);
+                }
+            });
+
+            _commandBuffer.Flush();
+            return;
+        }
+
         // D6: the Query() analog -- see ActiveVehicles()'s own comment.
         foreach (var v in ActiveVehicles())
         {
+            ExecuteMoveVehicle(v, time, dt);
+        }
+
+        _commandBuffer.Flush();
+    }
+
+    // One vehicle's move (integration + lane-boundary wrap + arrival), extracted so ExecuteMoves can
+    // run it serially or region-parallel. Writes only this vehicle's own state and records arrivals to
+    // the thread-safe command buffer. The actuated-TLS detector feed inside is a shared write, so the
+    // region-parallel path is gated on there being no actuated programs.
+    private void ExecuteMoveVehicle(VehicleRuntime v, double time, double dt)
+    {
             // C8-i: capture the pre-move speed BEFORE overwriting it, for the ballistic
             // trapezoidal position update below (Euler ignores it).
             var oldSpeed = v.Kinematics.Speed;
@@ -5689,13 +5722,6 @@ public sealed partial class Engine : IEngine
             // Rung 8b/A2: keep-right and speed-gain lane changes are no longer decided here --
             // both now run in the post-move DecideSpeedGainChanges phase (see Run()'s comment and
             // that method's header comment for why keep-right moved out of Plan/MoveIntent).
-        }
-
-        // D5: apply every Destroy recorded above, in record order, at this method's end -- the
-        // SAME point v.Arrived took effect at before this rung, still strictly before
-        // DecideSpeedGainChanges (called next, in Run()) reads it via its own postMoveNeighbors
-        // Refill / `!v.Inserted || v.Arrived` guard.
-        _commandBuffer.Flush();
     }
 
     // C4-vii-c: re-resolve a vehicle's remaining route starting from the lane it is ACTUALLY on when
