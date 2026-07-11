@@ -45,6 +45,36 @@ constraint produced the binding `min` speed for slow (<0.3 m/s) vehicles within 
   **redLight 0 %** (NOT a traffic-light timing issue). → the roots are `JunctionYieldConstraint`
   over-yields; everything else is cars correctly following the stalled heads.
 
+## UPDATE 2 — FIVE scoped fixes ruled out; the next step is a SUMO TRACE, not more guessing
+
+Five targeted interventions were implemented and measured against city-3000. **Every one produced a
+BIT-IDENTICAL result (2162 arrived / 2231 stuck, to the digit):**
+
+1. Impatience via reservation-distance shrink — flipped 8/66,885 decisions, no effect.
+2. Faithful arrival-time crossing `blockedByFoe` + impatience blend — cleared 103,084 approaching-foe
+   yields (99 %), zero effect (so the approaching-foe yield is NOT the binding minimum).
+3. KeepClear box-block: subtract the vehicles behind the front-stopped one — slightly WORSE (2231→2292).
+4. Exit-reservation: bound the walk when the exit lane's REARMOST vehicle `!WillPass`
+   (`checkRewindLinkLanes` :5126 `myHaveToWaitOnNextLink`) — reached the walk 4.86 M times, ran the
+   rearmost check 22 M times, but set `foundStopped` only 2,474 times (0.01 %) because the rearmost
+   vehicle on a filling exit is still MOVING (WillPass true); the stopped ones are at the FRONT, already
+   caught. Zero effect.
+5. (impatience port, UPDATE 1) — byte-identical on goldens, zero effect on city-3000.
+
+**Conclusion: the gridlock is NOT reachable by scoped tweaks to the yield / keepClear constraints.**
+The bit-identical results prove these interventions never touch the binding path. Stop guessing at the
+mechanism from the constraint code. The next session MUST use the available SUMO 1.20.0 as an ORACLE:
+run SUMO on city-3000 (or a smaller netgenerate grid tuned to just gridlock the engine) with
+`--fcd-output`, run the engine with FCD, pick ONE vehicle that ARRIVES in SUMO but is STUCK in the
+engine, and diff their step-by-step trajectory at the exact junction where they diverge — that pins the
+real mechanism (which is demonstrably none of: far-foe, willPass, impatience, box-block-subtract,
+exit-rearmost). Only then design the fix. It is very likely the FULL `checkRewindLinkLanes` restructure
+(a genuine per-item `availableSpace` accumulation with a real per-vehicle `myHaveToWaitOnNextLink`
+threaded through the continuation, applied at ALL junction types), not an additive gate — a large,
+high-regression-risk rewrite, its own multi-step rung.
+
+---
+
 ## UPDATE — the approaching-foe yield is NOT the bottleneck (impatience ruled OUT, measured)
 
 The impatience port below was IMPLEMENTED and tested. It is faithful and **byte-identical on the 227
