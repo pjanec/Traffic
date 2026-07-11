@@ -237,10 +237,13 @@ crossings, bidirectional single-track, traction model) — see *What is simulate
 ### Scale
 
 Struct-of-arrays + zero-alloc hot path targets large scenarios. The scaling ladder
-(`scenarios/_bench/SCALING.md`) validates statistical agreement with SUMO up to **~15,000 peak
-concurrent** vehicles; `city-3000` (≈4,300 concurrent) passes the distribution (KS) and stability
-(0 stuck / 0 teleport) checks. Perf figures there are provisional (measured under CPU contention); the
-correctness/stability columns are deterministic.
+(`scenarios/_bench/SCALING.md`) exercises the engine against SUMO up to **~15,000 peak concurrent**
+vehicles. **Performance is now competitive with SUMO itself**: `city-3000` (7,632 vehicles, 1,200
+steps, ~4,300 concurrent) runs in **38.6 s (~31 steps/s, parallel)** vs single-threaded **SUMO's
+43.5 s** on the identical net — the perf work closed a ~39× gap (it was ~28 min before the O(N²)
+junction/keepClear scans were profiled and indexed away). Statistical *accuracy* is exact at low-to-
+moderate density and degrades at extreme saturation — see the comparison and the open behavioral gap
+below.
 
 **Engine vs real SUMO on the same scenario.** `Sim.BenchCity` compares an engine run against a
 committed SUMO 1.20.0 reference (`--sumo-summary`/`--sumo-tripinfo`/`--aggregate-tolerance`) on
@@ -258,13 +261,16 @@ dotnet run -c Release --project src/Sim.BenchCity -- scenarios/_bench/city-300 \
 ```
 
 The same command runs against `city-30` / `city-3000` / `city-15000` (each ships the SUMO reference
-trio). `city-3000` (7,632 vehicles, ~4,300 concurrent) also **passes** the aggregate comparison, but
-nearer the band: ~34 % fewer arrivals and ~19 % lower mean speed than SUMO, with a still-tight
-trip-shape KS distance (0.07) — i.e. the engine over-congests at saturation while the trips that *do*
-complete match SUMO's distribution well. That saturation over-congestion is a known open **behavioral**
-gap (not a perf one: the two per-vehicle O(N²) junction/keepClear scans that once made `city-3000` run
-at ~0.7 steps/s were profiled and indexed away — it now runs the full 1,200-step scenario at ~31
-steps/s, a ~44× speedup, byte-identically).
+trio). At **extreme** saturation the engine over-congests: `city-3000` still *passes* the aggregate
+band but near its edge (~34 % fewer arrivals, ~19 % lower mean speed than SUMO), and while SUMO drains
+the same net to **~2 waiting** vehicles the engine leaves **~2,200 stuck**. This is a known open
+**behavioral** gap (not perf), and it is precisely diagnosed: it is *not* the junction yield decision
+(a faithful, byte-identical port of SUMO's far-foe / willPass / impatience relaxations does not move it)
+but the **`checkRewindLinkLanes` exit-space reservation** — vehicles entering junctions whose downstream
+exit is filling, then stalling on the interior and backing up cross traffic. The fix (SUMO's
+`availableSpace` accounting across the downstream continuation) is in progress; see
+`NEED-junctionyield-impatience-saturation.md` and `C4-VII-REMAINING.md #3`. Low-to-moderate density
+(`city-30` / `city-300`, up to ~485 concurrent) matches SUMO with **0 stuck** and is unaffected.
 
 ---
 
