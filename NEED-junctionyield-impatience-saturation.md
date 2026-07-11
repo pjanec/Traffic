@@ -1,4 +1,21 @@
-# NEED — saturated-junction gridlock: it's the EXIT-RESERVATION cascade, not the yield/impatience
+# NEED — saturated-junction gridlock — **RESOLVED** (it was neither yield/impatience NOR exit-reservation)
+
+> **RESOLVED (commit 0513bad).** A SUMO-vs-engine FCD trace of ONE gridlocked vehicle found the real
+> root, and it was none of the hypotheses below: it was a **cont-turn (U-turn) distance bug** in
+> `SameTargetMergeConstraint`. For a U-turn split across two internal lanes, `approachLane` is the ~1 m
+> intermediate internal lane, so `distToMerge = approachLane.Length - pos` was a large NEGATIVE number,
+> the stop-line relaxation gate never fired, and the merge follow returned ~0 — freezing the U-turn
+> vehicle hundreds of metres before its turn. randomTrips fills the grid fringe with U-turns (~47 % of
+> the city-3000 demand), so the frozen vehicles seeded the entire gridlock cascade (the other stuck
+> vehicles were just queue victims behind them — which is why every yield/keepClear tweak below was
+> inert). FIX: compute the true distance to the junction-link internal lane via a route-pool walk (the
+> same C4-vii-a cont-turn distance the cautious-approach arm already used); byte-identical for ordinary
+> merges. Result: city-3000 2231→0 stuck, 2162→3446 arrived (SUMO 3260). Anchor:
+> `scenarios/_diag/uturn-contturn-freeze`. **The methodology lesson stands: a single SUMO-oracle trace
+> found in minutes what five reasoned-from-the-code interventions could not.** The rest of this doc is
+> the (now historical) record of those ruled-out hypotheses.
+
+# (historical) NEED — saturated-junction gridlock: it's the EXIT-RESERVATION cascade, not the yield/impatience
 
 > **TL;DR (read the UPDATE section first):** the city-3000 gridlock is NOT the approaching-foe yield.
 > A faithful, byte-identical impatience port cleared 103k approaching-yields with ZERO effect on the
