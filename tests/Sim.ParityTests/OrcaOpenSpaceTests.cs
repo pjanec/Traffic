@@ -15,9 +15,11 @@ namespace Sim.ParityTests;
 //   (4) deterministic: identical runs are bit-identical (no RNG / wall-clock / order dependence).
 //
 // A note on the famous "antipodal circle": at maximal packing (every path crossing one point) pure
-// reciprocal ORCA can DEADLOCK -- agents jam in a stable touching ring rather than pass through
-// (reference implementations only avoid this via nearest-maxNeighbours culling + removal-on-arrival,
-// neither of which this correctness-first driver does). That is a convergence limitation, never a
+// reciprocal ORCA can DEADLOCK -- agents jam in a stable touching ring rather than pass through. NB
+// (measured in Q2, OrcaConvergenceTests): adding nearest-maxNeighbours culling AND removal-on-arrival
+// does NOT resolve this here, at any symmetry-break magnitude up to 0.5 -- the perfect symmetry
+// re-forms the jam. Those aids' proven value is elsewhere (faster draining of dense NON-symmetric
+// flows + a per-agent work bound). The antipodal deadlock is a convergence limitation, never a
 // SAFETY one: the no-overlap guarantee still holds. So this suite asserts CONVERGENCE on the flows
 // ORCA robustly solves (counter-flow, permutation scatter, crossings) and uses the antipodal circle
 // only to prove the collision guarantee survives the deadlock.

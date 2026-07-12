@@ -144,11 +144,15 @@ lane-following regime should emerge as RVO reducing to car-following when latera
      permutation crossing, head-on, perpendicular crossing), reciprocal mirror-symmetry, determinism.
    - **Honest finding — the symmetric deadlock.** At *maximal packing* where every path crosses one
      point (the famous perfectly-antipodal circle, and any exactly-symmetric crossing) pure reciprocal
-     ORCA can **deadlock** — agents jam in a stable touching ring instead of passing through (reference
-     implementations only escape this via nearest-`maxNeighbours` culling + removal-on-arrival, neither
-     of which this correctness-first driver does). This is a *convergence* limitation, **never a
-     safety one**: the no-overlap guarantee still holds (asserted directly — `AntipodalCircle_
-     NeverOverlap_EvenUnderDeadlock`). The remedy for real (never-perfectly-symmetric) inputs is a
+     ORCA can **deadlock** — agents jam in a stable touching ring instead of passing through. **Update
+     (Q2, measured):** nearest-`maxNeighbours` culling + removal-on-arrival were later added
+     (`OrcaCrowd.MaxNeighbours`/`RemoveOnArrival`) and do **NOT** resolve the perfectly-antipodal circle
+     at any symmetry-break up to 0.5 (the perfect symmetry re-forms the jam) — the earlier assumption
+     they would "escape it like RVO2" is not reproducible here. Their proven value is instead **faster
+     draining of dense non-symmetric flows** (removal ~halves a counter-flow's settle time) and a
+     **per-agent work bound** (`OrcaConvergenceTests`). The antipodal deadlock is a *convergence*
+     limitation, **never a safety one**: the no-overlap guarantee still holds (asserted directly —
+     `AntipodalCircle_NeverOverlap_EvenUnderDeadlock`). The remedy for real (never-perfectly-symmetric) inputs is a
      **deterministic** per-`(agent, step)` symmetry-break jitter on the preferred velocity
      (`OrcaCrowd.SymmetryBreak`, default 0.0 = pure): a hash-derived nudge that mimics RVO2's per-step
      random perturbation but is reproducible, resolving symmetric crossings in ~45 steps.

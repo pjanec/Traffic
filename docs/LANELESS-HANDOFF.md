@@ -87,8 +87,11 @@ RVO path. Commits are on the branch, newest-last in `git log main..HEAD`.
 - Tests: `OrcaOpenSpaceTests` (no-overlap incl. under the antipodal-circle deadlock, counter-flow,
   16-agent permutation crossing, head-on, crossing, mirror-symmetry, determinism).
 - **Known:** at *maximal packing* (perfectly-antipodal circle) pure ORCA deadlocks — a convergence
-  limit, never a safety one (reference impls only escape via `maxNeighbours` culling + removal-on-
-  arrival, not done here). `SymmetryBreak` resolves real, non-perfectly-symmetric inputs.
+  limit, never a safety one. `SymmetryBreak` resolves real, non-perfectly-symmetric inputs. **Q2
+  update (measured):** `maxNeighbours` culling + removal-on-arrival were added (`OrcaCrowd.MaxNeighbours`
+  / `RemoveOnArrival`) but do NOT resolve the antipodal circle at any `SymmetryBreak` up to 0.5 (the
+  earlier "escape like RVO2" assumption is not reproducible); their proven value is faster draining of
+  dense flows + a per-agent work bound (`OrcaConvergenceTests`).
 
 ### D. Cross-regime bridge — `src/Sim.Core/Bridge/`, gated
 - `WorldDisc` + `ICrowdFootprintSource` (neutral world-space seam), `LaneProjection` (Sim.Ingest; the

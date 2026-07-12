@@ -30,7 +30,14 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // Scratch reused across steps (plan/execute needs the frozen snapshot + a place for new values).
     private Vec2[] _newVelocity;
     private OrcaSolver.Agent[] _neighbourScratch;
+    private double[] _neighbourDistSq;   // parallel to _neighbourScratch, only used when MaxNeighbours > 0
     private OrcaLine[] _lineScratch;
+
+    // Removal-on-arrival: an arrived agent (RemoveOnArrival, within ArrivalRadius of its goal) is
+    // deactivated -- it stops moving AND stops constraining others. All-true until deactivated; the
+    // default (RemoveOnArrival == false) never flips one, so the whole mechanism is inert (a stand-
+    // alone crowd is byte-identical to the pre-Q2 behaviour).
+    private bool[] _active;
 
     // Static obstacles (walls): a flat array of vertices, each closed polyline appended by
     // AddObstacle. Empty by default, so a stand-alone crowd (no AddObstacle call) is byte-identical
@@ -60,6 +67,25 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // not done here -- same "correctness first, gated perf later" split as the lane RVO layer).
     public double NeighbourDist { get; set; } = 15.0;
 
+    // Nearest-neighbour cap (RVO2's maxNeighbors). 0 == unlimited (every in-range agent constrains
+    // ego, in index order -- the pre-Q2 default, kept byte-identical). When > 0, ego keeps only its
+    // MaxNeighbours nearest agents, ordered nearest-first (RVO2's insertAgentNeighbor). Beyond the
+    // obvious perf win this is a *convergence* aid: at maximal symmetric packing (the antipodal
+    // circle) considering ALL neighbours pins every agent in a perfectly balanced jam, whereas the
+    // nearest-k selection -- broken by a deterministic distance/index tie-break -- desymmetrises the
+    // constraint set enough for agents to slip past. External (cross-regime) discs and obstacles are
+    // NOT capped by this (they are the few-count bridge/wall inputs).
+    public int MaxNeighbours { get; set; }
+
+    // Removal-on-arrival (RVO2's demo convention): when true, Step() deactivates any agent within
+    // ArrivalRadius of its goal -- it parks and stops constraining others, freeing the space its
+    // neighbours need to reach their own goals (the cascade that lets a dense crossing drain instead
+    // of jamming). Default false -> no agent is ever deactivated -> byte-identical to pre-Q2.
+    public bool RemoveOnArrival { get; set; }
+
+    // Distance to goal at which RemoveOnArrival parks an agent. Only consulted when RemoveOnArrival.
+    public double ArrivalRadius { get; set; } = 0.1;
+
     // Symmetry-breaking magnitude (m/s) added to each agent's preferred velocity. PURE ORCA
     // deadlocks on measure-zero PERFECTLY-symmetric inputs (e.g. N agents antipodal on a circle:
     // every agent's situation is a rotation of every other's, so the reciprocal solve leaves them
@@ -84,7 +110,9 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _maxSpeed = new double[capacity];
         _newVelocity = new Vec2[capacity];
         _neighbourScratch = new OrcaSolver.Agent[capacity];
+        _neighbourDistSq = new double[capacity];
         _lineScratch = new OrcaLine[capacity];
+        _active = new bool[capacity];
     }
 
     public int Count => _count;
@@ -93,6 +121,9 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     public Vec2 Velocity(int i) => _velocity[i];
     public Vec2 Goal(int i) => _goal[i];
     public double Radius(int i) => _radius[i];
+
+    // False once RemoveOnArrival has parked agent i at its goal (it no longer moves or constrains).
+    public bool IsActive(int i) => _active[i];
 
     public void SetGoal(int i, Vec2 goal) => _goal[i] = goal;
 
@@ -111,6 +142,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _radius[i] = radius;
         _maxSpeed[i] = maxSpeed;
         _newVelocity[i] = Vec2.Zero;
+        _active[i] = true;
         return i;
     }
 
@@ -172,15 +204,41 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // Advance the whole crowd by dt using the plan/execute double buffer.
     public void Step(double dt)
     {
+        // Removal-on-arrival: park agents that have reached their goal BEFORE the plan freezes state,
+        // so this step's plan already ignores them as constraints (freeing the jam). Inert unless
+        // RemoveOnArrival is set. Done in index order -> deterministic.
+        if (RemoveOnArrival)
+        {
+            var arriveSq = ArrivalRadius * ArrivalRadius;
+            for (var i = 0; i < _count; i++)
+            {
+                if (_active[i] && (_goal[i] - _position[i]).AbsSq <= arriveSq)
+                {
+                    _active[i] = false;
+                    _velocity[i] = Vec2.Zero;   // parked: contributes zero relative velocity to others
+                }
+            }
+        }
+
         // PLAN: every new velocity is a pure function of the frozen start-of-step state.
         for (var i = 0; i < _count; i++)
         {
+            if (!_active[i])
+            {
+                continue;   // parked agent: stays put, keeps zero velocity
+            }
+
             _newVelocity[i] = Plan(i, dt);
         }
 
         // EXECUTE: commit velocities and integrate positions together.
         for (var i = 0; i < _count; i++)
         {
+            if (!_active[i])
+            {
+                continue;
+            }
+
             _velocity[i] = _newVelocity[i];
             _position[i] += _velocity[i] * dt;
         }
@@ -240,6 +298,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         if (_neighbourScratch.Length < cap)
         {
             Array.Resize(ref _neighbourScratch, cap);
+            Array.Resize(ref _neighbourDistSq, cap);
         }
 
         // Line scratch holds obstacle lines FIRST, then agent lines, so it must fit both.
@@ -252,19 +311,66 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         var near = _neighbourScratch.AsSpan(0, cap);
         var k = 0;
         var rangeSq = NeighbourDist * NeighbourDist;
-        for (var j = 0; j < _count; j++)
+        var maxN = MaxNeighbours;
+        if (maxN <= 0)
         {
-            if (j == i)
+            // Unlimited (default): every in-range, active agent constrains ego, in index order.
+            // Byte-identical to pre-Q2 -- the _active guard is a no-op unless RemoveOnArrival parked
+            // someone, which never happens under the default.
+            for (var j = 0; j < _count; j++)
             {
-                continue;
-            }
+                if (j == i || !_active[j])
+                {
+                    continue;
+                }
 
-            if ((_position[j] - _position[i]).AbsSq > rangeSq)
+                if ((_position[j] - _position[i]).AbsSq > rangeSq)
+                {
+                    continue;
+                }
+
+                near[k++] = new OrcaSolver.Agent(_position[j], _velocity[j], _radius[j]);   // reciprocal 0.5
+            }
+        }
+        else
+        {
+            // Nearest-k (RVO2's insertAgentNeighbor): keep the maxN closest agents, sorted nearest-
+            // first by squared distance (ties resolved by ascending index via the stable insertion,
+            // which is what deterministically desymmetrises the antipodal jam).
+            for (var j = 0; j < _count; j++)
             {
-                continue;
-            }
+                if (j == i || !_active[j])
+                {
+                    continue;
+                }
 
-            near[k++] = new OrcaSolver.Agent(_position[j], _velocity[j], _radius[j]);   // reciprocal 0.5
+                var dsq = (_position[j] - _position[i]).AbsSq;
+                if (dsq > rangeSq)
+                {
+                    continue;
+                }
+
+                if (k == maxN && dsq >= _neighbourDistSq[k - 1])
+                {
+                    continue;   // full and this one is no closer than the current farthest kept
+                }
+
+                // Insertion point: slide entries strictly farther than dsq one slot right.
+                var pos = k < maxN ? k : k - 1;   // when full, overwrite the farthest slot
+                while (pos > 0 && _neighbourDistSq[pos - 1] > dsq)
+                {
+                    near[pos] = near[pos - 1];
+                    _neighbourDistSq[pos] = _neighbourDistSq[pos - 1];
+                    pos--;
+                }
+
+                near[pos] = new OrcaSolver.Agent(_position[j], _velocity[j], _radius[j]);   // reciprocal 0.5
+                _neighbourDistSq[pos] = dsq;
+                if (k < maxN)
+                {
+                    k++;
+                }
+            }
         }
 
         // Cross-regime discs (vehicles): avoided ONE-SIDED (responsibility 1.0) -- the crowd yields
@@ -383,6 +489,8 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         Array.Resize(ref _maxSpeed, newCapacity);
         Array.Resize(ref _newVelocity, newCapacity);
         Array.Resize(ref _neighbourScratch, newCapacity);
+        Array.Resize(ref _neighbourDistSq, newCapacity);
         Array.Resize(ref _lineScratch, newCapacity);
+        Array.Resize(ref _active, newCapacity);
     }
 }
