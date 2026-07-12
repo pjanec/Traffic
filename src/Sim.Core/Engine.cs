@@ -28,6 +28,14 @@ public sealed partial class Engine : IEngine
     private readonly List<VehicleRuntime> _insertCandidates = new();
     private readonly HashSet<string> _insertBlockedLanes = new(StringComparer.Ordinal);
 
+    // Perf (insert): memoize the insertion lane-sequence resolution. ResolveLaneSequenceHandlesWithArrival
+    // is a PURE function of (route.Edges, DepartLaneIndex) -- so a candidate that waits several steps to
+    // insert (blocked gap) re-resolves the SAME route every step, and vehicles sharing a (route, depart
+    // lane) each resolve it. Route resolution is ~72% of the insert phase; caching by (RouteId,
+    // DepartLaneIndex) computes each distinct one ONCE. Byte-identical (the cached arrays are read-only
+    // -- AddRange copies them into the pool; nothing mutates them). Cleared per LoadScenario.
+    private readonly Dictionary<(string RouteId, int DepartLane), (int[] Pool, int[] Arrival)> _insertRouteSeqCache = new();
+
     // C2-v: the ARRIVAL-lane pool, parallel to _laneSeqPool slot-for-slot (same LaneSeqStart/Len
     // slice). _laneSeqPool[k] is the lane the vehicle must reach to continue its route (the
     // strategic-LC target); _laneSeqArrival[k] is the lane it physically occupies on ENTERING that
@@ -843,6 +851,7 @@ public sealed partial class Engine : IEngine
         _stopsByEntity.Clear();
         _avoidedByEntity.Clear();
         _bestLanesCache.Clear(); // L0b: route/edge-keyed memo is scenario-specific
+        _insertRouteSeqCache.Clear(); // insert route-resolution memo is scenario-specific
         // W1: a freshly (re)loaded scenario is a fresh timeline -- the next Run/WarmUp resets the
         // state machines and starts the clock at Begin.
         _elapsedSteps = 0;
@@ -860,6 +869,14 @@ public sealed partial class Engine : IEngine
         {
             CreateRuntime(def);
         }
+
+        // Perf (insert): pre-resolve every static vehicle's insertion lane sequence NOW, in parallel.
+        // ResolveLaneSequenceHandlesWithArrival is a pure function of (route.Edges, DepartLaneIndex) and
+        // the immutable network, so this is byte-identical to resolving lazily at insertion -- it just
+        // moves ~72% of the per-step insert phase (the route resolution) to a one-time parallel load
+        // pass. Insertion then hits the cache (no resolution in the hot loop). Flow-generated vehicles
+        // (runtime routes) miss and resolve lazily as before.
+        PrewarmInsertRouteCache();
 
         // F2 (probabilistic flow): allocate + seed each <flow probability=>'s own insertion RNG and
         // zero its arrival counter, ONCE per load (independent per-flow streams -- see the field
@@ -1275,6 +1292,35 @@ public sealed partial class Engine : IEngine
     // junction-foe and stop-line insertion checks, follower-gap/pedestrian/shadow-lane
     // checks, rail bidi handling, and the departPos<0 "measured from lane end" convention
     // (we use departPos directly since it is always >=0 here).
+    // Perf (insert): resolve every distinct (route, departLane) insertion lane-sequence up front, in
+    // parallel, into _insertRouteSeqCache. Pure function of the immutable network, so byte-identical to
+    // lazy resolution -- see the cache field's header and the LoadScenario call site.
+    private void PrewarmInsertRouteCache()
+    {
+        var seen = new HashSet<(string, int)>();
+        var keyList = new List<(string RouteId, int DepartLane)>();
+        foreach (var def in _demand!.Vehicles)
+        {
+            var k = (def.RouteId, def.DepartLaneIndex);
+            if (seen.Add(k))
+            {
+                keyList.Add(k);
+            }
+        }
+
+        var results = new (int[] Pool, int[] Arrival)[keyList.Count];
+        System.Threading.Tasks.Parallel.For(0, keyList.Count, i =>
+        {
+            var edges = _demand!.RoutesById[keyList[i].RouteId].Edges;
+            results[i] = _network!.ResolveLaneSequenceHandlesWithArrival(edges, keyList[i].DepartLane);
+        });
+
+        for (var i = 0; i < keyList.Count; i++)
+        {
+            _insertRouteSeqCache[keyList[i]] = results[i];
+        }
+    }
+
     private void InsertDepartingVehicles(double time)
     {
         // SUMO's MSInsertionControl processes the depart queue by depart time, ties broken by the
@@ -1299,6 +1345,7 @@ public sealed partial class Engine : IEngine
 
             candidates.Add(v);
         }
+
 
         // L0d: `_vehicles` (hence `candidates`) is in ascending-EntityIndex definition order, so an
         // in-place sort keyed by (Depart, EntityIndex) is byte-identical to the former stable
@@ -1371,14 +1418,6 @@ public sealed partial class Engine : IEngine
         // vehicle inserted earlier THIS SAME step, since this re-scans _vehicles (the engine's
         // authoritative list) on every call rather than a stale snapshot.
         VehicleRuntime? leader = null;
-        // D6: the "inserted, not arrived" half of the guard is now the ActiveVehicles() query;
-        // the lane filter stays inline (it is specific to this call site, not the reusable
-        // predicate).
-        // Perf: filter on the dense int LaneHandle, not the string LaneId. LaneHandle is kept in
-        // lockstep with LaneId at every write site (VehicleRuntime.LaneHandle / D2), so
-        // `other.LaneHandle == laneHandle` iff `other.LaneId == the departure lane` -- byte-identical,
-        // but this runs ~active-count times per insertion candidate, so it replaces that many per-step
-        // string comparisons with a single int compare.
         foreach (var other in ActiveVehicles())
         {
             if (other.LaneHandle != laneHandle)
@@ -1439,7 +1478,14 @@ public sealed partial class Engine : IEngine
         // C2-v: resolve the Exit (routing pool) AND Arrival sequences together (see
         // _laneSeqArrival's own comment). Both slices share LaneSeqStart/Len; they differ only where
         // the route requires an intra-edge lane change.
-        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
+        var routeKey = (v.Def.RouteId, v.Def.DepartLaneIndex);
+        if (!_insertRouteSeqCache.TryGetValue(routeKey, out var seq))
+        {
+            seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
+            _insertRouteSeqCache[routeKey] = seq;
+        }
+
+        var (poolSeq, arrivalSeq) = seq;
 
         // Cross-junction INSERTION safety: MSLane::isInsertionSuccess also follow-checks a leader
         // reachable across the next junction(s), not just same-lane leaders. If the safe insertion
