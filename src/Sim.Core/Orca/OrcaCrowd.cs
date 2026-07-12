@@ -32,6 +32,13 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     private OrcaSolver.Agent[] _neighbourScratch;
     private OrcaLine[] _lineScratch;
 
+    // Static obstacles (walls): a flat array of vertices, each closed polyline appended by
+    // AddObstacle. Empty by default, so a stand-alone crowd (no AddObstacle call) is byte-identical
+    // to the pre-obstacle behaviour -- obstacles span is empty, numObstLines == 0, nothing changes.
+    private OrcaObstacle[] _obstacles = Array.Empty<OrcaObstacle>();
+    private int _obstacleCount;
+    private ObstacleSegment[] _obstacleSegmentScratch = Array.Empty<ObstacleSegment>();
+
     // Cross-regime bridge (Direction A -- crowd avoids vehicles): external world-space discs from the
     // OTHER regime (lane vehicles, projected to discs) that every agent also avoids, ONE-SIDED
     // (responsibility 1.0: the crowd yields fully; the vehicle avoids the crowd through its own lane
@@ -43,6 +50,10 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // Planning horizon (s): how far ahead ORCA guarantees collision-freedom. Larger -> earlier,
     // smoother avoidance; the RVO2 default is 10 s for agents.
     public double TimeHorizon { get; set; } = 10.0;
+
+    // Planning horizon (s) for STATIC obstacles specifically (RVO2 uses a separate, shorter horizon
+    // for walls than for other agents by default).
+    public double TimeHorizonObst { get; set; } = 5.0;
 
     // Agents beyond this range impose no constraint (the near-neighbourhood cutoff). Brute-force
     // O(n^2) filtered scan for correctness; a uniform grid / spatial hash is the perf axis (noted,
@@ -101,6 +112,61 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _maxSpeed[i] = maxSpeed;
         _newVelocity[i] = Vec2.Zero;
         return i;
+    }
+
+    // Add one static-obstacle polyline (a "wall"), ported EXACTLY from RVO2's
+    // RVOSimulator::addObstacle: the vertex list is always treated as a CLOSED loop (vertex n-1
+    // connects back to vertex 0), each vertex becomes one OrcaObstacle node linked to its neighbours
+    // in the loop, with UnitDir pointing to the next vertex and IsConvex computed from the interior
+    // angle at that vertex (both vertices are convex when the loop has exactly 2, i.e. a thin
+    // two-sided wall). May be called multiple times; each call appends one more closed loop. Returns
+    // the crowd-array index of the loop's first vertex (RVO2's obstacle-loop handle).
+    public int AddObstacle(IReadOnlyList<Vec2> vertices)
+    {
+        if (vertices.Count < 2)
+        {
+            throw new ArgumentException("An obstacle polyline needs at least 2 vertices.", nameof(vertices));
+        }
+
+        var n = vertices.Count;
+        var baseIndex = _obstacleCount;
+        EnsureObstacleCapacity(baseIndex + n);
+
+        for (var i = 0; i < n; i++)
+        {
+            var point = vertices[i];
+            var nextPoint = vertices[(i + 1) % n];
+            var unitDir = (nextPoint - point).Normalized();
+
+            bool isConvex;
+            if (n == 2)
+            {
+                isConvex = true;
+            }
+            else
+            {
+                var prevPoint = vertices[(i - 1 + n) % n];
+                isConvex = OrcaObstacle.LeftOf(prevPoint, point, nextPoint) >= 0.0;
+            }
+
+            var nextIndex = baseIndex + (i + 1) % n;
+            var prevIndex = baseIndex + (i - 1 + n) % n;
+            _obstacles[baseIndex + i] = new OrcaObstacle(point, unitDir, isConvex, prevIndex, nextIndex);
+        }
+
+        _obstacleCount += n;
+        return baseIndex;
+    }
+
+    private void EnsureObstacleCapacity(int needed)
+    {
+        if (_obstacles.Length >= needed)
+        {
+            return;
+        }
+
+        var newCapacity = Math.Max(needed, Math.Max(8, _obstacles.Length * 2));
+        Array.Resize(ref _obstacles, newCapacity);
     }
 
     // Advance the whole crowd by dt using the plan/execute double buffer.
@@ -174,7 +240,13 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         if (_neighbourScratch.Length < cap)
         {
             Array.Resize(ref _neighbourScratch, cap);
-            Array.Resize(ref _lineScratch, cap);
+        }
+
+        // Line scratch holds obstacle lines FIRST, then agent lines, so it must fit both.
+        var lineCap = _obstacleCount + cap;
+        if (_lineScratch.Length < lineCap)
+        {
+            Array.Resize(ref _lineScratch, lineCap);
         }
 
         var near = _neighbourScratch.AsSpan(0, cap);
@@ -211,8 +283,59 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
                 new Vec2(disc.X, disc.Y), new Vec2(disc.Vx, disc.Vy), disc.Radius, responsibility: 1.0);
         }
 
+        // Gather obstacle (wall) neighbours: brute-force scan (same "correctness first" cutoff style
+        // as the agent scan above -- RVO2 uses a kd-tree here, purely for speed, not for a different
+        // result). Mirrors RVO2's Agent::computeNeighbors obstacle range exactly: rangeSq =
+        // (timeHorizonObst * maxSpeed + radius)^2, and membership is by distance to the obstacle
+        // EDGE (vertex -> next vertex), not to the vertex point.
+        //
+        // Critically, this ALSO reproduces RVO2's KdTree::queryObstacleTreeRecursive occlusion gate:
+        // an edge is only a candidate neighbour when the agent is on its RIGHT side (leftOf < 0) --
+        // i.e. on the exterior side of that directed edge (obstacle vertices wind so the polygon
+        // interior is on the LEFT, RVO2 convention: counterclockwise for solid obstacles). This is
+        // NOT a redundant pruning optimisation the kd-tree needs and a brute-force scan can skip --
+        // for any polygon with more than one edge in reach, omitting it lets the FAR side of the
+        // obstacle (which the agent hasn't reached and isn't "outside" of) also contribute an ORCA
+        // line, and a near + far edge together can force a jointly-infeasible half-plane pair (the
+        // near edge wants the agent to keep clear of it from the outside, the far edge -- seen from
+        // its own "outside", which is the near edge's "inside" -- wants the opposite), corrupting the
+        // solve. Confirmed by direct reproduction: a solid rectangle without this filter froze/ate a
+        // straight-walking agent from ~4.85 units away, well before any real contact; adding the
+        // filter fixed it. (A 2-vertex "thin wall" is the degenerate case: its two directed edges are
+        // the same segment reversed, so exactly one of them ever passes this test -- the other side.)
+        if (_obstacleSegmentScratch.Length < _obstacleCount)
+        {
+            Array.Resize(ref _obstacleSegmentScratch, Math.Max(_obstacleCount, 8));
+        }
+
+        var obst = _obstacleSegmentScratch.AsSpan(0, _obstacleCount);
+        var oCount = 0;
+        var obstRange = TimeHorizonObst * maxSpeed + _radius[i];
+        var rangeSqObst = obstRange * obstRange;
+        for (var v = 0; v < _obstacleCount; v++)
+        {
+            var node = _obstacles[v];
+            var next = _obstacles[node.NextIndex];
+
+            if (OrcaObstacle.LeftOf(node.Point, next.Point, _position[i]) >= 0.0)
+            {
+                continue;   // agent is on the polygon-interior side of this directed edge -- not a candidate
+            }
+
+            var distSq = OrcaObstacle.DistanceSquaredToSegment(node.Point, next.Point, _position[i]);
+            if (distSq >= rangeSqObst)
+            {
+                continue;
+            }
+
+            var prev = _obstacles[node.PrevIndex];
+            obst[oCount++] = new ObstacleSegment(
+                node.Point, next.Point, node.UnitDir, next.UnitDir, prev.UnitDir, node.IsConvex, next.IsConvex);
+        }
+
         return OrcaSolver.ComputeNewVelocity(
-            self, near[..k], pref, maxSpeed, TimeHorizon, dt, _lineScratch.AsSpan(0, k));
+            self, near[..k], obst[..oCount], pref, maxSpeed, TimeHorizon, TimeHorizonObst, dt,
+            _lineScratch.AsSpan(0, oCount + k));
     }
 
     // Cross-regime bridge (Direction A): replace the external world-disc list every agent avoids this

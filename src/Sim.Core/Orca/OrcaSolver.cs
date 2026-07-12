@@ -27,12 +27,20 @@ public readonly struct OrcaLine
 //
 // Purely functional and parallel-safe: ComputeNewVelocity reads only frozen agent state and writes
 // nothing; the caller integrates. Deterministic: fixed neighbour order, no RNG, no wall-clock,
-// double math. There are no static-obstacle lines in this layer (agent-agent only), so the 3D LP's
-// numObstLines is always 0.
+// double math. Static-obstacle (wall) avoidance is ported from RVO2's Agent::computeNewVelocity
+// obstacle section: obstacle half-planes are constructed FIRST, into lineScratch[0..numObstLines),
+// and the agent-agent ORCA half-planes (unchanged from before) are appended after them; the 3D LP's
+// numObstLines threads that split through so LinearProgram3 treats the (already-absolute) obstacle
+// lines as a fixed base rather than pairwise-intersecting them with each other.
 public static class OrcaSolver
 {
     // Guard against division by ~0 when two constraint lines are (almost) parallel.
     private const double Eps = 1e-10;
+
+    // RVO2's RVO_EPSILON: used only in the obstacle-line construction below (the "already covered"
+    // test), exactly where RVO2 uses it. The LP's own near-parallel guard above (Eps) is unrelated
+    // and unchanged.
+    private const double RvoEpsilon = 1e-5;
 
     // One agent's frozen kinematic state, value-typed (SoA-friendly, no strings, no handles baked
     // in). The crowd driver owns identity/goals; the solver sees pure geometry + velocity.
@@ -58,21 +66,28 @@ public static class OrcaSolver
     }
 
     // Compute the collision-avoiding new velocity for `self` given its `neighbours` (already
-    // filtered to those within reaction range), the preferred velocity it would take if unobstructed,
-    // maxSpeed, the planning time horizon (s), and the integration timeStep (s, used only for the
-    // already-colliding recovery branch). `lineScratch` must have length >= neighbours.Length; it
-    // holds the ORCA half-planes (caller-supplied to keep the solver allocation-free).
+    // filtered to those within reaction range), the `obstacles` (static-wall vertices within the
+    // obstacle horizon), the preferred velocity it would take if unobstructed, maxSpeed, the agent
+    // planning time horizon (s), the obstacle planning time horizon (s, RVO2 uses a shorter one for
+    // walls than for agents), and the integration timeStep (s, used only for the already-colliding
+    // agent-agent recovery branch). `lineScratch` must have length >= obstacles.Length +
+    // neighbours.Length; it holds the ORCA half-planes (caller-supplied to keep the solver
+    // allocation-free), obstacle lines first, then agent lines.
     public static Vec2 ComputeNewVelocity(
         in Agent self,
         ReadOnlySpan<Agent> neighbours,
+        ReadOnlySpan<ObstacleSegment> obstacles,
         Vec2 prefVelocity,
         double maxSpeed,
         double timeHorizon,
+        double timeHorizonObst,
         double timeStep,
         Span<OrcaLine> lineScratch)
     {
+        var lineCount = ComputeObstacleLines(self, obstacles, timeHorizonObst, lineScratch);
+        var numObstLines = lineCount;
+
         var invTimeHorizon = 1.0 / timeHorizon;
-        var lineCount = 0;
 
         for (var i = 0; i < neighbours.Length; i++)
         {
@@ -150,10 +165,255 @@ public static class OrcaSolver
         {
             // The dense-packing fallback: no velocity satisfies every constraint, so minimise the
             // maximum penetration instead of failing hard.
-            LinearProgram3(lines, lineFail, maxSpeed, ref result);
+            LinearProgram3(lines, numObstLines, lineFail, maxSpeed, ref result);
         }
 
         return result;
+    }
+
+    // Static-obstacle (wall) half-planes, ported verbatim from RVO2's Agent::computeNewVelocity
+    // obstacle section. Writes into lineScratch[0..) in obstacle-array order (deterministic) and
+    // returns the count written (== numObstLines for the caller). Self-contained: takes only frozen
+    // geometry (self.Position / self.Velocity / self.Radius) and the per-vertex ObstacleSegment the
+    // crowd already resolved (no pointer-chasing here, unlike RVO2's linked Obstacle nodes).
+    private static int ComputeObstacleLines(
+        in Agent self, ReadOnlySpan<ObstacleSegment> obstacles, double timeHorizonObst, Span<OrcaLine> lineScratch)
+    {
+        var invTimeHorizonObst = 1.0 / timeHorizonObst;
+        var lineCount = 0;
+
+        for (var oi = 0; oi < obstacles.Length; oi++)
+        {
+            var o = obstacles[oi];
+            var relativePosition1 = o.Point1 - self.Position;
+            var relativePosition2 = o.Point2 - self.Position;
+
+            // Already-covered test: skip this obstacle vertex if a previously constructed obstacle
+            // line (from THIS call, indices [0, lineCount) built so far) already forbids the whole
+            // velocity-obstacle wedge this vertex would add.
+            var alreadyCovered = false;
+            for (var j = 0; j < lineCount; j++)
+            {
+                var lineJ = lineScratch[j];
+                if (Vec2.Det(invTimeHorizonObst * relativePosition1 - lineJ.Point, lineJ.Direction)
+                        - invTimeHorizonObst * self.Radius >= -RvoEpsilon
+                    && Vec2.Det(invTimeHorizonObst * relativePosition2 - lineJ.Point, lineJ.Direction)
+                        - invTimeHorizonObst * self.Radius >= -RvoEpsilon)
+                {
+                    alreadyCovered = true;
+                    break;
+                }
+            }
+
+            if (alreadyCovered)
+            {
+                continue;
+            }
+
+            var distSq1 = relativePosition1.AbsSq;
+            var distSq2 = relativePosition2.AbsSq;
+            var radiusSq = self.Radius * self.Radius;
+
+            var obstacleVector = o.Point2 - o.Point1;
+            var s = Vec2.Dot(-relativePosition1, obstacleVector) / obstacleVector.AbsSq;
+            var distSqLine = (-relativePosition1 - s * obstacleVector).AbsSq;
+
+            // Local mutable copies: the "oblique" (near-vertex) cases below reassign these to make
+            // obstacle1 and obstacle2 the SAME vertex (RVO2's `obstacle2 = obstacle1;` / `obstacle1 =
+            // obstacle2;` pointer reassignment), which point1/point2 mirror so the cutoff points stay
+            // exactly right.
+            var point1 = o.Point1;
+            var point2 = o.Point2;
+            var p1 = relativePosition1;
+            var p2 = relativePosition2;
+            var unitDir1 = o.UnitDir1;
+            var unitDir2 = o.UnitDir2;
+            var convex1 = o.IsConvex1;
+            var convex2 = o.IsConvex2;
+            var ds1 = distSq1;
+            var ds2 = distSq2;
+            var sameVertex = false;
+
+            if (s < 0.0 && distSq1 <= radiusSq)
+            {
+                if (convex1)
+                {
+                    lineScratch[lineCount++] = new OrcaLine(Vec2.Zero, new Vec2(-p1.Y, p1.X).Normalized());
+                }
+
+                continue;
+            }
+
+            if (s > 1.0 && distSq2 <= radiusSq)
+            {
+                if (convex2 && Vec2.Det(p2, unitDir2) >= 0.0)
+                {
+                    lineScratch[lineCount++] = new OrcaLine(Vec2.Zero, new Vec2(-p2.Y, p2.X).Normalized());
+                }
+
+                continue;
+            }
+
+            if (s >= 0.0 && s < 1.0 && distSqLine <= radiusSq)
+            {
+                lineScratch[lineCount++] = new OrcaLine(Vec2.Zero, -unitDir1);
+                continue;
+            }
+
+            // Legs of the velocity-obstacle cone from the near vertex/edge.
+            Vec2 leftLegDirection;
+            Vec2 rightLegDirection;
+
+            if (s < 0.0 && distSqLine <= radiusSq)
+            {
+                if (!convex1)
+                {
+                    continue;
+                }
+
+                sameVertex = true;
+                point2 = point1;
+                p2 = p1;
+                ds2 = ds1;
+                convex2 = convex1;
+                unitDir2 = unitDir1;
+
+                var leg1 = Math.Sqrt(ds1 - radiusSq);
+                leftLegDirection = new Vec2(p1.X * leg1 - p1.Y * self.Radius, p1.X * self.Radius + p1.Y * leg1) / ds1;
+                rightLegDirection = new Vec2(p1.X * leg1 + p1.Y * self.Radius, -p1.X * self.Radius + p1.Y * leg1) / ds1;
+            }
+            else if (s > 1.0 && distSqLine <= radiusSq)
+            {
+                if (!convex2)
+                {
+                    continue;
+                }
+
+                sameVertex = true;
+                point1 = point2;
+                p1 = p2;
+                ds1 = ds2;
+                convex1 = convex2;
+                unitDir1 = unitDir2;
+
+                var leg2 = Math.Sqrt(ds2 - radiusSq);
+                leftLegDirection = new Vec2(p2.X * leg2 - p2.Y * self.Radius, p2.X * self.Radius + p2.Y * leg2) / ds2;
+                rightLegDirection = new Vec2(p2.X * leg2 + p2.Y * self.Radius, -p2.X * self.Radius + p2.Y * leg2) / ds2;
+            }
+            else
+            {
+                if (convex1)
+                {
+                    var leg1 = Math.Sqrt(ds1 - radiusSq);
+                    leftLegDirection = new Vec2(p1.X * leg1 - p1.Y * self.Radius, p1.X * self.Radius + p1.Y * leg1) / ds1;
+                }
+                else
+                {
+                    leftLegDirection = -unitDir1;
+                }
+
+                if (convex2)
+                {
+                    var leg2 = Math.Sqrt(ds2 - radiusSq);
+                    rightLegDirection = new Vec2(p2.X * leg2 + p2.Y * self.Radius, -p2.X * self.Radius + p2.Y * leg2) / ds2;
+                }
+                else
+                {
+                    rightLegDirection = unitDir1;
+                }
+            }
+
+            // Legs can never point into a neighbouring edge at a convex vertex: clamp to the
+            // neighbour's cutoff line instead ("foreign" leg -- if the projected velocity lands on
+            // it, no constraint is added for that side).
+            var isLeftLegForeign = false;
+            var isRightLegForeign = false;
+
+            if (convex1 && Vec2.Det(leftLegDirection, -o.PrevUnitDir) >= 0.0)
+            {
+                leftLegDirection = -o.PrevUnitDir;
+                isLeftLegForeign = true;
+            }
+
+            if (convex2 && Vec2.Det(rightLegDirection, unitDir2) <= 0.0)
+            {
+                rightLegDirection = unitDir2;
+                isRightLegForeign = true;
+            }
+
+            var leftCutoff = invTimeHorizonObst * (point1 - self.Position);
+            var rightCutoff = invTimeHorizonObst * (point2 - self.Position);
+            var cutoffVec = rightCutoff - leftCutoff;
+
+            var t = sameVertex ? 0.5 : Vec2.Dot(self.Velocity - leftCutoff, cutoffVec) / cutoffVec.AbsSq;
+            var tLeft = Vec2.Dot(self.Velocity - leftCutoff, leftLegDirection);
+            var tRight = Vec2.Dot(self.Velocity - rightCutoff, rightLegDirection);
+
+            if ((t < 0.0 && tLeft < 0.0) || (sameVertex && tLeft < 0.0 && tRight < 0.0))
+            {
+                var unitW = (self.Velocity - leftCutoff).Normalized();
+                lineScratch[lineCount++] = new OrcaLine(
+                    leftCutoff + self.Radius * invTimeHorizonObst * unitW,
+                    new Vec2(unitW.Y, -unitW.X));
+                continue;
+            }
+
+            if (t > 1.0 && tRight < 0.0)
+            {
+                var unitW = (self.Velocity - rightCutoff).Normalized();
+                lineScratch[lineCount++] = new OrcaLine(
+                    rightCutoff + self.Radius * invTimeHorizonObst * unitW,
+                    new Vec2(unitW.Y, -unitW.X));
+                continue;
+            }
+
+            var distSqCutoff = (t < 0.0 || t > 1.0 || sameVertex)
+                ? double.PositiveInfinity
+                : (self.Velocity - (leftCutoff + t * cutoffVec)).AbsSq;
+            var distSqLeft = tLeft < 0.0
+                ? double.PositiveInfinity
+                : (self.Velocity - (leftCutoff + tLeft * leftLegDirection)).AbsSq;
+            var distSqRight = tRight < 0.0
+                ? double.PositiveInfinity
+                : (self.Velocity - (rightCutoff + tRight * rightLegDirection)).AbsSq;
+
+            if (distSqCutoff <= distSqLeft && distSqCutoff <= distSqRight)
+            {
+                var dir = -unitDir1;
+                lineScratch[lineCount++] = new OrcaLine(
+                    leftCutoff + self.Radius * invTimeHorizonObst * new Vec2(-dir.Y, dir.X),
+                    dir);
+                continue;
+            }
+
+            if (distSqLeft <= distSqRight)
+            {
+                if (isLeftLegForeign)
+                {
+                    continue;
+                }
+
+                var dir = leftLegDirection;
+                lineScratch[lineCount++] = new OrcaLine(
+                    leftCutoff + self.Radius * invTimeHorizonObst * new Vec2(-dir.Y, dir.X),
+                    dir);
+                continue;
+            }
+
+            {
+                if (isRightLegForeign)
+                {
+                    continue;
+                }
+
+                var dir = -rightLegDirection;
+                lineScratch[lineCount++] = new OrcaLine(
+                    rightCutoff + self.Radius * invTimeHorizonObst * new Vec2(-dir.Y, dir.X),
+                    dir);
+            }
+        }
+
+        return lineCount;
     }
 
     // Optimise `result` along a single constraint line `lineNo`, subject to lines [0, lineNo) and the
@@ -272,9 +532,12 @@ public static class OrcaSolver
     }
 
     // 3D LP fallback for the infeasible case: from `beginLine` on, minimise the maximum constraint
-    // violation. With no static-obstacle lines (numObstLines == 0), the projected LP starts empty.
+    // violation. Static-obstacle lines occupy lines[0..numObstLines) and are already absolute
+    // half-planes (not derived relative to any other line), so the projected LP for line i starts as
+    // a direct COPY of them, and only the agent lines [numObstLines, i) get pairwise-intersected
+    // against line i (mirrors RVO2's linearProgram3 exactly).
     private static void LinearProgram3(
-        ReadOnlySpan<OrcaLine> lines, int beginLine, double radius, ref Vec2 result)
+        ReadOnlySpan<OrcaLine> lines, int numObstLines, int beginLine, double radius, ref Vec2 result)
     {
         var distance = 0.0;
         // At most (lines.Length - 1) projected constraints for any single i.
@@ -286,9 +549,12 @@ public static class OrcaSolver
         {
             if (Vec2.Det(lines[i].Direction, lines[i].Point - result) > distance)
             {
-                var projCount = 0;   // numObstLines == 0: projected LP begins empty
+                // Seed with the obstacle lines verbatim (they need no intersection with line i: they
+                // are fixed constraints already expressed in absolute (point, direction) form).
+                lines[..numObstLines].CopyTo(projLines);
+                var projCount = numObstLines;
 
-                for (var j = 0; j < i; j++)
+                for (var j = numObstLines; j < i; j++)
                 {
                     OrcaLine projLine;
                     var determinant = Vec2.Det(lines[i].Direction, lines[j].Direction);
