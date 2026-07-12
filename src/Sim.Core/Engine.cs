@@ -10,6 +10,13 @@ namespace Sim.Core;
 public sealed partial class Engine : IEngine
 {
     private NetworkModel? _network;
+
+    // Perf (emit hot path): a dense Lane[] indexed by LaneHandle, materialized once per load from
+    // _network.LanesByHandle. Emit (and any per-vehicle geometry) indexes this by v.LaneHandle
+    // instead of hashing v.LaneId through the LanesById string dictionary -- byte-identical
+    // (LanesByHandle[lane.Handle] == LanesById[lane.Id], and v.LaneHandle is kept in lockstep with
+    // v.LaneId), but removes a string hash + dictionary probe per vehicle per frame.
+    private Lane[] _lanesByHandle = Array.Empty<Lane>();
     private DemandModel? _demand;
     private ScenarioConfig? _config;
     private readonly List<VehicleRuntime> _vehicles = new();
@@ -792,6 +799,7 @@ public sealed partial class Engine : IEngine
     public void LoadScenario(string netXmlPath, string rouXmlPath, string sumocfgPath)
     {
         _network = NetworkParser.Parse(netXmlPath);
+        _lanesByHandle = _network.LanesByHandle as Lane[] ?? System.Linq.Enumerable.ToArray(_network.LanesByHandle);
         _demand = DemandParser.Parse(rouXmlPath);
         _config = ScenarioConfigParser.Parse(sumocfgPath);
 
@@ -6776,57 +6784,6 @@ public sealed partial class Engine : IEngine
             _exportObservers[i].OnFrameBegin(time);
         }
 
-        // Domain decomposition: region-parallel emit. Each region computes ITS active vehicles'
-        // frames (per-vehicle geometry, no neighbour access) into the shared _emitScratch, indexed by
-        // EntityIndex -- so region tasks touch disjoint slots (race-free), iterate only ACTIVE
-        // vehicles (via the region grouping built just before emit), and the serial append walks
-        // _activeIndices (ascending EntityIndex) so the emitted XML byte-order is IDENTICAL to the
-        // serial ActiveVehicles() path. Faster than the flat ParallelExport-over-all-vehicles below
-        // (that dispatches over every slot incl. inactive, with a scattered per-index read); this
-        // dispatches over regions and skips inactive entirely. No-observer gate as below.
-        if (RegionPlan && _exportObservers.Count == 0 && ShouldParallelizePlan())
-        {
-            if (_emitScratch.Length < _vehicles.Count)
-            {
-                _emitScratch = new TrajectoryPoint?[_vehicles.Count];
-            }
-
-            var scratchR = _emitScratch;
-            System.Threading.Tasks.Parallel.For(0, _regionCount, _parallelOptions, r =>
-            {
-                var list = _regionActive[r];
-                for (var idx = 0; idx < list.Count; idx++)
-                {
-                    var vi = list[idx];
-                    var v = _vehicles[vi];
-                    var laneR = _network!.LanesById[v.LaneId];
-                    var (xr, yr, angler) = LaneGeometry.PositionAtOffset(laneR.Shape, v.Kinematics.Pos, v.Kinematics.LatOffset);
-                    scratchR[vi] = new TrajectoryPoint(
-                        VehicleId: v.Def.Id,
-                        Time: time,
-                        Lane: v.LaneId,
-                        Pos: v.Kinematics.Pos,
-                        Speed: v.Kinematics.Speed,
-                        X: xr,
-                        Y: yr,
-                        Angle: angler,
-                        Acceleration: null);
-                }
-            });
-
-            // Append in ascending EntityIndex order (== ActiveVehicles() order) -> byte-identical XML.
-            // Only active indices are visited, and every active vehicle's slot was written above.
-            for (var k = 0; k < _activeIndices.Count; k++)
-            {
-                if (scratchR[_activeIndices[k]] is { } point)
-                {
-                    trajectory.Add(point);
-                }
-            }
-
-            return;
-        }
-
         // Perf (Export-phase parallelism): on a large scenario with NO registered export observer,
         // compute each vehicle's frame concurrently into _emitScratch, then append serially. The
         // determinism/parity test loop and the city benchmark (--fcd-out "") both satisfy the
@@ -6852,7 +6809,7 @@ public sealed partial class Engine : IEngine
                     return;
                 }
 
-                var laneP = _network!.LanesById[v.LaneId];
+                var laneP = _lanesByHandle[v.LaneHandle];
                 var (xp, yp, anglep) = LaneGeometry.PositionAtOffset(laneP.Shape, v.Kinematics.Pos, v.Kinematics.LatOffset);
                 scratch[i] = new TrajectoryPoint(
                     VehicleId: v.Def.Id,
@@ -6880,7 +6837,7 @@ public sealed partial class Engine : IEngine
         // D6: the Query() analog -- see ActiveVehicles()'s own comment.
         foreach (var v in ActiveVehicles())
         {
-            var lane = _network!.LanesById[v.LaneId];
+            var lane = _lanesByHandle[v.LaneHandle];
             // B6: render the lateral offset so a swerve is visible in x/y. LatOffset is 0 for every
             // lane-centred vehicle, so this is byte-identical wherever no evasion is active.
             var (x, y, angle) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos, v.Kinematics.LatOffset);
