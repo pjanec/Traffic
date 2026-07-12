@@ -68,6 +68,49 @@ public static class LaneGeometry
         return (last.X, last.Y, 0.0);
     }
 
+    // SUMOSHARP-API.md §6: the elevation (z) at longitudinal `offset` along the lane, interpolated with the
+    // SAME segment walk and clamp as PositionAtOffset (2-D segment lengths, same `t`), so z is consistent
+    // with the derived x/y. Purely output-side, like the whole class -- never feeds kinematic state. Used
+    // only for the read surface's PosZ; a 2-D lane (ShapeZ == null) never calls this and reports 0.
+    public static double ElevationAtOffset(
+        IReadOnlyList<(double X, double Y)> shape,
+        IReadOnlyList<double> shapeZ,
+        double offset)
+    {
+        if (shape.Count == 0 || shapeZ.Count == 0)
+        {
+            return 0.0;
+        }
+
+        if (shape.Count == 1)
+        {
+            return shapeZ[0];
+        }
+
+        var remaining = offset;
+        for (var i = 0; i < shape.Count - 1; i++)
+        {
+            var (x1, y1) = shape[i];
+            var (x2, y2) = shape[i + 1];
+            var dx = x2 - x1;
+            var dy = y2 - y1;
+            var segmentLength = Math.Sqrt(dx * dx + dy * dy);
+            var isLastSegment = i == shape.Count - 2;
+
+            if (remaining <= segmentLength || isLastSegment)
+            {
+                var t = segmentLength > 0 ? Math.Clamp(remaining / segmentLength, 0.0, 1.0) : 0.0;
+                var z1 = i < shapeZ.Count ? shapeZ[i] : 0.0;
+                var z2 = i + 1 < shapeZ.Count ? shapeZ[i + 1] : 0.0;
+                return z1 + (z2 - z1) * t;
+            }
+
+            remaining -= segmentLength;
+        }
+
+        return shapeZ[^1];
+    }
+
     private static double NormalizeDegrees(double degrees)
     {
         var normalized = degrees % 360.0;

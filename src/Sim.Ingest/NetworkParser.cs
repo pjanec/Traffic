@@ -63,7 +63,8 @@ public static class NetworkParser
                     Length: double.Parse(RequireAttribute(laneEl, "length"), CultureInfo.InvariantCulture),
                     Shape: ParseShape(RequireAttribute(laneEl, "shape")),
                     Width: width,
-                    Handle: nextLaneHandle++);
+                    Handle: nextLaneHandle++,
+                    ShapeZ: ParseShapeZ(RequireAttribute(laneEl, "shape")));
 
                 lanes.Add(lane);
                 lanesById[lane.Id] = lane;
@@ -420,6 +421,26 @@ public static class NetworkParser
         }
 
         return points;
+    }
+
+    // SUMOSHARP-API.md §6: parse the optional 3rd (z / elevation) component of each shape vertex. Returns
+    // null when the shape is 2-D (any vertex lacks a z) -- the common case, leaving Lane.ShapeZ null so the
+    // read surface reports PosZ = 0 exactly as before. Index-aligned with ParseShape's output.
+    private static IReadOnlyList<double>? ParseShapeZ(string shape)
+    {
+        var zs = new List<double>();
+        foreach (var pair in shape.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var coords = pair.Split(',');
+            if (coords.Length < 3)
+            {
+                return null; // 2-D shape -> no elevation profile
+            }
+
+            zs.Add(double.Parse(coords[2], CultureInfo.InvariantCulture));
+        }
+
+        return zs.Count > 0 ? zs : null;
     }
 
     private static string RequireAttribute(XElement element, string name) =>

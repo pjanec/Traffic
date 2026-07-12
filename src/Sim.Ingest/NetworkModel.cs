@@ -35,7 +35,12 @@ public sealed record Lane(
     double Width,
     int Handle,
     int LeftNeighbor = -1,
-    int RightNeighbor = -1);
+    int RightNeighbor = -1,
+    // SUMOSHARP-API.md §6 (geometry-3D): per-vertex elevation, index-aligned with Shape. Null when the
+    // net's lane shape is 2-D (`x,y` pairs) -- the common case, byte-identical to before. Populated only
+    // when the shape carries a 3rd `x,y,z` component; consumed only by the read surface's PosZ column
+    // (LaneGeometry.ElevationAtOffset), never by any car-following / lane-change / junction math.
+    IReadOnlyList<double>? ShapeZ = null);
 
 public sealed record Edge(
     string Id,

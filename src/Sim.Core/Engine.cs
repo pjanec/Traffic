@@ -1206,10 +1206,15 @@ public sealed partial class Engine : IEngine
             var (x, y, angle) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos, v.Kinematics.LatOffset);
             var handle = new VehicleHandle((uint)v.EntityIndex, _vehicleGeneration[v.EntityIndex]);
 
-            // Z is 0 on today's 2-D nets; becomes the interpolated lane elevation when geometry-3D lands.
+            // Geometry-3D (§6): interpolated lane elevation when the lane shape is 3-D; 0 on a 2-D net
+            // (ShapeZ == null), byte-identical to before.
+            var z = lane.ShapeZ is { } shapeZ
+                ? LaneGeometry.ElevationAtOffset(lane.Shape, shapeZ, v.Kinematics.Pos)
+                : 0.0;
+
             _readBuffer.Add(handle, v.EntityIndex, v.Def.Id, v.Def.TypeId,
                 v.LaneHandle, v.LaneId, v.Kinematics.Pos, v.Kinematics.Speed, v.Kinematics.LatOffset,
-                (float)x, (float)y, 0.0f, (float)angle);
+                (float)x, (float)y, (float)z, (float)angle);
         }
     }
 
