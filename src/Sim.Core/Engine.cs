@@ -110,13 +110,6 @@ public sealed partial class Engine : IEngine
     // below is a trivial +infinity no-op and every parity scenario's constraints list is unaffected.
     private readonly ObstacleStore _obstacles = new();
 
-    // Transitional string-id -> handle map (SUMOSHARP-API.md §4.4): backs the string-keyed AddObstacle/
-    // UpdateObstacle/RemoveObstacle overloads that the existing callers and the B1/B5/B6 parity tests
-    // use, so their behaviour is byte-identical while the handle-based API becomes the primary surface.
-    // Touched only on the string setup path, never the handle hot path; slated for removal once callers
-    // migrate to handles (the string->handle cache then lives host-side).
-    private readonly Dictionary<string, ObstacleHandle> _obstacleHandleById = new(StringComparer.Ordinal);
-
     // SUMOSHARP-API.md §9: MUTABLE vType/route registries so demand is not fixed to the loaded rou.xml.
     // Seeded from _demand at each load; runtime DefineVType / SpawnVehicle add to them. Every engine
     // lookup that used to read the immutable `_demand.VTypesById`/`RoutesById` reads these instead --
@@ -725,7 +718,7 @@ public sealed partial class Engine : IEngine
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
         double latPos = 0.0, double width = 0.0, double latSpeed = 0.0,
         AvoidanceClass avoidanceClass = AvoidanceClass.OneSided)
-        => AddCore(string.Empty, laneHandle, frontPos, length, startTime, endTime,
+        => AddCore(laneHandle, frontPos, length, startTime, endTime,
                    0.0, 0.0, latPos, width, latSpeed, avoidanceClass);
 
     // B5-i: MOVING obstacle -- AdvanceObstacles (Input phase) dead-reckons FrontPos by Speed*dt every
@@ -735,7 +728,7 @@ public sealed partial class Engine : IEngine
         double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
         double latPos = 0.0, double width = 0.0, double latSpeed = 0.0,
         AvoidanceClass avoidanceClass = AvoidanceClass.OneSided)
-        => AddCore(string.Empty, laneHandle, frontPos, length, startTime, endTime,
+        => AddCore(laneHandle, frontPos, length, startTime, endTime,
                    speed, maxDecel, latPos, width, latSpeed, avoidanceClass);
 
     // Per-step corrections from the external owner. Inert-when-absent: a stale/removed handle is a no-op.
@@ -750,88 +743,22 @@ public sealed partial class Engine : IEngine
 
     public void RemoveObstacle(ObstacleHandle handle) => _obstacles.Remove(handle);
 
-    // Resolve the lane handle -> LaneId string (which the string-filtering consumers -- ObstacleConstraint,
-    // the reroute/junction/follower scans -- still match on) and store. `id` is used only by
-    // ComputeLateralEvasion's deterministic tie-break (empty for handle-based adds; no committed scenario
-    // relies on tie-breaking among handle-based obstacles).
-    private ObstacleHandle AddCore(string id, int laneHandle, double frontPos, double length,
+    // Resolve the lane handle -> LaneId string (which the lane-filtering consumers -- ObstacleConstraint,
+    // the reroute/junction/follower scans -- still match on) and store. The obstacle's string Id is empty
+    // (it was only ever the string-API key); ComputeLateralEvasion's tie-break among overlapping obstacles
+    // therefore falls to insertion order -- deterministic, and no committed scenario has such an overlap.
+    private ObstacleHandle AddCore(int laneHandle, double frontPos, double length,
         double startTime, double endTime, double speed, double maxDecel,
         double latPos, double width, double latSpeed, AvoidanceClass avoidanceClass)
     {
-        var laneId = (_network ?? throw new InvalidOperationException("LoadScenario must be called before AddObstacle."))
+        var laneId = (_network ?? throw new InvalidOperationException("LoadScenario/LoadNetwork must be called before AddObstacle."))
             .LanesByHandle[laneHandle].Id;
-        return _obstacles.Add(id, laneHandle, laneId, frontPos, length, startTime, endTime,
+        return _obstacles.Add(string.Empty, laneHandle, laneId, frontPos, length, startTime, endTime,
                               speed, maxDecel, latPos, width, latSpeed, avoidanceClass);
     }
 
-    // ----- Transitional string-keyed obstacle API (SUMOSHARP-API.md §4.4) -----
-    // Add-or-replace by id, backed by the handle store + _obstacleHandleById map. Byte-identical to the
-    // pre-store string API, so the B1/B5/B6 parity tests and Sim.ExtDemo are unchanged. Slated for removal
-    // once callers migrate to handles.
-    public void AddObstacle(string id, string laneId, double frontPos, double length,
-        double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
-        double latPos = 0.0, double width = 0.0, double latSpeed = 0.0)
-        => AddOrReplaceById(id, laneId, frontPos, length, startTime, endTime, 0.0, 0.0, latPos, width, latSpeed);
-
-    public void AddMovingObstacle(string id, string laneId, double frontPos, double length,
-        double speed, double maxDecel,
-        double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
-        double latPos = 0.0, double width = 0.0, double latSpeed = 0.0)
-        => AddOrReplaceById(id, laneId, frontPos, length, startTime, endTime, speed, maxDecel, latPos, width, latSpeed);
-
-    private void AddOrReplaceById(string id, string laneId, double frontPos, double length,
-        double startTime, double endTime, double speed, double maxDecel,
-        double latPos, double width, double latSpeed)
-    {
-        // Add-or-replace by id: drop any prior obstacle under this id (remove+add gives a fresh slot with
-        // identical state -- iteration order is immaterial to every consumer, see ObstacleStore's header).
-        if (_obstacleHandleById.TryGetValue(id, out var existing))
-        {
-            _obstacles.Remove(existing);
-        }
-
-        _obstacleHandleById[id] = AddCore(id, GetLane(laneId), frontPos, length, startTime, endTime,
-            speed, maxDecel, latPos, width, latSpeed, AvoidanceClass.OneSided);
-    }
-
-    public void UpdateObstacle(string id, double frontPos, double speed)
-    {
-        if (_obstacleHandleById.TryGetValue(id, out var handle))
-        {
-            _obstacles.Update(handle, frontPos, speed);
-        }
-    }
-
-    public void UpdateObstacle(string id, double frontPos, double speed, double latPos)
-    {
-        if (_obstacleHandleById.TryGetValue(id, out var handle))
-        {
-            _obstacles.Update(handle, frontPos, speed, latPos);
-        }
-    }
-
-    public void UpdateObstacle(string id, double frontPos, double speed, double latPos, double latSpeed)
-    {
-        if (_obstacleHandleById.TryGetValue(id, out var handle))
-        {
-            _obstacles.Update(handle, frontPos, speed, latPos, latSpeed);
-        }
-    }
-
-    public void RemoveObstacle(string id)
-    {
-        if (_obstacleHandleById.TryGetValue(id, out var handle))
-        {
-            _obstacles.Remove(handle);
-            _obstacleHandleById.Remove(id);
-        }
-    }
-
-    public void ClearObstacles()
-    {
-        _obstacles.Clear();
-        _obstacleHandleById.Clear();
-    }
+    // Remove every obstacle at once.
+    public void ClearObstacles() => _obstacles.Clear();
 
     // B5-i: dead-reckon every MOVING obstacle forward by Speed*dt (and B6-lat LatPos by LatSpeed*dt),
     // once per step, in the Input phase BEFORE PlanMovements/the neighbor-query Refill -- so the Plan
@@ -910,6 +837,12 @@ public sealed partial class Engine : IEngine
     // inline in LoadScenario; _network/_demand/_config are already assigned by the caller.
     private void InitializeLoaded()
     {
+        // Caller (LoadScenario / LoadNetwork) has assigned all three; assert it so the rest of this method
+        // sees them as non-null (and to fail loudly if a future caller forgets).
+        if (_network is null || _demand is null || _config is null)
+        {
+            throw new InvalidOperationException("InitializeLoaded requires _network, _demand, and _config to be set.");
+        }
 
         // B3: the cached router is built from the network being replaced above -- invalidate it
         // here so UpdateReroutes lazily rebuilds against the NEW network the next time it is

@@ -32,7 +32,7 @@ public class RungB1ExternalObstacleTests
             Path.Combine(ScenarioDir, "rou.rou.xml"),
             Path.Combine(ScenarioDir, "config.sumocfg"));
 
-        engine.AddObstacle("obs", "e0_0", frontPos: ObstacleFrontPos, length: ObstacleLength);
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: ObstacleFrontPos, length: ObstacleLength);
 
         var trajectory = engine.Run(60);
         var points = trajectory.PointsFor("follower");
@@ -64,7 +64,7 @@ public class RungB1ExternalObstacleTests
 
         const double removalTime = 25.0;
         engine.AddObstacle(
-            "obs", "e0_0", frontPos: ObstacleFrontPos, length: ObstacleLength,
+            engine.GetLane("e0_0"), frontPos: ObstacleFrontPos, length: ObstacleLength,
             startTime: double.NegativeInfinity, endTime: removalTime);
 
         var trajectory = engine.Run(60);
@@ -112,7 +112,7 @@ public class RungB1ExternalObstacleTests
             Path.Combine(ScenarioDir, "config.sumocfg"));
 
         // Add then clear, to also exercise ClearObstacles/RemoveObstacle as no-ops on the result.
-        engine.AddObstacle("obs", "e0_0", frontPos: ObstacleFrontPos, length: ObstacleLength);
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: ObstacleFrontPos, length: ObstacleLength);
         engine.ClearObstacles();
 
         var trajectory = engine.Run(60);

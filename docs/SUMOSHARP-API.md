@@ -10,10 +10,9 @@ the car-following / lane-change / junction math, or the internal vehicle SoA**, 
 cannot move any scenario out of its committed `tolerance.json`. The parity suite stays the
 correctness anchor throughout (`CLAUDE.md` rule 3).
 
-Status: **design agreed; most of Phase 1 LANDED on this branch** (async runner + string-API removal
-pending). Implemented and verified (full parity suite green, 241 tests, determinism anchor
-`909605E965BFFE59` unchanged single + parallel — so every addition is byte-identical where the new
-paths are unused):
+Status: **design agreed; Phase 1 LANDED on this branch.** Implemented and verified (full parity suite
+green, 250 tests, determinism anchor `909605E965BFFE59` unchanged single + parallel — so every addition
+is byte-identical where the new paths are unused):
 - the handle-based struct-of-arrays **obstacle store** (§4.3–4.4);
 - the host-facing **stepped read surface** (§5): `Step()`/`Step(int)`, the columnar SoA spans
   (`VehicleHandles`/`PosX`/`PosY`/`PosZ`/`Angle`/`Speed`/`LaneHandles`/`Pos`/`PosLat`), and
@@ -27,7 +26,13 @@ paths are unused):
 - the **lifecycle event buffer** (§10): `Engine.Events` (`Departed`/`Arrived`), diffed each `Step()`;
 - the **async `SimulationRunner`** (§7): background-thread loop, boundary-applied command dispatcher
   (`Post`/`Invoke`), and an immutable double-buffered `SimulationSnapshot` (`Start`/`Stop`/`Pause`/
-  `Resume`/`SpeedMultiplier`, or manual `Tick()`).
+  `Resume`/`SpeedMultiplier`, or manual `Tick()`);
+- **string obstacle API removed** (D4): the obstacle API is now handle-only (`GetLane` + `ObstacleHandle`);
+  every caller (the B1/B5/B6 tests, `Sim.ExtDemo`) migrated, string→handle caching is the host's concern.
+
+Phase-1 items intentionally left as later refinements (not blockers): the two-frame interpolation hook
+and a snapshot pool (§7), a dense `GetEdge(string)→int` (§9), vehicle-slot recycling (§9), and the NuGet
+packaging/metadata + `netstandard2.1` multi-target + browser-live demo (Phases 0/2/3).
 
 **Coordinated with `docs/LANELESS-DIRECTION.md`** (the laneless/RVO branch) — see §15 for the shared
 obstacle-store ownership split, the lateral-state API requirements folded in, and the merge order.
@@ -551,6 +556,13 @@ this as its "scalable int-indexed footprint-agent store." Its **lateral columns 
   active slot via `_obstacles.Values` (zero-alloc struct enumerator), so the RVO adapter can read the
   same struct today and switch to raw columns later with no behavioural change. `RvoNeighbor` remains the
   sole seam.
+
+### Merge heads-up: the string obstacle API is gone
+This branch **removed** the string-keyed obstacle overloads (`AddObstacle(string id, string laneId, …)`,
+`UpdateObstacle(string, …)`, `RemoveObstacle(string)`) — the API is now handle-only (`GetLane` +
+`ObstacleHandle`). The laneless branch's Stage-3 adapter reads the internal `_obstacles` **store**, not
+this public API, so it is unaffected; but any laneless-branch *test or demo* that still calls the string
+overloads must migrate to handles at merge (mechanical: drop the id, wrap the lane in `GetLane`).
 
 ### Merge mechanics
 Both branches make **additive** edits to 8 shared files: `Engine.cs`, `VehicleExportSnapshot.cs`,

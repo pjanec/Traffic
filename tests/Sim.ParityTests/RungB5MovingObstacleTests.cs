@@ -39,7 +39,7 @@ public class RungB5MovingObstacleTests
         const double obstacleMaxDecel = 4.5;
 
         engine.AddMovingObstacle(
-            "obs", "e0_0", frontPos: obstacleFrontPos, length: obstacleLength,
+            engine.GetLane("e0_0"), frontPos: obstacleFrontPos, length: obstacleLength,
             speed: obstacleSpeed, maxDecel: obstacleMaxDecel);
 
         var trajectory = engine.Run(45);
@@ -88,7 +88,7 @@ public class RungB5MovingObstacleTests
         const double deactivateTime = 20.0;
 
         engine.AddMovingObstacle(
-            "obs", "e0_0", frontPos: obstacleFrontPos, length: obstacleLength,
+            engine.GetLane("e0_0"), frontPos: obstacleFrontPos, length: obstacleLength,
             speed: obstacleSpeed, maxDecel: obstacleMaxDecel,
             startTime: double.NegativeInfinity, endTime: deactivateTime);
 
@@ -147,7 +147,7 @@ public class RungB5MovingObstacleTests
         const double expectedSteadyPos = 242.499; // == RungB1ExternalObstacleTests.ExpectedSteadyPos
 
         engine.AddMovingObstacle(
-            "obs", "e0_0", frontPos: obstacleFrontPos, length: obstacleLength,
+            engine.GetLane("e0_0"), frontPos: obstacleFrontPos, length: obstacleLength,
             speed: 0.0, maxDecel: 4.5);
 
         var trajectory = engine.Run(60);

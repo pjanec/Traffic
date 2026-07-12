@@ -33,7 +33,7 @@ public class RungB6LateralEvasionTests
         // Jumps in at t=15 (car ~178 @ 13.89 m/s), ~8 m ahead, hugging the right edge:
         // latPos -1.2, width 0.8 -> footprint [-1.6,-0.8]. Too close to stop (brakeGap ~21 m >> gap).
         const double pedFront = 186.0, pedLen = 0.5, pedLat = -1.2, pedWidth = 0.8;
-        engine.AddObstacle("ped", "e0_0", frontPos: pedFront, length: pedLen,
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: pedFront, length: pedLen,
             startTime: 15.0, endTime: double.PositiveInfinity, latPos: pedLat, width: pedWidth);
 
         var traj = engine.Run(45);
@@ -65,7 +65,7 @@ public class RungB6LateralEvasionTests
 
         // Static, visible from the start, spanning the whole 3.2 m lane (latPos 0, width 3.0 ->
         // footprint [-1.5,1.5]): the car cannot fit past on either side, so it must stop behind it.
-        engine.AddObstacle("ped", "e0_0", frontPos: 250.0, length: 5.0, latPos: 0.0, width: 3.0);
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: 250.0, length: 5.0, latPos: 0.0, width: 3.0);
 
         var traj = engine.Run(60);
         var pts = engine_PointsInOrder(traj);
@@ -94,7 +94,7 @@ public class RungB6LateralEvasionTests
 
         var engine = new Engine();
         Load(engine, TwoLaneDir);
-        engine.AddObstacle("ped", "e0_0", frontPos: pedFront, length: 0.5,
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: pedFront, length: 0.5,
             startTime: injectTime, endTime: double.PositiveInfinity, latPos: 0.0, width: 2.8);
 
         var traj = engine.Run(60);
@@ -120,7 +120,7 @@ public class RungB6LateralEvasionTests
         Load(engine, OneLaneDir);
         const double laneCentreY = -1.60;
 
-        engine.AddObstacle("obs", "e0_0", frontPos: 250.0, length: 5.0); // no latPos/width -> full lane
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: 250.0, length: 5.0); // no latPos/width -> full lane
 
         var traj = engine.Run(60);
         var pts = engine_PointsInOrder(traj);
@@ -144,7 +144,7 @@ public class RungB6LateralEvasionTests
         Load(engine, WideLaneDir);
         double pedFront = 13.89 * injectTime + 8.0; // wide-swerve car cruises at departSpeed from pos 0
 
-        engine.AddMovingObstacle("ped", "e0_0", frontPos: pedFront, length: pedLen, speed: 0.0, maxDecel: 0.0,
+        engine.AddMovingObstacle(engine.GetLane("e0_0"), frontPos: pedFront, length: pedLen, speed: 0.0, maxDecel: 0.0,
             startTime: injectTime, endTime: double.PositiveInfinity, latPos: pedLat0, width: pedWidth, latSpeed: pedLatSpeed);
 
         var pts = engine_PointsInOrder(engine.Run(30)).Where(p => p.VehicleId == "car0").ToList();

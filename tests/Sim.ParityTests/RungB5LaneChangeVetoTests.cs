@@ -71,7 +71,7 @@ public class RungB5LaneChangeVetoTests
         const double obstacleEndTime = 20.0; // well after t=11's first attempt, before natural pass-through
 
         engine.AddObstacle(
-            "blocker", "e0_1", frontPos: laneLength, length: laneLength,
+            engine.GetLane("e0_1"), frontPos: laneLength, length: laneLength,
             startTime: double.NegativeInfinity, endTime: obstacleEndTime);
 
         var trajectory = engine.Run(60);
@@ -151,7 +151,7 @@ public class RungB5LaneChangeVetoTests
         // Same lane-spanning would-veto geometry as test (b), but on `follow`'s OWN lane e0_0
         // (non-target) instead of the target e0_1 -- so only the LaneId filter distinguishes them.
         engine.AddObstacle(
-            "irrelevant", "e0_0", frontPos: 1999.0, length: 2000.0,
+            engine.GetLane("e0_0"), frontPos: 1999.0, length: 2000.0,
             startTime: double.NegativeInfinity, endTime: double.PositiveInfinity);
 
         var trajectory = engine.Run(20);

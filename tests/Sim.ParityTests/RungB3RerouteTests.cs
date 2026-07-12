@@ -34,7 +34,7 @@ public class RungB3RerouteTests
     {
         var engine = LoadEngine();
         engine.RerouteThresholdSeconds = 5;
-        engine.AddObstacle("blk", "BD_0", frontPos: 250, length: 5);
+        engine.AddObstacle(engine.GetLane("BD_0"), frontPos: 250, length: 5);
 
         var trajectory = engine.Run(300);
         var points = trajectory.PointsFor("veh").Values.OrderBy(p => p.Time).ToList();
@@ -59,7 +59,7 @@ public class RungB3RerouteTests
     {
         var engine = LoadEngine();
         engine.RerouteThresholdSeconds = 5;
-        engine.AddObstacle("blk", "BD_0", frontPos: 250, length: 5, endTime: 3);
+        engine.AddObstacle(engine.GetLane("BD_0"), frontPos: 250, length: 5, endTime: 3);
 
         var trajectory = engine.Run(300);
         var points = trajectory.PointsFor("veh").Values.OrderBy(p => p.Time).ToList();
@@ -86,7 +86,7 @@ public class RungB3RerouteTests
     {
         var engine = LoadEngine();
         // RerouteThresholdSeconds left at its default (+infinity) -- not set here.
-        engine.AddObstacle("blk", "BD_0", frontPos: 250, length: 5);
+        engine.AddObstacle(engine.GetLane("BD_0"), frontPos: 250, length: 5);
 
         var trajectory = engine.Run(60);
         var points = trajectory.PointsFor("veh").Values.OrderBy(p => p.Time).ToList();

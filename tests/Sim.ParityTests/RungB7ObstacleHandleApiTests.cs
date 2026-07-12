@@ -4,9 +4,8 @@ using Xunit;
 namespace Sim.ParityTests;
 
 // SUMOSHARP-API.md §4 (D5): the handle-based external-obstacle API and its generational ObstacleStore.
-// The B1/B5/B6 rungs already prove the BEHAVIOUR via the (now transitional) string-keyed overloads;
-// this file proves the new handle-based primary surface is (1) byte-equivalent to the string path and
-// (2) enforces the generational stale-handle contract. Behavioural/property tests, not golden-FCD.
+// The B1/B5/B6 rungs prove the BEHAVIOUR (now via the handle API directly); this file adds the
+// generational stale-handle contract and the absolute steady-state anchor. Behavioural/property tests.
 public class RungB7ObstacleHandleApiTests
 {
     private static readonly string ScenarioDir = Path.Combine(RepoRoot(), "scenarios", "14-external-obstacle");
@@ -27,31 +26,21 @@ public class RungB7ObstacleHandleApiTests
         return engine;
     }
 
-    // The handle-based AddObstacle produces a trajectory BYTE-IDENTICAL to the string-keyed AddObstacle
-    // for the same obstacle -- proving the new store/materialisation path changes nothing numerically.
+    // The handle-based AddObstacle holds the follower at the Krauss steady gap behind the obstacle (the
+    // absolute-behaviour anchor cross-checked against scenarios/13-stopped-leader).
     [Fact]
-    public void HandleApi_ProducesIdenticalTrajectoryToStringApi()
+    public void HandleApi_HoldsAtKraussSteadyGap()
     {
-        var stringEngine = Load();
-        stringEngine.AddObstacle("obs", "e0_0", frontPos: ObstacleFrontPos, length: ObstacleLength);
-        var stringPoints = stringEngine.Run(60).PointsFor("follower");
+        var engine = Load();
+        engine.AddObstacle(engine.GetLane("e0_0"), frontPos: ObstacleFrontPos, length: ObstacleLength);
 
-        var handleEngine = Load();
-        var lane = handleEngine.GetLane("e0_0");
-        handleEngine.AddObstacle(lane, frontPos: ObstacleFrontPos, length: ObstacleLength);
-        var handlePoints = handleEngine.Run(60).PointsFor("follower");
-
-        Assert.Equal(stringPoints.Count, handlePoints.Count);
-        foreach (var (time, sp) in stringPoints)
+        var points = engine.Run(60).PointsFor("follower");
+        foreach (var p in points.Values)
         {
-            Assert.True(handlePoints.TryGetValue(time, out var hp), $"missing follower point at t={time}");
-            // Bit-exact: same inputs through the same math -> identical doubles.
-            Assert.Equal(sp.Pos, hp.Pos);
-            Assert.Equal(sp.Speed, hp.Speed);
+            Assert.True(p.Pos <= ObstacleBackPos, $"overlapped obstacle at t={p.Time}: {p.Pos} > {ObstacleBackPos}");
         }
 
-        // Sanity: the shared expected steady state (so this test also anchors the absolute behaviour).
-        var last = handlePoints.Values.Last();
+        var last = points.Values.Last();
         Assert.Equal(ExpectedSteadyPos, last.Pos, precision: 3);
         Assert.Equal(0.0, last.Speed, precision: 3);
     }
@@ -104,29 +93,6 @@ public class RungB7ObstacleHandleApiTests
         Assert.True(last.Pos > ObstacleBackPos, $"follower should be past {ObstacleBackPos}: pos={last.Pos}");
     }
 
-    // The moving-obstacle handle overload dead-reckons exactly like its string counterpart.
-    [Fact]
-    public void MovingObstacleHandleApi_MatchesStringApi()
-    {
-        var stringEngine = Load();
-        stringEngine.AddMovingObstacle("obs", "e0_0", frontPos: ObstacleFrontPos, length: ObstacleLength,
-            speed: 2.0, maxDecel: 4.5);
-        var stringPoints = stringEngine.Run(60).PointsFor("follower");
-
-        var handleEngine = Load();
-        var lane = handleEngine.GetLane("e0_0");
-        handleEngine.AddMovingObstacle(lane, frontPos: ObstacleFrontPos, length: ObstacleLength,
-            speed: 2.0, maxDecel: 4.5);
-        var handlePoints = handleEngine.Run(60).PointsFor("follower");
-
-        Assert.Equal(stringPoints.Count, handlePoints.Count);
-        foreach (var (time, sp) in stringPoints)
-        {
-            Assert.True(handlePoints.TryGetValue(time, out var hp), $"missing follower point at t={time}");
-            Assert.Equal(sp.Pos, hp.Pos);
-            Assert.Equal(sp.Speed, hp.Speed);
-        }
-    }
 
     private static string RepoRoot()
     {

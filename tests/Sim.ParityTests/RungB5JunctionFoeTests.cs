@@ -95,7 +95,7 @@ public class RungB5JunctionFoeTests
         // A crossing external agent standing on the major internal lane :J_2_0 -- the exact
         // stand-in for a navmesh/RVO agent currently traversing/occupying that crossing.
         engine.AddObstacle(
-            "crossingAgent", ":J_2_0", frontPos: 5.0, length: 5.0,
+            engine.GetLane(":J_2_0"), frontPos: 5.0, length: 5.0,
             startTime: double.NegativeInfinity, endTime: agentEndTime);
 
         var trajectory = engine.Run(40);
@@ -166,7 +166,7 @@ public class RungB5JunctionFoeTests
             Path.Combine(ScenarioDir, "config.sumocfg"));
 
         engine.AddObstacle(
-            "irrelevantAgent", ":J_0_0", frontPos: 5.0, length: 5.0,
+            engine.GetLane(":J_0_0"), frontPos: 5.0, length: 5.0,
             startTime: double.NegativeInfinity, endTime: double.PositiveInfinity);
 
         var trajectory = engine.Run(30);

@@ -44,22 +44,5 @@ public interface IEngine
 
     void RemoveObstacle(ObstacleHandle handle);
 
-    // ----- Transitional string-keyed overloads (SUMOSHARP-API.md §4.4) -----
-    // Add-or-replace by id, backed by the handle store. Byte-identical to the pre-store string API;
-    // kept for the existing callers/parity tests, slated for removal once they migrate to handles.
-    void AddObstacle(string id, string laneId, double frontPos, double length,
-                     double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
-                     double latPos = 0.0, double width = 0.0, double latSpeed = 0.0);
-
-    void AddMovingObstacle(string id, string laneId, double frontPos, double length,
-                           double speed, double maxDecel,
-                           double startTime = double.NegativeInfinity, double endTime = double.PositiveInfinity,
-                           double latPos = 0.0, double width = 0.0, double latSpeed = 0.0);
-
-    void UpdateObstacle(string id, double frontPos, double speed);
-    void UpdateObstacle(string id, double frontPos, double speed, double latPos);
-    void UpdateObstacle(string id, double frontPos, double speed, double latPos, double latSpeed);
-
-    void RemoveObstacle(string id);
     void ClearObstacles();
 }
