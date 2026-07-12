@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- both CENTERED. On a 7.2 m lane the fast follower sublane-changes (drifts to the right edge)
+         to overtake the slow leader, then recenters: the continuous MSLCM_SL2015 speed-gain change. -->
+    <vType id="slow" vClass="passenger" sigma="0" maxSpeed="5"/>
+    <vType id="fast" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="v0" type="slow" route="r0" depart="0" departPos="30" departSpeed="0"/>
+    <vehicle id="v1" type="fast" route="r0" depart="0" departPos="0"  departSpeed="0"/>
+</routes>

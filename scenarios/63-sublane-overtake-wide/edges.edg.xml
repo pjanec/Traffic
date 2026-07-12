@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/edges_file.xsd">
+    <!-- 7.2 m lane: wide enough for two 1.8 m cars to pass with minGapLat clearance. -->
+    <edge id="e0" from="n0" to="n1" numLanes="1" speed="13.89" priority="-1" width="7.2"/>
+</edges>

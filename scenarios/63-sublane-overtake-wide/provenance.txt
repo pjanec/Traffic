@@ -1,0 +1,19 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-12T00:00:00Z
+command=sumo -c config.sumocfg --fcd-output golden.fcd.xml --fcd-output.attributes x,y,angle,speed,pos,lane,posLat,acceleration --precision 6 --save-state.times 1 --save-state.files golden.state.xml --no-step-log true
+net_command=netconvert --node-files nodes.nod.xml --edge-files edges.edg.xml --output-file net.net.xml --no-turnarounds true --junctions.corner-detail 0
+fcd_precision=6
+# PHASE 2 / P2.4 SUBLANE SPEED-GAIN OVERTAKE ANCHOR (exact @1e-3 on pos/speed/posLat).
+# NOT YET PASSING -- this is the committed empirical spec for the _wantsChangeSublane port (like
+# scenario 60 anchored P2.3 before its port). lateral-resolution=0.8, one 7.2 m lane, both centered.
+# The fast follower v1 (default maxSpeed) catches the slow leader v0 (maxSpeed 5) and OVERTAKES it by
+# drifting to the right sublane, then recenters. Empirical v1 trajectory (speed / posLat):
+#   t: accelerate 2.6/5.2/7.8/10.4 (posLat 0) -> brake-while-drifting 9.366333/-1.0, 7.366333/-2.0,
+#   6.183167/-2.699500 -> clear+accelerate 8.783167, 11.383167, 13.89 (posLat -2.699500 held) ->
+#   recenter -1.699500, -0.699500, 0.0 (speed 13.89).
+# Target right-edge offset -2.699500 = -(halfLane - (width+EPS)/2) = -(3.6 - 0.9005). Drift 1.0/step
+# (maxSpeedLat). The brake profile is Krauss following while footprints still overlap during the
+# drift; acceleration resumes once posLat clears the leader (FootprintsOverlap bypass, already in the
+# engine); recenter is the latAlignment="center" drift (P2.3). The NEW piece to port is the speed-gain
+# lateral DECISION (which side, when) from MSLCM_SL2015::_wantsChangeSublane + computeSpeedLat.
