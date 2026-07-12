@@ -497,6 +497,18 @@ public sealed partial class Engine : IEngine
     // scenario ever sets this, so every golden stays on the exact SUMO-faithful path.
     public bool FastMode;
 
+    // Laneless direction (docs/LANELESS-DIRECTION.md): opt-in proof-of-concept for the continuous
+    // footprint / velocity-obstacle (RVO-lite) lateral layer. When true AND the sublane model is
+    // active (_sublane), the lateral intent comes from ComputeRvoLateral (continuous avoidance over
+    // near-neighbours + external obstacles, treated uniformly) instead of the SUMO-faithful
+    // ComputeSublaneLateral drift. This is the laneless axis's OWN model: SUMO's lateral PHYSICS as
+    // the reference (minGapLat clearance, maxSpeedLat bound) but validated BEHAVIOURALLY (no-overlap,
+    // overtake-completes, recenters) rather than byte-exact -- because SUMO's exact sublane timing is
+    // an ECS-hostile persistent state machine reproducing a lane-anchored approximation (see
+    // docs/PHASE2-SUBLANE.md). Default false, so every committed golden (incl. the exact sublane rungs
+    // 60/61/62) stays on the SUMO-faithful path and is byte-identical; no committed test sets it.
+    public bool LanelessRvo;
+
     // Perf diagnostics: opt-in per-phase wall-time accounting for the Run loop. OFF by default and
     // effectively free then (one bool test per phase per step -- GetTimestamp is not even called, no
     // allocation, no Stopwatch object). Sim.BenchCity --profile turns it on and prints the breakdown,
@@ -2610,7 +2622,8 @@ public sealed partial class Engine : IEngine
             // (ComputeSublaneLateral) replaces the external-agent evasion path -- gated on _sublane,
             // so every phase-1 scenario keeps exactly the ComputeLateralEvasion path below.
             LatOffset = prePass ? 0.0
-                : _sublane ? ComputeSublaneLateral(v, lane, dt)
+                : _sublane ? (LanelessRvo ? ComputeRvoLateral(v, lane, neighbors, dt)
+                                          : ComputeSublaneLateral(v, lane, dt))
                 : ComputeLateralEvasion(v, lane, neighbors, time, dt),
             StopUpdate = stopUpdate,
         };
@@ -5398,6 +5411,84 @@ public sealed partial class Engine : IEngine
         }
 
         var maxStep = v.VType.MaxSpeedLat * dt;
+        return DriftToward(curLat, target, maxStep);
+    }
+
+    // Laneless direction PoC (docs/LANELESS-DIRECTION.md): the continuous footprint / velocity-
+    // obstacle (RVO-lite) lateral driver. Opt-in (Engine.LanelessRvo); replaces the SUMO-faithful
+    // ComputeSublaneLateral drift when set. Returns ego's new absolute posLat this step: a bounded
+    // (maxSpeedLat) lateral drift toward a target that CLEARS a slower same-lane leader by minGapLat
+    // -- so the existing !FootprintsOverlap same-lane leader bypass (LeaderFollowSpeedConstraint) then
+    // lets ego accelerate past it, and once the leader is behind ego recentres. This is an EMERGENT
+    // overtake from local avoidance -- no persistent state machine, no golden -- validated
+    // behaviourally (no-overlap, overtake-completes, recentres). SUMO's lateral PHYSICS are the
+    // reference (minGapLat clearance, maxSpeedLat bound); the exact posLat/timing are our own.
+    //
+    // Parallel-safe: reads only ego's own frozen state + the frozen neighbour query, writes nothing
+    // (caller stores the result in ego's own MoveIntent). One-sided avoidance (ego does all the
+    // moving); reciprocal ORCA sharing + external-obstacle unification + a fixed-radius near-neighbour
+    // query over the spatial hash are the follow-on stages in LANELESS-DIRECTION.md. External
+    // obstacles are NOT yet folded in here (the RVO path replaces the B6 evasion path); a scenario
+    // mixing RVO vehicles and external agents is a stage-3 concern.
+    private double ComputeRvoLateral(VehicleRuntime v, Lane lane, LaneNeighborQuery neighbors, double dt)
+    {
+        var curLat = v.Kinematics.LatOffset;
+        var eps = KraussModel.NumericalEps;
+        var halfVeh = v.VType.Width * 0.5;
+        var maxOffset = lane.Width * 0.5 - halfVeh;    // reachable lateral extent (real width)
+        var maxStep = v.VType.MaxSpeedLat * dt;
+        var egoDesired = v.VType.MaxSpeed * v.SpeedFactor;
+
+        var leader = neighbors.GetLeader(v);
+        // "Held up" = a slower same-lane leader whose footprint overlaps a CENTRED ego (the B6 sticky
+        // test: use ego-centred, not ego's current offset, so an in-progress pass stays committed and
+        // does not oscillate/cut back until the leader is fully behind -> GetLeader returns null).
+        var heldUp = leader is not null
+            && leader.Kinematics.Speed < egoDesired - eps
+            && FootprintsOverlap(leader.Kinematics.LatOffset, leader.VType.Width, 0.0, v.VType.Width);
+
+        double target;
+        if (heldUp)
+        {
+            var leaderLat = leader!.Kinematics.LatOffset;
+            var requiredSep = halfVeh + leader.VType.Width * 0.5 + v.VType.MinGapLat;
+            var targetRight = leaderLat - requiredSep;   // clear to the right (negative)
+            var targetLeft = leaderLat + requiredSep;    // clear to the left (positive)
+            var rightFeasible = targetRight >= -maxOffset;
+            var leftFeasible = targetLeft <= maxOffset;
+
+            if (curLat < -eps && rightFeasible)
+            {
+                target = targetRight;                    // sticky: already committed right
+            }
+            else if (curLat > eps && leftFeasible)
+            {
+                target = targetLeft;                     // sticky: already committed left
+            }
+            else if (rightFeasible)
+            {
+                target = targetRight;                    // default keep-right
+            }
+            else if (leftFeasible)
+            {
+                target = targetLeft;
+            }
+            else
+            {
+                // Lane too narrow to clear the leader -> hold centre and let car-following brake
+                // behind it (the FootprintsOverlap leader still binds). Behaviourally reproduces the
+                // "too narrow -> no overtake" case (cf. scenario 62) without any lateral motion.
+                target = curLat;
+            }
+
+            target = Math.Max(-maxOffset, Math.Min(maxOffset, target));
+        }
+        else
+        {
+            // No slower leader ahead (none, or fully passed, or already fast enough) -> recentre.
+            target = 0.0;
+        }
+
         return DriftToward(curLat, target, maxStep);
     }
 
