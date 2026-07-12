@@ -17,4 +17,13 @@ public readonly record struct TrajectoryPoint(
     double X,
     double Y,
     double Angle,
-    double? Acceleration);
+    double? Acceleration)
+{
+    // Phase 2 (sublane): continuous lateral offset from the lane centreline, +left of travel --
+    // the same value as Kinematics.LatOffset, and SUMO's FCD `posLat` attribute. An init-only
+    // property (NOT a positional member) precisely so it is ADDITIVE: every existing positional
+    // construction stays valid and leaves this 0, and value-equality over lane-mode trajectories
+    // (LatOffset always 0) is unchanged. The determinism hash (Sim.Bench) mixes only Pos/Speed and
+    // is likewise unaffected. Compared only by scenarios that list "posLat" in comparedAttributes.
+    public double PosLat { get; init; }
+}

@@ -48,6 +48,10 @@ public readonly struct VehicleExportSnapshot
     public readonly double Y;
     public readonly double Angle;
 
+    // Phase 2 (sublane): the lane-relative lateral offset (== Kinematics.LatOffset, +left of
+    // travel), SUMO's FCD `posLat`. 0 for every lane-centred vehicle, so inert for phase-1 output.
+    public readonly double PosLat;
+
     // Rung ER3 (give-way): the vehicle's current give-way intent, computed each plan step from
     // the frozen start-of-step snapshot -- 0 = none, -1 = clear toward the right lane edge, +1 =
     // clear toward the left lane edge (see Engine.DetectGiveWaySide). Always 0 for every vehicle
@@ -83,7 +87,8 @@ public readonly struct VehicleExportSnapshot
         double angle,
         int giveWaySide = 0,
         bool overtakeActive = false,
-        bool cooperativeShift = false)
+        bool cooperativeShift = false,
+        double posLat = 0.0)
     {
         Entity = entity;
         EntityIndex = entityIndex;
@@ -99,5 +104,6 @@ public readonly struct VehicleExportSnapshot
         GiveWaySide = giveWaySide;
         OvertakeActive = overtakeActive;
         CooperativeShift = cooperativeShift;
+        PosLat = posLat;
     }
 }

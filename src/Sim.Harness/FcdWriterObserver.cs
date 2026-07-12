@@ -66,6 +66,10 @@ public sealed class FcdWriterObserver : ISimExportObserver, IDisposable
         _writer.Write(Fmt(s.Speed));
         _writer.Write("\" pos=\"");
         _writer.Write(Fmt(s.Pos));
+        // Phase 2 (sublane): SUMO places `posLat` right after `pos` in FCD. 0 for a lane-centred
+        // vehicle; emitted always so a written engine trajectory round-trips the lateral offset.
+        _writer.Write("\" posLat=\"");
+        _writer.Write(Fmt(s.PosLat));
         _writer.Write("\" lane=\"");
         _writer.Write(Escape(s.Lane));
         _writer.WriteLine("\"/>");

@@ -6857,7 +6857,8 @@ public sealed partial class Engine : IEngine
                     X: xp,
                     Y: yp,
                     Angle: anglep,
-                    Acceleration: null);
+                    Acceleration: null)
+                { PosLat = v.Kinematics.LatOffset };
             });
 
             for (var i = 0; i < _vehicles.Count; i++)
@@ -6893,7 +6894,8 @@ public sealed partial class Engine : IEngine
                 angle: angle,
                 giveWaySide: v.GiveWaySide,
                 overtakeActive: v.OvertakeActive,
-                cooperativeShift: v.CooperativeShift);
+                cooperativeShift: v.CooperativeShift,
+                posLat: v.Kinematics.LatOffset);
 
             trajectory.Add(new TrajectoryPoint(
                 VehicleId: snapshot.VehicleId,
@@ -6904,7 +6906,8 @@ public sealed partial class Engine : IEngine
                 X: snapshot.X,
                 Y: snapshot.Y,
                 Angle: snapshot.Angle,
-                Acceleration: null));
+                Acceleration: null)
+            { PosLat = snapshot.PosLat });
 
             // D9: notify every registered observer with the SAME snapshot -- empty list by
             // default, so this is a zero-iteration `foreach` (no allocation, no virtual call)

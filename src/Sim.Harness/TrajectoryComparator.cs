@@ -162,6 +162,7 @@ public static class TrajectoryComparator
     {
         "pos" => point.Pos,
         "speed" => point.Speed,
+        "posLat" => point.PosLat,
         "x" => point.X,
         "y" => point.Y,
         "angle" => point.Angle,
@@ -174,6 +175,7 @@ public static class TrajectoryComparator
         "lane" => string.Equals(actual.Lane, expected.Lane, StringComparison.Ordinal) ? 0.0 : 1.0,
         "pos" => Math.Abs(actual.Pos - expected.Pos),
         "speed" => Math.Abs(actual.Speed - expected.Speed),
+        "posLat" => Math.Abs(actual.PosLat - expected.PosLat),
         "x" => Math.Abs(actual.X - expected.X),
         "y" => Math.Abs(actual.Y - expected.Y),
         "angle" => Math.Abs(actual.Angle - expected.Angle),

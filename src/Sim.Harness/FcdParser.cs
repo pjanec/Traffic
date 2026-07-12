@@ -36,7 +36,13 @@ public static class FcdParser
                     X: ParseDouble(vehicleEl, "x"),
                     Y: ParseDouble(vehicleEl, "y"),
                     Angle: ParseDouble(vehicleEl, "angle"),
-                    Acceleration: ParseNullableDouble(vehicleEl, "acceleration")));
+                    Acceleration: ParseNullableDouble(vehicleEl, "acceleration"))
+                {
+                    // Phase 2 (sublane): SUMO emits `posLat` in FCD only when
+                    // --lateral-resolution > 0; absent (every phase-1 golden) => 0, matching a
+                    // lane-centred vehicle. Optional so existing goldens parse unchanged.
+                    PosLat = ParseNullableDouble(vehicleEl, "posLat") ?? 0.0,
+                });
             }
         }
 

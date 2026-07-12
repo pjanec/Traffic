@@ -16,6 +16,10 @@ public sealed class ToleranceConfig
     public double? Angle { get; init; }
     public double? Acceleration { get; init; }
 
+    // Phase 2 (sublane): tolerance for the continuous lateral offset (SUMO's FCD `posLat`).
+    // Only required by scenarios that list "posLat" in comparedAttributes; phase-1 goldens omit it.
+    public double? PosLat { get; init; }
+
     /// <summary>
     /// Per-attribute ensemble (mean, std) tolerances for <c>parityMode="statistical"</c> configs
     /// (see <see cref="Harness.TrajectoryComparator.CompareEnsemble"/>). Absent/null for
@@ -28,6 +32,7 @@ public sealed class ToleranceConfig
         "lane" => 0.0,
         "pos" => Pos ?? throw MissingTolerance(attribute),
         "speed" => Speed ?? throw MissingTolerance(attribute),
+        "posLat" => PosLat ?? throw MissingTolerance(attribute),
         "x" => X ?? throw MissingTolerance(attribute),
         "y" => Y ?? throw MissingTolerance(attribute),
         "angle" => Angle ?? throw MissingTolerance(attribute),
@@ -80,6 +85,7 @@ public sealed class ToleranceConfig
             ComparedAttributes = dto.ComparedAttributes ?? DefaultComparedAttributes,
             Pos = dto.Pos,
             Speed = dto.Speed,
+            PosLat = dto.PosLat,
             X = dto.X,
             Y = dto.Y,
             Angle = dto.Angle,
@@ -105,6 +111,7 @@ public sealed class ToleranceConfig
 
         public double? Pos { get; set; }
         public double? Speed { get; set; }
+        public double? PosLat { get; set; }
         public double? X { get; set; }
         public double? Y { get; set; }
         public double? Angle { get; set; }
