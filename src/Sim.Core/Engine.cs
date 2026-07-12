@@ -5911,8 +5911,6 @@ public sealed partial class Engine : IEngine
     // math above it.
     private void DecideSpeedGainChanges(double time, double dt)
     {
-        const double relGainNormalizationMinSpeed = 10.0; // MSLCM_LC2013.cpp RELGAIN_NORMALIZATION_MIN_SPEED
-        const double changeProbThresholdLeft = 0.2; // ctor: (0.2/mySpeedGainParam), default mySpeedGainParam=1
         var actionStepLengthSecs = _config!.ActionStepLength > 0 ? _config.ActionStepLength : dt;
 
         // Refilled ONCE per step, from the now-settled post-move positions every vehicle's

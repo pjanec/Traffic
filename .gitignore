@@ -52,3 +52,9 @@ scenarios/_bench/emergency-corridor-demo/replay.html
 scaling-results.csv
 # Accidental FCD dump from a mis-redirected --fcd-out (was a 504 MB file named "--serial")
 /--serial
+
+# Local visualizer/engine artifacts produced by scripts/run-examples.sh (a few pre-rendered replays
+# are committed intentionally; everything these scripts regenerate is local-only).
+scenarios/**/replay.html
+scenarios/**/engine.fcd.xml
+scenarios/**/combined.fcd.xml

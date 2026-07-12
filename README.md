@@ -47,21 +47,54 @@ doesn't have. Highlights below; precise scope after that.
 
 ---
 
+## Install
+
+The only prerequisite is the **.NET 8 SDK** — no SUMO, no other native dependencies. Verify with
+`dotnet --version` (expect `8.x`).
+
+**Linux** (Debian/Ubuntu — what the offline test loop itself uses):
+```bash
+sudo apt-get update && sudo apt-get install -y dotnet-sdk-8.0
+# Fedora: sudo dnf install dotnet-sdk-8.0   ·   Arch: sudo pacman -S dotnet-sdk
+# or the official installer: https://dotnet.microsoft.com/download/dotnet/8.0
+```
+
+**Windows** (PowerShell):
+```powershell
+winget install Microsoft.DotNet.SDK.8
+# or the installer: https://dotnet.microsoft.com/download/dotnet/8.0
+```
+
+Then build and run the offline parity suite (no SUMO, no network):
+```bash
+git clone <this-repo> && cd Traffic
+dotnet build -c Release
+dotnet test                     # 229 passed, 1 skipped
+```
+
+---
+
 ## Quick start
 
-Requires only the **.NET 8 SDK**. SUMO itself is **not** needed to build, test, run, or visualize —
-only to regenerate goldens (rare, human-triggered).
+Two convenience scripts build the engine and run everything end-to-end — a `.sh` (Linux/macOS/Git Bash)
+and a `.ps1` (Windows PowerShell) of each:
 
+| What | Linux / macOS | Windows |
+|---|---|---|
+| Render `replay.html` for the showcase scenarios + external-agent demos | `scripts/run-examples.sh` | `powershell -File scripts/run-examples.ps1` |
+| …for **every** parity scenario | `scripts/run-examples.sh all` | `… run-examples.ps1 all` |
+| Determinism + scaled-city benchmarks (with engine-vs-SUMO aggregate parity) | `scripts/run-benchmarks.sh` | `powershell -File scripts/run-benchmarks.ps1` |
+| Core-scaling curve (1→N threads vs SUMO) | — | `powershell -File scripts/bench-scaling.ps1` |
+
+`run-examples` writes a self-contained `replay.html` into each scenario directory (open any in a
+browser); `run-benchmarks` prints the determinism hash, throughput/RTF, peak RSS, stuck count, and the
+engine-vs-SUMO aggregate PASS/FAIL across the city ladder.
+
+Or drive the pieces directly:
 ```bash
-# build + run the full parity suite (offline, no SUMO, no network)
-dotnet build
-dotnet test          # 229 passed, 1 skipped
-
-# run the engine on a scenario and dump a SUMO-schema FCD trajectory
-dotnet run --project src/Sim.Run -- scenarios/11-priority-junction
-
-# render an interactive replay (writes a self-contained replay.html into the scenario dir)
-dotnet run --project src/Sim.Viz -- scenarios/11-priority-junction
+# run the engine on one scenario → SUMO-schema FCD, then an interactive replay
+dotnet run -c Release --project src/Sim.Run -- scenarios/11-priority-junction
+dotnet run -c Release --project src/Sim.Viz -- scenarios/11-priority-junction
 open scenarios/11-priority-junction/replay.html      # any web browser
 ```
 
