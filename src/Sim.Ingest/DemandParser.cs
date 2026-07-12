@@ -77,7 +77,11 @@ public static class DemandParser
                 // for every phase-1 vType -> resolve to SUMO defaults (1.0 / "center") in
                 // VTypeDefaults.Resolve; inert unless the scenario sets lateral-resolution > 0.
                 MaxSpeedLat: ParseNullableDouble(vTypeEl, "maxSpeedLat"),
-                LatAlignment: vTypeEl.Attribute("latAlignment")?.Value);
+                LatAlignment: vTypeEl.Attribute("latAlignment")?.Value,
+                // Rung P2-core (keepLatGap): SUMO's minGapLat vType attribute. Absent for every
+                // pre-existing vType -> resolves to SUMO's 0.6 default in VTypeDefaults.Resolve;
+                // inert unless lateral-resolution > 0.
+                MinGapLat: ParseNullableDouble(vTypeEl, "minGapLat"));
 
             vTypes.Add(vType);
             vTypesById[vType.Id] = vType;

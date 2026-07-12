@@ -76,3 +76,36 @@ SL2015 core: the **per-sublane leader grid (`MSLeaderInfo`) + `updateExpectedSub
 
 The highest-risk tail (cooperative `inform*` signaling) remains the push-vs-ECS concern flagged in
 the original plan — to be re-cast push→pull (as B6 did with `MSDevice_Bluelight`) or capped.
+
+## Core-port investigation (2 faithful attempts) — the definitive scope finding
+
+The core port was attempted seriously, decomposed into isolated golden-anchored sub-mechanisms:
+
+- **`keepLatGap`** (lateral minGapLat maintenance) — anchor `scenarios/64-sublane-keeplatgap`
+  (a pinned leader; the passer nudges `−0.3015` and returns). The **magnitude mechanism is SOLVED
+  and exact**: the `−0.3015` is a 0.6 m `minGapLat` measured against v0's **grid-quantized nearest
+  sublane-column boundary** (`MSLeaderInfo::getSubLanes`), not its continuous physical edge —
+  `gap = |4.8 − 3.6| − 0.9015 = 0.2985`, `surplusGapLeft = 0.2985 − 0.6 = −0.3015` (the continuous
+  edge gives `+0.2985`, wrong sign). The port matched pos/speed to ~1e-13 for all 40 steps and kept
+  scenarios 60/61/62 byte-exact + the hash held — but **diverged on the HOLD DURATION** (snap-back
+  at step 7 vs. the golden's hold through step 11).
+- **P2.4 speed-gain overtake** — `posLat` exact through t=13, residual = recenter one step late.
+
+**Both attempts converge on the same root cause:** the hold/release *timing* is governed by SUMO's
+**persistent cross-step lateral state** — `mySafeLatDistRight`/`mySafeLatDistLeft` (seeded in
+`prepareStep`, updated by `checkBlocking`'s own `updateGaps`, decremented by travelled lateral
+distance each step) plus `updateExpectedSublaneSpeeds`. Per-step-recomputed slices get the
+*magnitude* exact but not the *duration*, because exactness is **emergent from the full stateful
+machine**, not any single formula.
+
+**Verdict:** byte-exact multi-vehicle sublane **decisions** require porting SL2015's full persistent
+lateral state machine as a cohesive unit (`MSLeaderInfo` grid + `updateGaps` +
+`mySafeLatDist*` state + `updateExpectedSublaneSpeeds` + the change decision) — a large, dedicated
+effort, not incremental sub-rungs. The magnitude/geometry mechanisms are now understood and
+documented; the remaining work is the state machine. Non-exact partial ports were reverted (iron
+law); the inert `minGapLat` vType plumbing is retained as ready groundwork.
+
+**Phase-2 delivered (exact @1e-3, committed, byte-identical for phase 1):** the single-vehicle and
+static-multi-vehicle lateral core — P2.0/P2.1 (harness+gate), P2.3 (drift), P2.2a (coexistence +
+`departPosLat`), following-parity coverage. The dynamic multi-vehicle *decisions* (overtake,
+gap-keep hold) are characterized with their mechanisms solved, pending the state-machine port.

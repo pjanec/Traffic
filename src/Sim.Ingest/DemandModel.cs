@@ -64,7 +64,12 @@ public sealed record VType(
     // ("center" default | "right" | "left" | "compact" | "nice" | "arbitrary" | a numeric offset).
     // Both null (absent) resolve to their SUMO defaults; inert unless lateral-resolution > 0.
     double? MaxSpeedLat = null,
-    string? LatAlignment = null);
+    string? LatAlignment = null,
+    // Rung P2-core (keepLatGap): SUMOVTypeParameter.cpp:62 minGapLat(0.6) -- the desired lateral
+    // gap (m, at high speed/closing-speed) a vehicle tries to keep from a same-lane neighbour.
+    // Null (absent) resolves to SUMO's 0.6 default in VTypeDefaults.Resolve; inert unless
+    // lateral-resolution > 0.
+    double? MinGapLat = null);
 
 public sealed record Route(
     string Id,
