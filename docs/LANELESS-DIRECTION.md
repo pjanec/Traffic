@@ -125,6 +125,37 @@ lane-following regime should emerge as RVO reducing to car-following when latera
    (**84 %** of SUMO's lateral spread). The golden is committed as an aggregate reference only (no
    `tolerance.json` / exact compare); byte-identity holds — `LanelessRvo` is off for every parity
    golden and the determinism hash is unchanged.
+5. **Open-space full 2D reciprocal ORCA (DONE) — the SECOND regime.** The two-regime insight (Stage 2)
+   said lane-derived vehicles use the 1D lateral feasible-interval solve, while *holonomic
+   crowd/navmesh agents* need full 2D reciprocal ORCA (disc agents, both axes, sharing avoidance).
+   This builds that second regime as a **self-contained subsystem** (`src/Sim.Core/Orca/`): `Vec2`,
+   `OrcaSolver` (a faithful port of van den Berg et al. "Reciprocal n-Body Collision Avoidance", the
+   RVO2 reference LP1/LP2/LP3 — ORCA is our reference here the way SUMO is for lane behaviour), and
+   `OrcaCrowd` (a struct-of-arrays agent store stepped with the same plan/execute double buffer the
+   lane engine uses). Doubles, fixed order, no RNG/wall-clock → deterministic (bit-identical runs).
+   - **Independent by construction.** It does **not** touch the lane-parity core or the string-keyed
+     `ExternalObstacle` API (the owner's constraint: the external-agent API must scale — no string
+     ids, high agent counts). Agents are int-indexed SoA; the future entity-handle store backs the
+     same arrays without changing the solve. So the determinism hash and every golden are unaffected
+     (nothing here is reachable from the lane engine) — verified: `909605E965BFFE59` held, full suite
+     green with the 10 new ORCA tests.
+   - **Validated behaviourally** (no SUMO counterpart exists): no-overlap (the hard ORCA guarantee),
+     reaches-goal on the flows ORCA robustly solves (counter-flow / bidirectional streams, a 16-agent
+     permutation crossing, head-on, perpendicular crossing), reciprocal mirror-symmetry, determinism.
+   - **Honest finding — the symmetric deadlock.** At *maximal packing* where every path crosses one
+     point (the famous perfectly-antipodal circle, and any exactly-symmetric crossing) pure reciprocal
+     ORCA can **deadlock** — agents jam in a stable touching ring instead of passing through (reference
+     implementations only escape this via nearest-`maxNeighbours` culling + removal-on-arrival, neither
+     of which this correctness-first driver does). This is a *convergence* limitation, **never a
+     safety one**: the no-overlap guarantee still holds (asserted directly — `AntipodalCircle_
+     NeverOverlap_EvenUnderDeadlock`). The remedy for real (never-perfectly-symmetric) inputs is a
+     **deterministic** per-`(agent, step)` symmetry-break jitter on the preferred velocity
+     (`OrcaCrowd.SymmetryBreak`, default 0.0 = pure): a hash-derived nudge that mimics RVO2's per-step
+     random perturbation but is reproducible, resolving symmetric crossings in ~45 steps.
+   - **Not yet wired (the cross-regime bridge, next step):** letting open-space agents and lane
+     vehicles enter one another's neighbourhoods so SUMO traffic and crowd agents *mutually* avoid.
+     That is the genuine unification and is intentionally deferred — this stage delivers and validates
+     the open-space solver itself.
 
 ## Coordination with SUMOSHARP-API (the NuGet packaging branch)
 
