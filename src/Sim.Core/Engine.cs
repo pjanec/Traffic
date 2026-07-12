@@ -5444,14 +5444,18 @@ public sealed partial class Engine : IEngine
         public readonly double LatOffset;   // lateral centre (+left)
         public readonly double HalfWidth;
         public readonly double Speed;
+        // reciprocity share: 0.5 for a SUMO vehicle (it runs the same solve, takes the other half),
+        // 1.0 one-sided for an external agent (we don't control it -> ego avoids fully). This is the
+        // per-neighbour "avoidance-class" the SUMOSHARP-API SoA store will carry per-agent (coord B1).
+        public readonly double Share;
 
-        public RvoNeighbor(double pos, double length, double latOffset, double halfWidth, double speed)
+        public RvoNeighbor(double pos, double length, double latOffset, double halfWidth, double speed, double share)
         {
-            Pos = pos; Length = length; LatOffset = latOffset; HalfWidth = halfWidth; Speed = speed;
+            Pos = pos; Length = length; LatOffset = latOffset; HalfWidth = halfWidth; Speed = speed; Share = share;
         }
 
         public static RvoNeighbor FromVehicle(VehicleRuntime n) => new(
-            n.Kinematics.Pos, n.VType.Length, n.Kinematics.LatOffset, n.VType.Width * 0.5, n.Kinematics.Speed);
+            n.Kinematics.Pos, n.VType.Length, n.Kinematics.LatOffset, n.VType.Width * 0.5, n.Kinematics.Speed, 0.5);
     }
 
     private double ComputeRvoLateral(VehicleRuntime v, Lane lane, LaneNeighborQuery neighbors, double time, double dt)
@@ -5466,73 +5470,90 @@ public sealed partial class Engine : IEngine
         var egoPos = v.Kinematics.Pos;
         var egoLen = v.VType.Length;
         var minGapLat = v.VType.MinGapLat;
-        double push = 0.0;
-        var coupled = false;
+        // Stage 2b: gather ALL near footprint agents -- SUMO vehicles AND external agents -- within a
+        // fixed radius into one list, then reduce over them uniformly. This is Seam-1's phase-2 form:
+        // the solve consumes a single radius query, not lane-structured leader/follower + a separate
+        // obstacle loop. The reaction radius covers the ahead horizon (~3 s) + a car-length behind.
+        // Spatial index: the per-lane bucket is already Pos-sorted, so filtering it by radius is the
+        // O(k) near-neighbour scan (a genuine cross-lane fixed-radius grid over global x/y -- for a
+        // curved/multi-edge laneless space -- is the further step; on the wide single lane the sublane
+        // model uses, "same lane within radius" IS the full neighbourhood). MaxRvoNeighbors caps the
+        // reduction; denser-than-16 neighbourhoods truncate (behavioural, opt-in).
+        const int MaxRvoNeighbors = 16;
+        Span<RvoNeighbor> near = stackalloc RvoNeighbor[MaxRvoNeighbors];
+        var count = 0;
+        var radius = v.Kinematics.Speed * 3.0 + v.VType.MinGap + 2.0 * egoLen + 5.0;
 
-        // A relevant near-neighbour COUPLES ego (holds its lateral line, suppressing recenter) and
-        // contributes a reciprocal separation push if their footprints are within minGapLat. Coupling
-        // is by LONGITUDINAL proximity (not lateral overlap): once ego has cleared a leader it must
-        // HOLD its cleared line until it is fully past (else it would recenter straight back into it) --
-        // and because reciprocity moves the leader too, a lateral-overlap coupling test would wrongly
-        // release mid-pass.
-        //
-        // Leader (ahead): a SLOWER leader within a ~3 s reaction horizon (so ego starts the manoeuvre
-        // in time but ignores far-ahead traffic).
-        var leader = neighbors.GetLeader(v);
-        if (leader is not null && leader.Kinematics.Speed < egoDesired - eps)
+        var laneList = neighbors.OnLane(v.LaneHandle);
+        for (var i = 0; i < laneList.Count && count < MaxRvoNeighbors; i++)
         {
-            var n = RvoNeighbor.FromVehicle(leader);
-            var gapAhead = n.Pos - n.Length - egoPos;               // bumper-to-bumper
-            if (gapAhead < v.Kinematics.Speed * 3.0 + v.VType.MinGap)
+            var o = laneList[i];
+            if (ReferenceEquals(o, v) || Math.Abs(o.Kinematics.Pos - egoPos) > radius)
             {
-                coupled = true;
-                push += SeparationPush(curLat, n, egoHalf, minGapLat, maxOffset, eps, 0.5);
+                continue;
             }
+            near[count++] = RvoNeighbor.FromVehicle(o);
         }
 
-        // Same-lane follower (behind/alongside): while it is longitudinally within a car-length of
-        // overlapping ego, reciprocally nudge away from it -- this is what makes an OVERTAKEN vehicle
-        // SHARE the manoeuvre (the emergent, behavioural analog of SUMO's keepLatGap leader wiggle).
-        var follower = neighbors.GetNeighborFollower(v, v.LaneHandle);
-        if (follower is not null)
-        {
-            var n = RvoNeighbor.FromVehicle(follower);
-            var gapBehind = egoPos - egoLen - n.Pos;                // ego back to follower front
-            if (gapBehind < egoLen)
-            {
-                coupled = true;
-                push += SeparationPush(curLat, n, egoHalf, minGapLat, maxOffset, eps, 0.5);
-            }
-        }
-
-        // Stage 3 (external-agent unification): fold active external agents on ego's lane into the
-        // SAME solve as footprint neighbours -- this is the "SUMO traffic respects non-SUMO agents"
-        // property, for free, because vehicles and agents are the same RvoNeighbor. share = 1.0
-        // (one-sided): we do not control the external agent, so ego takes full responsibility (the
-        // agent avoids reciprocally in its own navmesh/RVO layer). A Width<=0 agent is a full-lane
-        // block ego cannot go around -> no lateral push (ObstacleConstraint brakes ego to a stop).
-        // TRANSITIONAL adapter: reads the current string-keyed _obstacles store only to BUILD
-        // RvoNeighbors; per docs/SUMOSHARP-API.md §4 this store is being replaced by a scalable
-        // int-indexed SoA agent store -- when it lands, only this adapter loop changes, not the solve.
+        // External agents on ego's lane within radius, treated as the SAME RvoNeighbor (share 1.0,
+        // one-sided). A Width<=0 agent is a full-lane block ego cannot go around -> excluded here so
+        // ObstacleConstraint brakes ego to a stop (the B6 behaviour). TRANSITIONAL adapter over the
+        // current string-keyed _obstacles store: per docs/SUMOSHARP-API.md §4 / coord D15 this store is
+        // being replaced by a scalable int-indexed SoA agent store -- when it lands ONLY this loop
+        // changes (build RvoNeighbor from the SoA columns), never the solve. RvoNeighbor is the frozen
+        // seam.
         if (_obstacles.Count > 0)
         {
             foreach (var obstacle in _obstacles.Values)
             {
+                if (count >= MaxRvoNeighbors)
+                {
+                    break;
+                }
                 if (obstacle.Width <= 0.0 || obstacle.LaneId != lane.Id
-                    || obstacle.StartTime > time || time >= obstacle.EndTime)
+                    || obstacle.StartTime > time || time >= obstacle.EndTime
+                    || Math.Abs(obstacle.FrontPos - egoPos) > radius)
                 {
                     continue;
                 }
+                near[count++] = new RvoNeighbor(
+                    obstacle.FrontPos, obstacle.Length, obstacle.LatPos, obstacle.Width * 0.5, obstacle.Speed, 1.0);
+            }
+        }
 
-                var n = new RvoNeighbor(obstacle.FrontPos, obstacle.Length, obstacle.LatPos, obstacle.Width * 0.5, obstacle.Speed);
-                var gap = n.Pos - n.Length - egoPos;               // bumper-to-bumper (ahead)
-                var behind = egoPos - egoLen - n.Pos;              // ego back to agent front
-                // coupled while the agent is ahead within the reaction horizon OR alongside/just behind.
-                if (gap < v.Kinematics.Speed * 3.0 + v.VType.MinGap && behind < egoLen)
-                {
-                    coupled = true;
-                    push += SeparationPush(curLat, n, egoHalf, minGapLat, maxOffset, eps, 1.0);
-                }
+        // Reduce over the gathered neighbours. A neighbour COUPLES ego (holds its lateral line,
+        // suppressing recenter) and adds a separation push if within minGapLat. Coupling is by
+        // LONGITUDINAL proximity (not lateral overlap): once ego clears a leader it HOLDS its cleared
+        // line until fully past (a lateral-overlap test would wrongly release mid-pass, since
+        // reciprocity moves the leader too). Ahead: a SLOWER neighbour within the reaction horizon
+        // (ego starts the manoeuvre in time, ignores far/faster traffic). Alongside (overlapping) or a
+        // close follower within a car-length: always separate (gap-keep / the reciprocal wiggle).
+        double push = 0.0;
+        var coupled = false;
+        var reactionHorizon = v.Kinematics.Speed * 3.0 + v.VType.MinGap;
+        for (var k = 0; k < count; k++)
+        {
+            var n = near[k];
+            var gapAhead = n.Pos - n.Length - egoPos;   // >0: neighbour fully ahead
+            var gapBehind = egoPos - egoLen - n.Pos;    // >0: neighbour fully behind
+            bool couple;
+            if (gapAhead > 0.0)
+            {
+                couple = n.Speed < egoDesired - eps && gapAhead < reactionHorizon;
+            }
+            else if (gapBehind > egoLen)
+            {
+                couple = false;                          // well behind -> ignore
+            }
+            else
+            {
+                couple = true;                           // overlapping / just-behind -> gap-keep
+            }
+
+            if (couple)
+            {
+                coupled = true;
+                push += SeparationPush(curLat, n, egoHalf, minGapLat, maxOffset, eps, n.Share);
             }
         }
 
