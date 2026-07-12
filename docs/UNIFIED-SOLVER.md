@@ -5,6 +5,19 @@ This document is the approval artifact. A gated *standalone prototype* (a parall
 replace the committed path) may be built and validated ahead of approval; wiring it into the shipped
 coupling is the architectural commitment this doc asks you to authorize.
 
+**Prototype status (Q5 — LANDED, standalone).** `src/Sim.Core/Unified/UnifiedWorld.cs` implements this
+design's two load-bearing claims and validates them on the canonical hard case (`UnifiedSolverTests`):
+the single joint plan/execute (both regimes read the same frozen start-of-step snapshot, §4) and the
+parity escape hatch (sub-stepping the vehicle's crowd-reaction, §5). Measured on the exact crossing the
+shipped bridge documents as its residual (a 13.9 m/s vehicle, a pedestrian crossing perpendicular at
+`dt=1`): with a SINGLE per-step re-plan the vehicle footprint grazes the pedestrian by −0.21 m (overlap);
+sub-stepping the reaction 8× turns it collision-free (+0.77 m clearance) while the vehicle still drives
+through, and the pedestrian is mutually deflected in the same step. It embeds the real `OrcaCrowd` (so it
+inherits Q1 static obstacles + Q3 spatial hash) and is NOT reachable from any golden (hash unaffected).
+It deliberately uses a simplified vehicle *longitudinal* model (safe-speed follower, not the parity
+Krauss reduction) — the prototype proves the COUPLING architecture; the real integration (still pending
+your go-ahead) reuses the Engine's exact longitudinal reduction. The §10 questions remain open.
+
 Read alongside: `docs/LANELESS-DIRECTION.md` (the bar decision + the staged plan), `docs/LANELESS-HANDOFF.md`
 (state snapshot; residual #1 is the problem this solves), and the existing bridge
 (`src/Sim.Core/Bridge/CrossRegimeCoupling.cs`).
