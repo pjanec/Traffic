@@ -133,8 +133,16 @@ real GC pressure. Unshippable for a high-perf engine.
 Matches the host convention ("Index points directly to the entity's slot in the internal arrays"):
 
 - **Data columns indexed *directly* by `handle.Index`:** `laneHandle[]`, `frontPos[]`, `length[]`,
-  `startTime[]`, `endTime[]`, `speed[]`, `maxDecel[]`, `latPos[]`, `width[]`, `latSpeed[]`, plus a
-  `generations[]` (`ushort`) and a free-list of recycled indices.
+  `startTime[]`, `endTime[]`, `speed[]`, `maxDecel[]`, `latPos[]`, `width[]`, `latSpeed[]`,
+  `avoidanceClass[]` (see next bullet), plus a `generations[]` (`ushort`) and a free-list of recycled
+  indices.
+- **Reserve a per-agent `avoidanceClass` byte now (coordinated with the RVO layer, §15 B1):** enum
+  `StaticBlocker` / `OneSided` / `Reciprocal`, **default `OneSided`**. It is inert for the lane-based
+  engine (a car still just stops/swerves behind any obstacle regardless), but the RVO solve reads it to
+  pick the reciprocity `share`: `1.0` (one-sided) for a dumb obstacle, `0.5` for a cooperative
+  navmesh/RVO agent that avoids reciprocally. Reserving the column now avoids a store change when the
+  RVO layer's Stage 3 lands. Exposed as an optional `AddObstacle`/`AddMovingObstacle` argument
+  (default `OneSided`, so every existing call site is unchanged).
 - **`UpdateObstacle(handle, …)`** = check `handle.Generation == generations[handle.Index]`, then
   write by index. **O(1), zero-alloc, no hash, no indirection.** A stale/dead handle fails the
   generation check → cheap no-op (preserves the "inert-when-absent" contract).
@@ -290,8 +298,10 @@ predefined scenarios). All of this builds on machinery that already exists.
 
 ```csharp
 VTypeHandle DefineVType(in VTypeParams p);                 // immutable once defined (mirrors ResolvedVType)
-                                                           // VTypeParams MUST include the sublane params:
-                                                           //   maxSpeedLat, latAlignment, minGapLat  (see §15)
+                                                           // VTypeParams MUST include the sublane params,
+                                                           // runtime-settable, defaulting (see §15):
+                                                           //   maxSpeedLat = 1.0, latAlignment = "center",
+                                                           //   minGapLat   = 0.6
 
 // Explicit route OR origin→destination (routed via the existing NetworkRouter)
 VehicleHandle SpawnVehicle(VTypeHandle t, ReadOnlySpan<int> routeEdges,
@@ -316,6 +326,9 @@ void Despawn(VehicleHandle v);                             // structural → com
   branch, §15): `ScenarioConfig.LateralResolution` (the sublane master switch) and `Engine.LanelessRvo`
   (the continuous velocity-obstacle avoidance mode). Both are opt-in and byte-identical when off, so
   they belong on the public config surface without perturbing the default lane-based path.
+  **Document the coupling (§15 B2):** `LanelessRvo` currently takes effect **only when
+  `LateralResolution > 0`** (nested under the sublane gate to keep phase-1 byte-identical). The facade
+  must state this dependency; it may later be promoted to an independent continuous-lateral mode.
 
 ### Insertion semantics — SUMO-parity queued insertion (decided)
 
@@ -388,6 +401,8 @@ Each of the three target users falls out of the *same* core + wrapper:
 | D14 | Primary demo = **browser-live WebSocket**, reusing the `Sim.Viz` renderer | Zero-install, multi-platform, interactive obstacle injection |
 | D15 | **This (NuGet) session owns the obstacle-store redesign** (§4.3–4.4); the laneless/RVO layer consumes it via the neutral `RvoNeighbor` value abstraction | Avoid building the store twice; both branches independently converged on the same handle-based SoA |
 | D16 | **Expose lateral state + sublane params** — `PosLat`/`LatSpeed` read columns, `maxSpeedLat`/`latAlignment`/`minGapLat` in `VTypeParams`, `LateralResolution`/`LanelessRvo` on the config/facade | The laneless branch made lateral state first-class; the public API must carry it or runtime-spawned vehicles can't do lateral behavior |
+| D17 | **Reserve an `avoidanceClass` byte** (`StaticBlocker`/`OneSided`/`Reciprocal`, default `OneSided`) in the obstacle store now | The RVO solve needs per-agent reciprocity `share`; reserving now avoids a store reshape at Stage 3 |
+| D18 | **Merge order:** store lands first, then RVO Stage 3's `ComputeRvoLateral` loop retargets onto it; RVO Stages 1–2 are order-independent | Agreed with the laneless session; `RvoNeighbor` is the sole seam |
 
 ---
 
@@ -450,10 +465,40 @@ this as its "scalable int-indexed footprint-agent store." Its **lateral columns 
 3. **Lateral engine modes surfaced on the config/facade (§9):** `ScenarioConfig.LateralResolution`
    (sublane master switch) and `Engine.LanelessRvo` — added. Opt-in, byte-identical when off.
 
-### Merge coordination
+### Two items reserved at the laneless session's request (confirmed)
+- **B1 — `avoidanceClass` byte in the obstacle store (reserved now).** Enum `StaticBlocker` /
+  `OneSided` / `Reciprocal`, default `OneSided`; added to the §4.3 columns and the
+  `AddObstacle`/`AddMovingObstacle` signature. The RVO solve reads it to choose the reciprocity `share`
+  (`1.0` one-sided for a dumb obstacle, `0.5` for a cooperative navmesh/RVO agent). Reserving the
+  column now means the store never changes shape when RVO Stage 3 lands. Inert for the lane-based engine.
+- **B2 — `LanelessRvo` is gated under `LateralResolution > 0`.** Documented on the facade (§9): the
+  continuous mode currently only takes effect when the sublane master switch is on (keeps phase-1
+  byte-identical). May later become an independent continuous-lateral mode.
+
+### Confirmations (from the laneless session)
+- The Stage-3 adapter needs `{laneHandle, frontPos, length, latPos, width, speed, startTime, endTime}`
+  per active agent — **all already in the §4.3 columns**; `RvoNeighbor` maps directly (plus the new
+  `avoidanceClass`).
+- `DefineVType` defaults `maxSpeedLat = 1.0`, `latAlignment = "center"`, `minGapLat = 0.6`, all
+  runtime-settable (folded into §9).
+- `ToleranceConfig.PosLat` lives in **`Sim.Harness` (test-only)**, not `SumoSharp.Core` — so of the 8
+  shared files below, `ToleranceConfig.cs` is *not* in the shipped package.
+- The RVO layer has **no dependency** on the vehicle read API, the handle types, the spatial hash, or
+  the spawn surface. The entire coordination reduces to one seam: **`RvoNeighbor` is the contract** —
+  this session's store *produces* them, the laneless solve *consumes* them, neither reaches across.
+
+### Merge order (agreed)
+- **RVO Stages 1–2** (vehicle↔vehicle) don't touch the obstacle store → **merge-order-independent**,
+  land whenever.
+- **RVO Stage 3** is the only piece reading `_obstacles` (one clearly-marked transitional loop in
+  `ComputeRvoLateral`). **This session's SoA store lands first; then that one loop retargets** onto it
+  (builds `RvoNeighbor` from the SoA columns instead of the record). Until then Stage 3 stays on the
+  current `_obstacles` — gated/byte-identical, so it blocks nothing.
+
+### Merge mechanics
 Both branches make **additive** edits to 8 shared files: `Engine.cs`, `VehicleExportSnapshot.cs`,
 `DemandModel.cs`, `DemandParser.cs`, `VTypeDefaults.cs`, `ScenarioConfig.cs`, `TrajectoryPoint.cs`,
 `ToleranceConfig.cs`. Additions sit in distinct regions; **whoever merges second reconciles the
-additive hunks — coordinate merge order.** Both sides hold the **same parity anchor** (determinism
-hash `909605E965BFFE59`, goldens byte-identical); every change on both branches is additive/gated, so
-the merged result must reproduce that anchor. That invariant is the shared acceptance gate for the merge.
+additive hunks.** Both sides hold the **same parity anchor** (determinism hash `909605E965BFFE59`,
+goldens byte-identical); every change on both branches is additive/gated, so the merged result must
+reproduce that anchor. That invariant is the shared acceptance gate for the merge.
