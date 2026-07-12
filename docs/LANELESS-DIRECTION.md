@@ -87,9 +87,24 @@ lane-following regime should emerge as RVO reducing to car-following when latera
    produces an **emergent overtake** (drift to clear a slower leader, accelerate past via the
    existing `FootprintsOverlap` bypass, recenter). Validated **behaviorally** (no-overlap, passes,
    recenters). Off by default → phase-1 and the exact sublane rungs (`60/61/62`) untouched.
-2. **Full ORCA over the spatial hash:** replace the lite lateral push with proper ORCA half-plane
-   velocity selection (lateral + longitudinal) over the fixed-radius near-neighbor query (Seam 1's
-   phase-2 form). Reciprocal (agents share avoidance). Parallel over `_packed` chunks.
+2. **Fixed-radius query + feasible-interval solve (DONE, 2b-i + 2b-ii).**
+   - **2b-i:** the RVO solve gathers all near footprint agents (vehicles + external) within a radius
+     from ONE query (Seam 1's phase-2 form) — the per-lane Pos-sorted bucket is the spatial index.
+   - **2b-ii:** the lateral reduction is a **1D feasible-interval (half-plane-intersection) solve**:
+     each coupled neighbour forbids a lateral band `(lat ± (halfWidths + minGapLat))`; ego drifts to
+     the feasible point closest to its line (keep-right tie), or brakes via car-following if the lane
+     is fully blocked. This **correctly resolves CONFLICTING neighbours** (a plain push-sum can strand
+     ego between two that push opposite ways — the conflicting-neighbours test proves the fix). It is
+     effectively **one-sided** (the manoeuvring vehicle clears; the other holds its line).
+
+   **Two-regime insight (important):** *full holonomic 2D ORCA is the wrong model for lane-derived
+   vehicles* — they are elongated (not disc-like) and quasi-1D longitudinally, where the validated
+   Krauss car-following already handles the longitudinal "velocity obstacle" (braking). So lane
+   vehicles use **lateral feasible-interval + car-following longitudinally**. Full reciprocal 2D ORCA
+   (disc agents sharing avoidance, both axes) is the **open-space navmesh/RVO layer** for the external
+   crowd/holonomic agents. The two regimes are unified by the shared `RvoNeighbor` footprint
+   abstraction (and the `Share`/avoidance-class field, reserved for the open-space reciprocal solve),
+   not by forcing one avoidance model onto both.
 3. **External-agent unification:** route navmesh/RVO agents through the same ORCA solve as vehicles.
    **API note (owner):** the current external-obstacle surface (`ExternalObstacle`, string-`Id`-keyed
    dictionary in `EXTERNAL-AGENTS-VIZ.md`) will be **replaced** — it does not scale (string ids, per-

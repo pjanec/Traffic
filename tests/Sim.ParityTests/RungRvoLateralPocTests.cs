@@ -78,14 +78,14 @@ public class RungRvoLateralPocTests
         }
 
         Assert.True(sawBoth, "expected both vehicles present together at some step");
-        // (2b) RECIPROCITY (Stage 2 vs the one-sided PoC): the overtaken leader SHARES the manoeuvre
-        // -- it reciprocally nudges aside as the faster follower passes, then recentres. The magnitude
-        // is geometry-dependent (on this wide lane the fast overtaker does most of the lateral work, so
-        // the leader's reciprocal share is modest -- the emergent analog of SUMO's own small keepLatGap
-        // wiggle); the KEY property is that it is nonzero, i.e. BOTH vehicles move (the one-sided PoC
-        // left the leader at exactly 0).
-        Assert.True(peakV0Lat > 0.05, $"leader did not reciprocally nudge (peak |posLat| = {peakV0Lat:F3}); Stage 2 should move BOTH vehicles, not just the overtaker");
-        Assert.True(Math.Abs(lastV0Lat) < 0.2, $"leader did not recentre (ended at posLat {lastV0Lat:F3})");
+        // (2b) ONE-SIDED clearing (Stage 2b-ii feasible-interval): the overtaker clears the slower
+        // leader FULLY by minGapLat, so the leader holds its line -- it only steps aside if the overtaker
+        // cannot clear in time. (Stage 2's push-sum produced a small emergent leader wiggle, but it could
+        // strand ego between conflicting neighbours; 2b-ii trades that cosmetic wiggle for correct
+        // conflict resolution -- see RvoConflictingNeighbors below. Reciprocal SHARING is the open-space
+        // full-ORCA layer, docs/LANELESS-DIRECTION.md.) Assert the leader stays near its line.
+        Assert.True(peakV0Lat < 0.2, $"leader should hold its line under the one-sided feasible-interval solve (peak |posLat| = {peakV0Lat:F3})");
+        Assert.True(Math.Abs(lastV0Lat) < 0.2, $"leader did not stay centred (ended at posLat {lastV0Lat:F3})");
         // (2) overtake completed: fast follower ended ahead of the slow leader, at free-flow.
         Assert.True(lastV1Pos > lastV0Pos, $"follower did not pass leader (v1 {lastV1Pos:F1} <= v0 {lastV0Pos:F1})");
         Assert.True(lastV1Speed > 13.0, $"follower did not reach free-flow (ended at {lastV1Speed:F2}, would be ~5 if blocked)");

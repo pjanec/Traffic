@@ -5521,15 +5521,27 @@ public sealed partial class Engine : IEngine
             }
         }
 
-        // Reduce over the gathered neighbours. A neighbour COUPLES ego (holds its lateral line,
-        // suppressing recenter) and adds a separation push if within minGapLat. Coupling is by
-        // LONGITUDINAL proximity (not lateral overlap): once ego clears a leader it HOLDS its cleared
-        // line until fully past (a lateral-overlap test would wrongly release mid-pass, since
-        // reciprocity moves the leader too). Ahead: a SLOWER neighbour within the reaction horizon
-        // (ego starts the manoeuvre in time, ignores far/faster traffic). Alongside (overlapping) or a
-        // close follower within a car-length: always separate (gap-keep / the reciprocal wiggle).
-        double push = 0.0;
-        var coupled = false;
+        // Stage 2b-ii: reduce over the gathered neighbours by a 1D lateral FEASIBLE-INTERVAL solve --
+        // the half-plane intersection reduced to the lateral axis, which correctly resolves CONFLICTING
+        // neighbours (a plain push-sum could strand ego between two that push opposite ways). Each
+        // COUPLED neighbour forbids the lateral band where ego would be within minGapLat of it:
+        // (n.lat - sep, n.lat + sep). Ego then drifts toward the feasible latOffset CLOSEST TO ITS
+        // CURRENT LINE (stickiness -> holds a cleared line, commits to one side; keep-right tie-break),
+        // or toward centre when nothing couples it. If NO feasible point exists (neighbours block the
+        // whole lane) ego holds and the longitudinal car-following (LeaderFollowSpeedConstraint /
+        // ObstacleConstraint, both footprint-gated) brakes it -- the "too narrow -> no overtake"
+        // fallback. NB full 2D reciprocal ORCA (both agents share, holonomic, disc-shaped) is the
+        // OPEN-SPACE navmesh/RVO layer; lane-derived vehicles are elongated and quasi-1D longitudinally,
+        // so a lateral feasible-interval + validated car-following longitudinally is the right model for
+        // them (docs/LANELESS-DIRECTION.md).
+        //
+        // Coupling: a neighbour AHEAD (slower, within the reaction horizon) or OVERLAPPING ego
+        // longitudinally forbids a band; one fully BEHIND is ignored (it avoids ego via its own solve).
+        // The overlapping case is what yields the reciprocal nudge -- while alongside, ego's forbidden
+        // band reaches the neighbour, so the neighbour (running the same solve) also steps aside.
+        Span<double> forbLo = stackalloc double[MaxRvoNeighbors];
+        Span<double> forbHi = stackalloc double[MaxRvoNeighbors];
+        var forbCount = 0;
         var reactionHorizon = v.Kinematics.Speed * 3.0 + v.VType.MinGap;
         for (var k = 0; k < count; k++)
         {
@@ -5541,62 +5553,100 @@ public sealed partial class Engine : IEngine
             {
                 couple = n.Speed < egoDesired - eps && gapAhead < reactionHorizon;
             }
-            else if (gapBehind > egoLen)
+            else if (gapBehind > 0.0)
             {
-                couple = false;                          // well behind -> ignore
+                couple = false;                          // fully behind -> it avoids ego, not vice versa
             }
             else
             {
-                couple = true;                           // overlapping / just-behind -> gap-keep
+                couple = true;                           // overlapping -> gap-keep (reciprocal nudge)
             }
 
             if (couple)
             {
-                coupled = true;
-                push += SeparationPush(curLat, n, egoHalf, minGapLat, maxOffset, eps, n.Share);
+                var sep = egoHalf + n.HalfWidth + minGapLat;
+                forbLo[forbCount] = n.LatOffset - sep;
+                forbHi[forbCount] = n.LatOffset + sep;
+                forbCount++;
             }
         }
 
-        // Recentre only when nothing couples ego (all relevant neighbours cleared / gone). While
-        // coupled but already separated, push is 0 and ego HOLDS its line (no recenter-into-neighbour).
-        if (!coupled)
+        double target;
+        if (forbCount == 0)
         {
-            push = -curLat;
-        }
-
-        var step = Math.Max(-maxStep, Math.Min(maxStep, push));
-        return Math.Max(-maxOffset, Math.Min(maxOffset, curLat + step));
-    }
-
-    // 1D lateral separation from one neighbour. Returns the signed lateral push (toward ego's side,
-    // away from the neighbour) needed this step: `share` of the deficit to reach minGapLat clearance.
-    // share = 0.5 for another SUMO vehicle (RECIPROCAL: it runs the same solve and takes the other
-    // half); share = 1.0 for an EXTERNAL agent (we do not control it, so ego takes full responsibility
-    // -- the agent avoids reciprocally in its own navmesh/RVO layer). 0 when already clear.
-    private static double SeparationPush(
-        double curLat, RvoNeighbor n, double egoHalf, double minGapLat, double maxOffset, double eps, double share)
-    {
-        var sep = egoHalf + n.HalfWidth + minGapLat;    // desired centre-to-centre lateral separation
-        var d = curLat - n.LatOffset;                   // signed: ego relative to neighbour
-        var ad = Math.Abs(d);
-        if (ad >= sep - eps)
-        {
-            return 0.0;                                 // already separated enough
-        }
-        // direction away from the neighbour; on exact alignment pick the side with more lane room
-        // (keep-right on a tie: curLat==0 -> roomRight==roomLeft -> right).
-        int dir;
-        if (ad > eps)
-        {
-            dir = d >= 0 ? 1 : -1;
+            target = 0.0;                                // nothing couples ego -> recentre
         }
         else
         {
-            var roomRight = curLat + maxOffset;
-            var roomLeft = maxOffset - curLat;
-            dir = roomRight >= roomLeft ? -1 : 1;
+            target = FeasibleClosestTo(curLat, forbLo, forbHi, forbCount, -maxOffset, maxOffset, eps);
+            if (double.IsNaN(target))
+            {
+                target = curLat;                         // fully blocked -> hold; car-following brakes
+            }
         }
-        return dir * (sep - ad) * share;
+
+        return DriftToward(curLat, target, maxStep);
+    }
+
+    // The lateral feasible-interval solve: return the point in [lo, hi] MINUS the union of the
+    // `count` forbidden OPEN bands (forbLo[i], forbHi[i]) that is closest to `preferred`, or NaN if
+    // none exists (every point is inside some band -> ego cannot clear laterally). Keep-right tie:
+    // the smaller (more rightward) point wins an exact tie. The feasible set is a union of closed
+    // sub-intervals, so the closest feasible point is either `preferred` itself (if feasible) or a
+    // band boundary just outside a forbidden band, or a bound -- a small finite candidate set.
+    private static double FeasibleClosestTo(
+        double preferred, Span<double> forbLo, Span<double> forbHi, int count, double lo, double hi, double eps)
+    {
+        var p = Math.Clamp(preferred, lo, hi);
+        if (LateralFeasible(p, forbLo, forbHi, count, eps))
+        {
+            return p;
+        }
+
+        var best = double.NaN;
+        var bestDist = double.PositiveInfinity;
+        ConsiderCandidate(lo, preferred, forbLo, forbHi, count, lo, hi, eps, ref best, ref bestDist);
+        ConsiderCandidate(hi, preferred, forbLo, forbHi, count, lo, hi, eps, ref best, ref bestDist);
+        for (var i = 0; i < count; i++)
+        {
+            ConsiderCandidate(forbLo[i] - eps, preferred, forbLo, forbHi, count, lo, hi, eps, ref best, ref bestDist);
+            ConsiderCandidate(forbHi[i] + eps, preferred, forbLo, forbHi, count, lo, hi, eps, ref best, ref bestDist);
+        }
+        return best;
+    }
+
+    private static void ConsiderCandidate(
+        double x, double preferred, Span<double> forbLo, Span<double> forbHi, int count,
+        double lo, double hi, double eps, ref double best, ref double bestDist)
+    {
+        if (x < lo - eps || x > hi + eps)
+        {
+            return;
+        }
+        x = Math.Clamp(x, lo, hi);
+        if (!LateralFeasible(x, forbLo, forbHi, count, eps))
+        {
+            return;
+        }
+        var dist = Math.Abs(x - preferred);
+        // strictly closer, or an exact tie broken keep-right (smaller x wins).
+        if (dist < bestDist - eps || (dist <= bestDist + eps && (double.IsNaN(best) || x < best)))
+        {
+            best = x;
+            bestDist = dist;
+        }
+    }
+
+    private static bool LateralFeasible(double x, Span<double> forbLo, Span<double> forbHi, int count, double eps)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            if (x > forbLo[i] + eps && x < forbHi[i] - eps)   // strictly inside a forbidden band
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     // Phase 2 (sublane, P2.2): SUMO's departPosLat initial lateral placement. Returns the vehicle's
