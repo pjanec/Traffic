@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Unity/Godot-reach sample (SUMOSHARP-API.md section 3). It multi-targets the SAME pair as the
+    shipped packages:
+      netstandard2.1 : BUILDS AS A LIBRARY. Building this target proves the SumoSharp public API is
+                       actually consumable by a netstandard2.1 host (Unity Mono/IL2CPP, Godot), not merely
+                       that the library compiles for ns2.1 but that a downstream ns2.1 project can call it.
+                       GameHost.cs is the reusable "drop into a game" integration class.
+      net8.0         : BUILDS AS AN EXE. Program.cs (net8-only) drives GameHost as a runnable headless
+                       demo (dotnet run), so the sample is verifiable end to end here even though
+                       Unity/Godot themselves cannot run in this environment.
+    A sample, not a package (IsPackable=false).
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <OutputType Condition="'$(TargetFramework)' == 'net8.0'">Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sim.Core\Sim.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+  </ItemGroup>
+
+</Project>

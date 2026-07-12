@@ -41,6 +41,8 @@ so `apt-get update` first). SUMO is not needed for `dotnet test`.
 
 | Commit | What |
 |---|---|
+| *(this session)* | **ns2.1 consumer sample** `samples/SumoSharp.GameHostSample` (multi-target net8.0/ns2.1; `GameHost` drop-in + runnable net8 demo; `RungB17`). |
+| *(this session)* | **Dense edge handles** `GetEdge`/`GetEdgeId`/`EdgeCount` + int Spawn/route overloads (`0ceeaf0`, `RungB16`). |
 | `3ac73c1` | **Async runner — snapshot pool (opt-in):** `EnableSnapshotPool(cap=3)` reuses backing arrays across Ticks (`RungB15`). Default off; contract unchanged when off. |
 | `ce37400` | **Async runner — two-frame interpolation hook:** `PreviousSnapshot`, `InterpolationAlpha`, `TryInterpolateVehicle` → `InterpolatedVehicle` (`RungB14`). |
 | `1a2d685` | **`netstandard2.1` multi-target** on `Sim.Core` + `Sim.Ingest` (Unity/Godot reach): polyfills (`src/Shared/NetstandardPolyfills.cs`), `System.Memory` on ns2.1, 4 net8-only sites guarded/rewritten, `RungB13` guard test. Gate unchanged (`909605E965BFFE59`; 253/1/0). |
@@ -88,7 +90,9 @@ host game engine's convention), `VTypeHandle`, `AvoidanceClass`, `VehicleLifecyc
 ## Remaining work (prioritized, none blocking)
 
 1. ~~**`netstandard2.1` multi-target** on `Sim.Core` + `Sim.Ingest`~~ — **DONE** (see below / API §3).
-   Still open: a small Unity/Godot **sample** consuming the ns2.1 package (Phase 3).
+   ~~Unity/Godot sample~~ → landed as `samples/SumoSharp.GameHostSample` (a ns2.1-consumable `GameHost`
+   integration class + runnable net8 headless demo; `RungB17`). Per steer, this replaces an in-editor
+   Unity/Godot project (neither engine can run in this environment).
 2. **Publish CI** to nuget.org (a GitHub Actions workflow: pack + push `.nupkg`/`.snupkg`, gated on a
    tag). Pin `RepositoryUrl`/commit for SourceLink (see gotcha below).
 3. ~~**Async runner refinements (§7):** two-frame **interpolation hook** + **snapshot pool**~~ — **DONE**

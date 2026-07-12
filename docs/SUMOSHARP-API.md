@@ -139,8 +139,18 @@ either `#if`-guarded (byte-identical net8 branch) or rewritten to a form valid o
 - `System.Memory` (`Span`/`Memory` backing) is referenced only on the ns2.1 target.
 Both projects build clean for both TFMs; the net8 parity gate (250 → **253** with the B13 guard test, 1
 skipped, 0 failed) and the determinism anchor `909605E965BFFE59` (single + parallel) are unchanged. A
-`RungB13PackagingTargetsTests` guard fails if the ns2.1 target or the polyfills are ever dropped. **Still to
-do here:** a small Unity/Godot **sample** consuming the ns2.1 package (Phase 3).
+`RungB13PackagingTargetsTests` guard fails if the ns2.1 target or the polyfills are ever dropped.
+
+**Consumer sample: landed.** `samples/SumoSharp.GameHostSample` is the Unity/Godot-reach sample. It
+multi-targets the same pair: the **`netstandard2.1` target builds as a library** (proving the public API is
+*consumable* by a ns2.1 host — Unity Mono/IL2CPP, Godot — not merely that the lib compiles for ns2.1), and
+the **`net8.0` target builds as a runnable exe** (`Program.cs`, net8-only) so the sample is verifiable end
+to end here (`dotnet run --project samples/SumoSharp.GameHostSample`). `GameHost.cs` is the reusable
+"drop into a game" integration class (ns2.1-clean): `Tick()` for the fixed step, `GetRenderVehicles([time])`
+for the render read (using the interpolation hook), `SpawnAmbient` (dense edge handles + queued insertion),
+`AddObstacleOnLane` (obstacle API + dispatcher), snapshot pool on. Exercised at runtime by
+`RungB17GameHostSampleTests` (bit-rot guard + a determinism check). An actual in-editor Unity/Godot project
+is out of scope for this environment (can't run either engine here); the README documents the plugin drop-in.
 
 ---
 

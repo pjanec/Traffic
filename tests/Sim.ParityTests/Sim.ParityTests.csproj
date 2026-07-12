@@ -25,6 +25,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sim.Core\Sim.Core.csproj" />
     <ProjectReference Include="..\..\src\Sim.Harness\Sim.Harness.csproj" />
+    <!-- Reference the ns2.1 game-host sample so RungB17 exercises it at runtime (bit-rot guard); the
+         net8.0 target of the sample is used here. -->
+    <ProjectReference Include="..\..\samples\SumoSharp.GameHostSample\SumoSharp.GameHostSample.csproj" />
   </ItemGroup>
 
   <ItemGroup>
