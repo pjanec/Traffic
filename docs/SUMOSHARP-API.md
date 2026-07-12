@@ -24,7 +24,10 @@ paths are unused):
   loaded demand;
 - **geometry-3D** (§6): lane-shape `z` ingestion (`Lane.ShapeZ`) + the `PosZ` read column via
   `LaneGeometry.ElevationAtOffset` (0 on 2-D nets);
-- the **lifecycle event buffer** (§10): `Engine.Events` (`Departed`/`Arrived`), diffed each `Step()`.
+- the **lifecycle event buffer** (§10): `Engine.Events` (`Departed`/`Arrived`), diffed each `Step()`;
+- the **async `SimulationRunner`** (§7): background-thread loop, boundary-applied command dispatcher
+  (`Post`/`Invoke`), and an immutable double-buffered `SimulationSnapshot` (`Start`/`Stop`/`Pause`/
+  `Resume`/`SpeedMultiplier`, or manual `Tick()`).
 
 **Coordinated with `docs/LANELESS-DIRECTION.md`** (the laneless/RVO branch) — see §15 for the shared
 obstacle-store ownership split, the lateral-state API requirements folded in, and the merge order.
@@ -296,6 +299,16 @@ a **clamp on max steps per wall-frame** (avoid the spiral of death when the host
 **Interpolation hook:** publish the **last two** snapshots + sim timestamps so a host rendering at
 120 fps over a 10 Hz sim can lerp position/angle. Cheap, and the difference between "juddery" and
 "shippable" for the browser-live demo (§10).
+
+**STATUS: landed** (`src/Sim.Core/SimulationRunner.cs`, `SimulationSnapshot.cs`). `SimulationRunner`
+wraps a loaded `Engine`: `Post(Action<Engine>)` / `Invoke<T>(Func<Engine,T>)` enqueue mutations drained
+FIFO at the start of each `Tick()` (boundary contract); `Tick()` then `Step`s and publishes an immutable
+`SimulationSnapshot` (SoA columns + `SpeedExact` double + events + time/step, self-contained so the host
+reads it from any thread). `Start(hz)` runs `Tick()` on a background thread with `Pause`/`Resume` and a
+`SpeedMultiplier` (fixed-rate pacing, resync-not-spiral when behind); `Tick()` is also callable manually
+for deterministic stepping. Notes: snapshots are **allocated per Tick** for now (a snapshot pool is the
+documented perf refinement); the two-frame **interpolation hook** above is not wired yet; `Invoke` runs
+inline in manual mode and blocks for the result in threaded mode (avoid calling it while `Paused`).
 
 ---
 

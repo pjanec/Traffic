@@ -1181,6 +1181,13 @@ public sealed partial class Engine : IEngine
     public ReadOnlySpan<int> LaneHandles => _readBuffer.LaneHandle.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<double> Pos => _readBuffer.Pos.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<double> PosLat => _readBuffer.PosLat.AsSpan(0, _readBuffer.Count);
+    public ReadOnlySpan<string> VehicleIds => _readBuffer.VehicleId.AsSpan(0, _readBuffer.Count);
+    public ReadOnlySpan<string> VehicleTypes => _readBuffer.VehicleType.AsSpan(0, _readBuffer.Count);
+    public ReadOnlySpan<string> LaneIds => _readBuffer.LaneId.AsSpan(0, _readBuffer.Count);
+
+    // Parity-exact double speed backing TryGetVehicle's VehicleState.Speed (the public columnar `Speed` is
+    // render-float). Internal: SimulationSnapshot copies it so the async snapshot's double speed matches.
+    internal ReadOnlySpan<double> SpeedExactColumn => _readBuffer.SpeedD.AsSpan(0, _readBuffer.Count);
 
     // Lifecycle events (Departed / Arrived / …) that occurred during the most recent Step(), valid until
     // the next Step(). Drained by the host each frame; empty until the first Step().
