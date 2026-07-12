@@ -23,6 +23,9 @@ doesn't have. Highlights below; precise scope after that.
 - **🏗️ Data-oriented ECS.** SUMO's algorithms on a cache-friendly struct-of-arrays layout: a
   zero-allocation hot path, a plan/execute double buffer, and a deferred command buffer — parallel-ready
   by design, not retrofitted.
+- **🖥️ Runs anywhere .NET 8 runs.** Pure managed C# with no native dependencies — the engine and its
+  offline parity suite build and run on **Linux and Windows** alike (any .NET 8 target); the only
+  prerequisite is the `dotnet` SDK, never a SUMO install.
 - **🚗 Broad, faithful coverage.** Six car-following models (Krauss / IDM / IDMM / ACC / CACC / Rail),
   full lane-changing, junction right-of-way (priority, right-before-left, all-way-stop, roundabouts,
   zipper merge), static **and** actuated traffic lights, and **first-class rail** (signals, level
