@@ -3,11 +3,35 @@
 A behaviorally-faithful, data-oriented reimplementation of [Eclipse SUMO](https://eclipse.dev/sumo/)
 **1.20.0**'s microscopic mobility core in C# / .NET 8. The goal is **exact trajectory parity with
 SUMO** on a cache-friendly, allocation-light, parallel-ready ECS engine — plus a few capabilities SUMO
-doesn't have (live external agents, emergency-vehicle give-way, an offline HTML visualizer).
+doesn't have. Highlights below; precise scope after that.
 
 > **Correctness bar:** every deterministic scenario matches a committed SUMO golden trajectory to
 > **1e-3** on `[lane, pos, speed]`, every step. Stochastic features use a statistical/ensemble bar
 > instead. The committed goldens *are* the executable spec — `dotnet test` never needs SUMO.
+
+## Highlights
+
+- **⚡ Faster than SUMO — bit-for-bit identical.** The simulation tick runs **3.6× single-threaded
+  SUMO at 8 cores (3.1× at 4)** on a 7,600-vehicle city, and every parallel run reproduces the serial
+  run's *exact* trajectories (same determinism hash). A faster **identical** answer, not an
+  approximation. (Full core-scaling curve in *Scale*.)
+- **🧩 Self-balancing spatial parallelism.** An opt-in domain decomposition splits the road network into
+  a grid of regions that each own a **disjoint set of lanes** — lock-free by construction. Dynamic
+  work-stealing over the regions **auto-balances load** as congestion moves around the map, and a
+  vehicle crossing a region boundary is handed off *for free* (simply regrouped by its current lane the
+  next step), with no explicit state transfer.
+- **🏗️ Data-oriented ECS.** SUMO's algorithms on a cache-friendly struct-of-arrays layout: a
+  zero-allocation hot path, a plan/execute double buffer, and a deferred command buffer — parallel-ready
+  by design, not retrofitted.
+- **🚗 Broad, faithful coverage.** Six car-following models (Krauss / IDM / IDMM / ACC / CACC / Rail),
+  full lane-changing, junction right-of-way (priority, right-before-left, all-way-stop, roundabouts,
+  zipper merge), static **and** actuated traffic lights, and **first-class rail** (signals, level
+  crossings, bidirectional single track, traction).
+- **➕ Beyond SUMO.** Live external agents (pedestrians / crowds / detections that cars *react* to),
+  emergency-vehicle give-way, opposite-direction overtaking, and a self-contained **offline HTML replay
+  visualizer** — no server, no SUMO needed.
+
+## Scope
 
 - **What it ports:** the per-step simulation algorithms (car-following, lane-changing, junction
   right-of-way, traffic lights, rail), copied close to line-for-line from the vendored SUMO source.
@@ -279,10 +303,12 @@ goldens unchanged. In roughly the order they landed:
 - **Handle-array emit** — the emit path indexes lanes by their dense integer handle instead of hashing
   the `LaneId` string per vehicle per frame (−28 % emit).
 - **Spatial domain decomposition** (`--region`) — the network is partitioned into a grid of regions that
-  each **own a disjoint set of lanes**, so one task per region needs no locks and vehicle handoff between
-  regions is free (a vehicle is simply regrouped by its current lane the next step). This
-  region-parallelizes the plan, junction `willPass`, movement execute, neighbour refill and post-move
-  speed-gain phases.
+  each **own a disjoint set of lanes**, so one task per region needs no locks. **Dynamic scheduling over
+  the regions auto-balances load** — as congestion concentrates, busy regions are simply picked up by
+  free threads (finer grids give smaller working sets and better balance) — and vehicle handoff between
+  regions is free: a vehicle that crosses a boundary is regrouped by its current lane the next step, with
+  no explicit state transfer. This region-parallelizes the plan, junction `willPass`, movement execute,
+  neighbour refill and post-move speed-gain phases.
 
 The dominant plan/junction phases are **memory-bandwidth-bound on random neighbour access**, which caps
 byte-identical parallel scaling near ~3× (hence the 4→8-core tail-off above). The full ledger — the
