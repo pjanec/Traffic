@@ -126,25 +126,47 @@ RVO path. Commits are on the branch, newest-last in `git log main..HEAD`.
 
 ---
 
-## Next steps (recommended order)
+## Overnight session log (autonomous — Q1–Q5 landed, all gated / hash-safe)
 
-1. **[BIG, needs owner go-ahead] Unified two-population solver** — the real "hard guarantee." Replace
-   the one-step-latency lockstep + double-yield with a single solve that sees vehicles and crowd agents
-   in one neighbourhood each step (shared spatial index over world x/y; vehicles constrained to their
-   lane's longitudinal+lateral DOF, crowd holonomic). This is an architectural move, not an incremental
-   rung — scope and confirm before starting.
-2. **[medium] Open-space ORCA robustness** — static polygon obstacles (walls/navmesh boundaries) as
-   ORCA obstacle lines (the LP3 already reserves `numObstLines`, currently always 0); optional
-   `maxNeighbours` culling to make the antipodal circle converge like RVO2.
-3. **[medium] Perf** — the shared spatial hash for both regimes (the SPATIAL-OPT groundwork is the
-   start), gated so lane-mode stays byte-identical.
-4. **[small] Wire the bridge into normal lane mode** — currently the vehicle side is under
-   `LanelessRvo && _sublane`; a normal SUMO vehicle braking for a crowd agent via
-   `CrowdLongitudinalConstraint` already works whenever `CrowdSource` is set (it is in the reducer,
-   not gated on laneless), but the *swerve* (`ComputeRvoLateral`) is laneless-only. Decide whether
-   normal-mode vehicles should also swerve for crowd agents (would use the B6 `ComputeLateralEvasion`
-   path, which reads the string `_obstacles` — would need a non-string crowd hook there too).
-5. **[optional] SL2015 full-state-machine port** — only if byte-exact dynamic sublane *decisions* are
+All committed on `claude/sumo-phase-2-planning-p3w7kh-i1gsgu`, each with both gates green
+(`dotnet test` 0 failed; hash `909605E965BFFE59` single == parallel). Latest suite: **293 passed / 3
+skipped / 0 failed**.
+
+- **Sync with the NuGet branch** (`claude/sumo-csharp-nuget-strategy-4vlkki`): merged their SoA
+  `ObstacleStore` + handle API + `AvoidanceClass`; the RVO Stage-3 adapter now reads the SoA store via
+  `.Values` (frozen `RvoNeighbor` seam, no solve change); migrated the two laneless tests off the removed
+  string obstacle API. `share` sourced from `AvoidanceClass` (inert in the 1D solve — documented).
+- **Q1 — ORCA static obstacles** (`src/Sim.Core/Orca/`): RVO2 obstacle-line construction + `numObstLines`
+  through LP2/LP3 + `OrcaCrowd.AddObstacle`. Crowd agents avoid walls; includes RVO2's `leftOf` occlusion
+  gate (a correctness gate, reproduced+fixed). Tests `OrcaStaticObstacleTests`.
+- **Q2 — ORCA convergence aids**: `OrcaCrowd.MaxNeighbours` (nearest-k cull) + `RemoveOnArrival`. HONEST
+  finding (measured, corrects the old claim below): these do NOT make the antipodal circle converge at any
+  `SymmetryBreak` up to 0.5; their real value is ~halving a dense counter-flow's drain time + a per-agent
+  work bound. Tests `OrcaConvergenceTests`.
+- **Q3 — shared spatial hash** (`OrcaCrowd.UseSpatialHash`, opt-in): bit-identical to brute-force (proven
+  in `OrcaSpatialHashTests`), ~6× faster at n≥400. The shared-index groundwork the unified solver wants.
+- **Q4 — `docs/UNIFIED-SOLVER.md`**: the design of record for the big item (approval artifact; §10 has 4
+  open questions for you).
+- **Q5 — unified-solver PROTOTYPE** (`src/Sim.Core/Unified/UnifiedWorld.cs`, standalone, NOT wired into
+  the committed path): proves the joint plan/execute + the parity escape hatch (sub-stepped vehicle
+  reaction) turn the bridge's grazing perpendicular crossing collision-free (−0.21 m graze at 1 re-plan
+  → +0.77 m safe at 8 sub-steps). Tests `UnifiedSolverTests`.
+
+## Next steps (owner-gated / recommended order)
+
+1. **[BIG, needs owner go-ahead] Unified two-population solver — REAL Engine integration.** The design
+   (`docs/UNIFIED-SOLVER.md`) is written and the standalone **prototype (Q5) validates the architecture**.
+   What remains is wiring it into the real Engine (reusing the Engine's exact Krauss longitudinal
+   reduction instead of the prototype's simplified follower) behind a default-off `Mode` switch. **Answer
+   the §10 questions first** (esp. reciprocity default + replace-vs-coexist), then authorise.
+2. **[small, needs a product decision] Wire the swerve into normal lane mode.** Braking for a crowd agent
+   (`CrowdLongitudinalConstraint`) already works in normal mode whenever `CrowdSource` is set; only the
+   *swerve* (`ComputeRvoLateral`) is laneless-gated (`LanelessRvo && _sublane`). Deferred deliberately
+   this session: it is a product decision (should normal SUMO vehicles swerve for crowd agents?) AND it
+   writes into the parity-critical `Engine.cs` hot path, so it wants your call before I build it (even
+   default-off). The non-string crowd hook it needs already exists (`Engine.CrowdSource` + the
+   `ComputeRvoLateral` crowd loop); the normal-mode path would reuse it.
+3. **[optional] SL2015 full-state-machine port** — only if byte-exact dynamic sublane *decisions* are
    ever required. `docs/PHASE2-SUBLANE.md` scopes it; the magnitude/geometry mechanisms are already
    understood and reused as the RVO physics constants. Large, brittle, ECS-hostile — the explicit
    "what we do NOT do" in `LANELESS-DIRECTION.md`.
