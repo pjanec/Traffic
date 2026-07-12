@@ -126,6 +126,21 @@ and banked two more byte-identical wins on top. All hold the three gates (229 te
   `EmitTrajectory` did `LanesById[v.LaneId]` (string hash + dict probe) per vehicle per frame.
   Materialize `_network.LanesByHandle` into a dense `Lane[]` once at load, index by `v.LaneHandle`
   (kept in lockstep with `LaneId`). **serial emit 525 → 380 ms (−28%)**, applies to default and region.
+- **WIN — region-parallel `speedGain`** (`perf(region)`, commit `e2a3950`). `DecideSpeedGainChanges`
+  (the post-move keep-right/strategic/speed-gain phase) is **byte-identically parallelizable** —
+  surprising, but its own header already proves the property: every vehicle's decision reads ONLY the
+  ONE frozen `postMoveNeighbors` snapshot (never a live read of another vehicle's LaneId), and writes
+  ONLY its own fields + the order-independent thread-safe command buffer (the speed-gain change is
+  deferred; the inline keep-right swap is re-read only by the same vehicle). Extracted the body to
+  `DecideSpeedGainForVehicle`, rebuild the POST-move region grouping, region-parallel the refill
+  (`RefillRegion`, disjoint lanes) AND the decision loop. **speedGain 607 → 395 ms interleaved @8t
+  (−35%).** KEY lesson: parallelizing the decision loop ALONE *regressed* (the serial post-move refill
+  ~140 ms is a fixed floor + `BuildActiveIndices` overhead > the loop's saving); region-parallelizing
+  the refill too is what makes the phase a net win. Verified default-vs-`--region` trip-SHA match
+  across repeated runs (deterministic → race-free), 229 tests, hash held, aggregate PASS + 0 stuck.
+  **This refutes the old "serial tail is order-dependent" blanket claim for `speedGain`** — the frozen-
+  snapshot discipline makes it order-INdependent. (`insert` and `foeIndex` remain un-parallelizable:
+  insert is genuinely order-dependent + pool-racing; foeIndex is sync-overhead-bound, #7.)
 - **REGRESS (re-confirmed #7) — region-parallel emit** (commit `59037e1`, then removed in `fd7bf4b`).
   A region-parallel emit into `_emitScratch` (EntityIndex-ordered append → byte-identical) beat serial
   emit *only while the string hash was still there* (481 vs 525 ms). Once the handle-array removed the
