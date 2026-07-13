@@ -13,8 +13,18 @@ realistic-enough backdrop; the evacuation is the product. **Not** an "Indian tra
 - **R1 — organized backdrop.** Ordinary lane driving. **Sublane is an optional, separate** layer
   whose value is small vehicles (scooters/cyclists) **filtering to the front at red lights**
   (still organized — they stop on red). Start **without** sublane.
-- **R2 — the switch is external input.** Organized→panic is decided *outside* the driving core and
-  applied **per vehicle** as an input; the core never decides to panic on its own.
+- **R2 — external *decides*, the core *drives*.** The panic **decision** (who panics, when) is
+  external and applied **per vehicle** by setting that vehicle's **parameters** (`aggressiveness`,
+  `mode`). The **three modes those parameters select — Organized → Flee → Orca — and the
+  Flee→Orca escalation all live INSIDE the driving core.** The external layer only flips
+  parameters; it never implements driving. (This is the SUMO + TraCI pattern: external code sets
+  per-vehicle params at runtime, the engine drives accordingly.)
+    - **Organized** — normal lane/sublane driving.
+    - **Flee** — aggressive organized driving to a flee route (raised impatience / assertiveness /
+      speed factor, smaller gaps, relaxed right-of-way). Still on roads, still the SUMO model.
+    - **Orca** — the core escalates a fleeing vehicle to ORCA free-movement (within road+vicinity)
+      **when organized driving has nowhere to go** (boxed in). The core detects this and switches
+      the mode; the vehicle is then stepped by the ORCA solver instead of lane car-following.
 - **R3 — panic spread is a separate layer.** Fear/contagion modelling sits **on top of** the
   driving data, not wired into it. It is **local-information only**: direct proximity (LoS-gated) +
   **contagion** from panicking neighbours + mild **jam-unease** — no global "flee" broadcast, so
@@ -47,24 +57,26 @@ There is **one** system for the realistic scenario (no concurrent "external navm
 ```
         KNOWN WORLD  = lane polygons ⊕ close-vicinity buffer (sidewalk + grass)
    ┌──────────────────────────────────────────────────────────────────────┐
-   │  ROAD driving core (SUMO port)          ORCA panic mode                │
-   │  · lane car-following (+ optional        · free-space movement within  │
-   │    sublane: filter-to-front)               road + vicinity             │
-   │  · junctions / right-of-way              · stuck/abandoned cars = obstacles │
-   │                                          · pedestrians (ex-drivers)    │
+   │  DRIVING CORE (SUMO port) — per-vehicle mode: Organized → Flee → Orca  │
+   │  · Organized/Flee: lane car-following (+ optional sublane filter-to-front) │
+   │  · Orca: free-space movement in road+vicinity (nowhere-to-go escalation)│
+   │  · junctions / right-of-way;  stuck/abandoned cars = obstacles;  peds   │
    │                                                                        │
    │   ── hard outer edge (ditch / fence / field): actors BLOCK here ──     │
    └──────────────────────────────────────────────────────────────────────┘
-                    ▲ per-vehicle switch (external)      ▲ fear/contagion layer (external, on top)
+              ▲ per-vehicle params: aggressiveness/mode/route (external)
+              ▲ fear/contagion decision layer (external, on top)
    BEYOND: real 3D-world navmesh — OUT OF SCOPE (future); actors mostly block before reaching it
 ```
 
-- **Road driving core** — parity-exact SUMO-port driving; panic-agnostic. Exposes state +
-  cars-as-obstacles + `DrModel`/stuck; accepts **reroute** and **release** (hand a vehicle to ORCA
-  mode / turn it into a road obstacle). Never learns *why*.
-- **ORCA panic mode** — free-space movement (reusing `OrcaCrowd` / `Sim.Core.Mixed` + the bridge)
-  for vehicles and pedestrians **inside the known world**, bounded by the hard outer edge.
-- **Panic-spread layer** — separate; reads the shared data, emits per-vehicle switch inputs (R2/R3).
+- **Driving core** — owns all three per-vehicle modes (Organized / Flee / Orca) and the Flee→Orca
+  escalation (R2). Organized+Flee are lane driving (parity-exact when no panic params are set);
+  Orca is free-space movement (reusing `OrcaCrowd` / `Sim.Core.Mixed` + the bridge) inside the
+  known world, bounded by the hard outer edge. Exposes state + cars-as-obstacles + `DrModel`/stuck;
+  accepts per-vehicle **parameter** inputs (`aggressiveness`, `mode`, flee route). It never decides
+  *whether* to panic — only executes the params it's given, plus the mechanical Flee→Orca escalation.
+- **Panic-spread layer** — separate, external; reads the shared data, decides who panics when, and
+  flips the per-vehicle params (R2/R3). Thin: a decision layer, no driving.
 - **Boundary** — actors that reach the outer edge **block** (R4). "Escape" = reaching the
   **away-edge** of the known world (a street leading away from the incident, off the simulated
   area). Deep off-road / buildings = future navmesh, out of scope.
@@ -85,26 +97,25 @@ There is **one** system for the realistic scenario (no concurrent "external navm
 ## 4. Per-actor state machine
 
 ```
- Driving ──(external switch: panic)──► PanicFlee(vehicle, ORCA)
- (lane / sublane, normal route)         free-space flee within road+vicinity, cars as obstacles
-                                                 │  boxed in (v≈0) / reaches known-world edge
-                                                 ▼
-                                              Abandon
-                                   (car → static road obstacle; occupants → pedestrians)
-                                                 │
-                                                 ▼
-                                            PedestrianFlee (ORCA)
-                              flee within road+vicinity toward the away-edge; block at the edge
-                                                 │  reaches away-edge
-                                                 ▼
-                                              Escaped (leaves the simulated area)
+ Organized ─(external: set panic params)─► Flee  (aggressive organized lane/sublane driving, flee route)
+ (normal route)                               │  nowhere to go in organized traffic (boxed in)
+                                              ▼
+                                            Orca   (core escalates: free-space flee within road+vicinity,
+                                                    cars as obstacles)
+                                              │  fully boxed in / reaches known-world edge
+                                              ▼
+                                           Abandon (car → static road obstacle; occupants → pedestrians)
+                                              │
+                                              ▼
+                                     PedestrianFlee (ORCA)  toward the away-edge; block at the hard edge
+                                              │  reaches away-edge
+                                              ▼
+                                           Escaped (leaves the simulated area)
 ```
 
-Open interpretation to confirm (§7): whether the panic switch flips a still-moving car straight
-into **ORCA mode**, or it keeps **lane-driving (rerouted to flee)** until it is boxed in and only
-then goes ORCA. (This doc now leans toward *ORCA-on-switch*, since the known world includes the
-vicinity and ORCA can drive the on-road flee too — simpler than two driving modes. Was previously
-the opposite; flagging the change for your call.)
+Switch semantics — **resolved** (R2): the panic switch does **not** jump straight to ORCA. It sets
+Flee params (aggressive organized driving); the core only escalates to **Orca** when that vehicle
+has **nowhere to go** in organized traffic. All in the driving core.
 
 ## 5. Believability / correctness bar
 
@@ -131,12 +142,17 @@ the opposite; flagging the change for your call.)
 
 ## 7. Open decisions (pin at Phase-1 kickoff)
 
-- **Switch semantics:** ORCA-on-switch (this doc's current lean) vs. keep lane-driving until
-  boxed-in. Confirm.
-- Vicinity buffer width; how the hard edge is represented (buffered-polygon boundary as ORCA
-  obstacle vs. an explicit fence loop).
+- **Pedestrian ownership.** Following the same core/external split as vehicles: does the driving
+  core also own **PedestrianFlee** movement (ORCA in the known world), with the external layer only
+  *triggering* the driver→pedestrian conversion (e.g. a per-car "occupants bail out" input)? This
+  doc assumes **yes** (pedestrians are just another ORCA agent class in the core's known world;
+  external only flips the trigger) — confirm, since earlier notes leaned toward external steering.
+- The exact per-vehicle **parameter surface** the core exposes for the external layer to set:
+  `aggressiveness` (→ impatience / assertiveness / gap / speed-factor / right-of-way relaxation),
+  `mode`, flee route. Which map to existing SUMO-port params vs. small additive opt-in fields.
+- Vicinity buffer width; how the hard edge is represented (buffered-polygon boundary as an ORCA
+  obstacle loop vs. an explicit fence).
 - Away-direction flee-goal from the road graph; what counts as an away-edge "escape".
-- Reroute/release control-input API on the driving core (exists vs. small additive opt-in).
 - Fear constants (θ_panic, decay, contagion kernel) — tuned against the viz.
 
 ## 8. Relationship to other docs
