@@ -160,7 +160,46 @@ To pin only at Phase-1 kickoff (implementation detail, not architecture):
 - Which SUMO knobs already exist vs. need a small additive opt-in setter; hard-edge representation
   (buffered-polygon obstacle loop vs. explicit fence geometry).
 
-## 8. Relationship to other docs
+## 8. Phase-1 build plan (kickoff checklist)
+
+**Base:** branch `claude/sumo-phase-2-planning-p3w7kh-i1gsgu`, rebased on `main` (the merged
+mainline — has the `VTypeParams` lateral fold + `SimulationSnapshot.DrModels`/`.Manoeuvring`).
+Parity-exempt; the engine with no panic + no external obstacles must stay byte-identical (hash
+`909605E965BFFE59`).
+
+**Spine (smallest end-to-end transition on a small hand-built network):**
+1. **`Incident`** — data: world point + start time + radius (external input).
+2. **Fear (radius-only for Phase 1)** — per-vehicle `fear = f(distance to incident)`; panic when
+   `> θ_panic`. Contagion/LoS/jam-unease deferred to Phase 2.
+3. **External evac layer** — a **new module (`Sim.Evac`)** that each step:
+   - reads engine vehicle state (`VehicleReadBuffer` columns / `TryGetVehicle`) + `DrModels`;
+   - computes fear, marks panicked vehicles, applies the **flee preset** params + a flee route to
+     them (via the core's param/reroute surface);
+   - detects **`blocked`** = `DrModel.Stationary` for a dwell (external counts dwell off `DrModels`);
+   - on `blocked`+panic: commands the core to **stop the vehicle → static obstacle**, and **spawns a
+     pedestrian** into an `OrcaCrowd`;
+   - **drives the pedestrian `OrcaCrowd`** (fake-navmesh region + car obstacles) and feeds pedestrian
+     positions back to the engine as **external obstacles** (`SetExternalObstacles` / the bridge).
+4. **Fake-navmesh (minimal)** — buffer lane+junction polygons outward by a fixed width → a boundary
+   obstacle loop for the crowd; cars (stuck/abandoned) as interior obstacles.
+5. **Reroute-to-flee** — set a panicked vehicle's route toward an away-direction exit (road graph).
+6. **Viz** — reuse `Sim.Viz`: organized cars, incident marker, fleeing cars, abandoned-car
+   obstacles, externally-driven pedestrians, the known-world edge.
+
+**Core integration points — confirm exists vs. add small additive opt-in (do NOT touch the golden path):**
+- flee-preset param setter (`aggressiveness` → SUMO knobs) — likely additive;
+- reroute a vehicle to a flee goal — SUMO dynamic reroute (confirm surface);
+- stop-vehicle → static obstacle command (`ObstacleStore`) — likely additive;
+- external-obstacle feed for pedestrians — **exists** (`SetExternalObstacles` / `WorldDisc` bridge);
+- `blocked` — no core change; external derives it from the `DrModels` span + a dwell timer.
+
+**Tests (invariants):** panic-absent ⇒ full suite byte-identical (hash unchanged); deterministic
+(bit-identical run); no pedestrian crosses the hard edge; cascade emerges (incident → flee → some
+`blocked` → pedestrians spawn → reach the safe radius).
+
+**Done-condition:** the full transition plays once, coherent, in the viz on a small network.
+
+## 9. Relationship to other docs
 
 - `INDIA-TRAFFIC.md` — shaped / non-holonomic / ORCA **machinery** (`Sim.Core.Mixed`,
   `ShapedVoSolver`, bicycle model): reusable substrate (Phase 3 vehicle Orca-mode + the external
