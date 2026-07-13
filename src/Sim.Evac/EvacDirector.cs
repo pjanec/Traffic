@@ -30,6 +30,7 @@ public sealed class EvacDirector
     private readonly FakeNavMesh _navmesh;
     private readonly OrcaCrowd _peds = new();
     private readonly BlockedDetector _blocked;
+    private readonly FearField _fearField = new();
     private readonly double _stepLength;
 
     private sealed class VehState
@@ -37,6 +38,14 @@ public sealed class EvacDirector
         public bool Panicked;
         public bool Converted;
         public bool Alive = true;
+
+        // Set once TryGetVehicle has EVER succeeded for this handle. A vehicle can be legitimately
+        // absent from the engine's live table for a tick or two after SpawnVehicle (insertion happens
+        // inside Engine.Step(), so a PreStep TryGetVehicle check on the very first tick -- before
+        // Step() has run even once -- can miss a not-yet-inserted vehicle). That is "not here YET", not
+        // "gone for good": only a TryGetVehicle failure AFTER at least one success means the vehicle
+        // has genuinely arrived/despawned.
+        public bool Seen;
     }
 
     private readonly Dictionary<VehicleHandle, VehState> _veh = new();
@@ -102,34 +111,52 @@ public sealed class EvacDirector
         PostStep();
     }
 
+    // PANIC-EVAC-PHASE2-DESIGN.md §5: instead of a radius-only instant latch, drive the per-vehicle
+    // fear field every tick (it is inert pre-incident: FearField gates the direct term on incident
+    // activity/radius internally, so nothing seeds without a live, in-range, visible incident).
     private void PreStep()
     {
         FeedVehicleDiscsToPeds();
 
-        if (!_incident.IsActive(_time))
-        {
-            return;
-        }
-
+        var obs = new List<FearField.VehicleObs>();
         foreach (var handle in _order)
         {
             var st = _veh[handle];
-            if (!st.Alive || st.Converted || st.Panicked)
+            if (!st.Alive || st.Converted)
             {
                 continue;
             }
 
             if (!_engine.TryGetVehicle(handle, out var v))
             {
-                st.Alive = false;
+                // Only a failure AFTER having been seen at least once is a real despawn/arrival; a
+                // miss before the vehicle's first successful observation is pre-insertion, not death
+                // (see VehState.Seen) -- retry next tick instead of latching it dead prematurely.
+                if (st.Seen)
+                {
+                    st.Alive = false;
+                }
+
                 continue;
             }
 
-            if (_incident.FearAt(v.X, v.Y, _time) >= _cfg.ThetaPanic)
+            st.Seen = true;
+            obs.Add(new FearField.VehicleObs(handle, v.X, v.Y, _engine.GetDrModel(handle) == DrModel.Stationary));
+        }
+
+        var newlyLatched = _fearField.Update(obs, _incident, _time, _abandoned, _cfg, _stepLength);
+
+        foreach (var handle in newlyLatched)
+        {
+            var st = _veh[handle];
+            if (st.Alive && !st.Converted && !st.Panicked)
             {
                 st.Panicked = true;
                 _engine.SetVehicleParams(handle, _cfg.FleePreset);   // R2 flee preset
-                RerouteAway(handle, v);                              // R2 flee route
+                if (_engine.TryGetVehicle(handle, out var v2))
+                {
+                    RerouteAway(handle, v2);                          // R2 flee route
+                }
             }
         }
     }
@@ -170,6 +197,7 @@ public sealed class EvacDirector
         _abandoned.Add(new WorldDisc(v.X, v.Y, 0.0, 0.0, _cfg.VehicleDiscRadius));
         _engine.Despawn(handle);
         _blocked.Forget(handle);
+        _fearField.Forget(handle);
 
         for (var k = 0; k < _cfg.PedestriansPerCar; k++)
         {
@@ -301,6 +329,8 @@ public sealed class EvacDirector
 
     public int AbandonedCarCount => _abandoned.Count;
     public WorldDisc AbandonedCar(int i) => _abandoned[i];
+
+    public double Fear(VehicleHandle h) => _fearField.Fear(h);
 
     public bool IsPanicked(VehicleHandle h) => _veh.TryGetValue(h, out var s) && s.Panicked;
     public bool IsConverted(VehicleHandle h) => _veh.TryGetValue(h, out var s) && s.Converted;
