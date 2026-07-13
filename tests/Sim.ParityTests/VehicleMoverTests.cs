@@ -150,4 +150,54 @@ public class VehicleMoverTests
     }
 
     private const double VehicleClassCarMaxSpeed = 14.0; // Sim.Core.Mixed.VehicleClass.Car.MaxSpeed
+
+    // ----- PRELIM (CreepSpeed fix, B1 review carry-over): creep breaks the lateral-goal deadlock -----
+    // MixedTrafficCrowd.SteerNonholonomic sets targetSpeed = max(min(CreepSpeed, desired),
+    // desired*cos(headingErr)); with CreepSpeed=0 a pusher whose goal is ~90 deg off its heading gets
+    // targetSpeed 0 and DEADLOCKS (it can never nudge-and-turn onto the shoulder, since turn rate is
+    // tied to forward speed). EvacConfig.OrcaCreepSpeed (default 0.5) fixes this. This test supersedes
+    // the degenerate "stays put" outcome noted in the B1 review: with creep, over many steps the car
+    // should make real progress toward a 90-deg-lateral goal AND its heading should visibly rotate
+    // toward it.
+    [Fact]
+    public void ReorientsTowardLateralGoal_WithCreep()
+    {
+        var mover = new VehicleMover(new EvacConfig());   // OrcaCreepSpeed defaults to 0.5
+        mover.ArmWalls(BigBoxWalls);
+
+        var start = new Vec2(50, 50);
+        // Goal is 90 degrees to the car's initial heading (facing +x, goal straight "up" in +y).
+        var goal = new Vec2(50, 90);
+        var i = mover.AddCar(start, headingRad: 0.0, goal);
+        var headingBefore = mover.Heading(i);
+
+        for (var step = 0; step < 30; step++)
+        {
+            mover.Step(1.0);
+        }
+
+        var p = mover.Position(i);
+        var headingAfter = mover.Heading(i);
+        var deltaY = p.Y - start.Y;
+
+        _out.WriteLine(
+            $"pos={p.X:F2},{p.Y:F2} deltaY={deltaY:F2} headingBefore={headingBefore:F4} headingAfter={headingAfter:F4} " +
+            $"targetHeading={Math.PI / 2:F4}");
+
+        Assert.True(deltaY > 10.0, $"expected Y to advance by > 10 m via creep, only advanced {deltaY:F2}");
+
+        // Heading should have rotated toward +y (pi/2), i.e. it is now strictly closer to pi/2 than the
+        // starting heading (0.0) was -- proving creep let the car steer, not just crawl straight.
+        var distBefore = Math.Abs(NormalizeAngle(headingBefore - Math.PI / 2.0));
+        var distAfter = Math.Abs(NormalizeAngle(headingAfter - Math.PI / 2.0));
+        Assert.True(distAfter < distBefore,
+            $"expected heading to rotate toward +y (pi/2): before-dist={distBefore:F4} after-dist={distAfter:F4}");
+    }
+
+    private static double NormalizeAngle(double a)
+    {
+        while (a > Math.PI) a -= 2 * Math.PI;
+        while (a < -Math.PI) a += 2 * Math.PI;
+        return a;
+    }
 }

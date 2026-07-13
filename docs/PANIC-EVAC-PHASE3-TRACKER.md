@@ -20,16 +20,26 @@ verified its success conditions first-hand.
       segments; VehicleMover confinement test holds (maxX≈96.9 vs a 100 wall)*
 
 ## S3 — Integration
-- [ ] **T3.1** Orca-push stage in `EvacDirector` (blocked→push→wedge→pedestrian; composite CrowdSource;
-      cross-avoidance; Phase-2 backwards-compat)
+- [x] **T3.1** Orca-push stage in `EvacDirector` — *accepted (B2): EnterOrcaPush (Despawn→VehicleMover.AddCar,
+      heading deg→rad), DriveOrcaPushers (re-aim away-goal, Step, wedge→pedestrian via shared
+      SpawnPedestriansAt), composite CrowdSource (lane cars avoid pushers), pushers fed to ped crowd,
+      FleeGoalForPusher (5 m inset avoids corner limit-cycle). Push-OFF ⇒ unchanged Phase-2 (backwards-compat).
+      Carry-over fixes accepted: OrcaCreepSpeed (breaks the 90° deadlock — test proves reorientation),
+      OrcaPushMaxSpeed=4, progress-based wedge, and a containment clamp (additive inert MixedTrafficCrowd.SetPose)
+      backstopping the NH-wall-pierce case.*
 
 ## S4 — Behavioural / determinism / parity
-- [ ] **T4.1** push precedes foot exodus (push ON vs OFF)
-- [ ] **T4.2** shaped confinement (no pusher crosses the band wall)
-- [ ] **T4.3** wedge → pedestrian
-- [ ] **T4.4** no shaped interpenetration
-- [ ] **T4.5** determinism (signature incl. pusher poses)
-- [ ] **T4.6** parity / inertness + suite + hash gate
+- [x] **T4.1** push precedes foot exodus — *accepted (B2): peak OrcaPushCount 3 (ON) vs 0 (OFF); cascade completes both*
+- [x] **T4.2** shaped confinement — *accepted (B2): every active pusher inside navmesh bounds each tick (via clamp backstop)*
+- [x] **T4.3** wedge → pedestrian — *accepted (B2): peds produced via push→wedge; 0 pushers remain after 500 ticks*
+- [x] **T4.4** no shaped interpenetration — *accepted (B2): min pusher separation 10.37 m ≥ 1.0 m*
+- [x] **T4.5** determinism — *accepted (B2): signature incl. pusher poses bit-identical across runs*
+- [x] **T4.6** parity / inertness + gate — *accepted (B2): no-incident ⇒ 0 pushers/panicked/fear0; 417 pass / 3 skip; hash unmoved*
+
+> **Tech-debt (documented, accepted for a parity-exempt viz feature):** shaped-VO walls only constrain the
+> HOLONOMIC target each step, so a non-holonomic overlap-recovery step can pierce a thin band wall; the hard
+> containment guarantee therefore comes from `VehicleMover`'s clamp backstop, not the wall solver. A
+> solver-level fix (constrain the final steered motion against walls) is a future `Sim.Core.Mixed` improvement.
 
 ## S5 — Viz: cars mounting the shoulder
 - [ ] **T5.1** emit pushing cars as oriented shaped boxes
@@ -46,4 +56,7 @@ verified its success conditions first-hand.
   `targetSpeed≈0` and **deadlocks** (can't nudge-and-turn onto the shoulder). B2 must add a small
   `EvacConfig.OrcaCreepSpeed` (e.g. 0.5 m/s) and set `_crowd.CreepSpeed` in `VehicleMover`, plus a test
   that a pusher with a lateral goal actually reorients + makes progress.
-- **B3 (after B2):** S5 (T5.1, T5.2) — shaped-box viz (Opus renders to confirm the shoulder-push reads).
+- **B2 — DONE (Sonnet, Opus-reviewed & accepted).** S3 + S4: Orca-push lifecycle + composite source +
+  CreepSpeed/maxspeed/progress-wedge/clamp fixes + 7 tests (6 EvacPhase3 + 1 VehicleMover reorient).
+  417 pass / 3 skip; hash unmoved. Peak 3 pushers on the demo grid.
+- **B3 (next):** S5 (T5.1, T5.2) — shaped-box viz (Opus renders to confirm the shoulder-push reads).

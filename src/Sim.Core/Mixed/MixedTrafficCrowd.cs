@@ -289,6 +289,18 @@ public sealed class MixedTrafficCrowd
         _velocity[i] = Vec2.Zero;
     }
 
+    // Force-correct an agent's pose out of band. Purely ADDITIVE -- not called by Step()/Plan() and
+    // does not change either for any existing caller/scene; a defensive escape hatch for a caller that
+    // needs a hard containment guarantee beyond what the shaped-VO wall alone provides (a thin static
+    // wall can be pierced by a single degenerate overlap-recovery step, since the wall's ORCA half-plane
+    // only constrains the HOLONOMIC target velocity every step, not the final non-holonomic-steered
+    // motion). Used by Sim.Evac.VehicleMover as a last-resort clamp for the Orca-push band.
+    public void SetPose(int i, Vec2 position, Vec2 velocity)
+    {
+        _position[i] = position;
+        _velocity[i] = velocity;
+    }
+
     public bool AllArrived(double epsilon)
     {
         var epsSq = epsilon * epsilon;

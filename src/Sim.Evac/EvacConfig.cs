@@ -90,6 +90,24 @@ public sealed record EvacConfig
     // Orca-push mover sub-steps per engine step (mirrors CrowdSubSteps for the pedestrian crowd).
     public int OrcaCrowdSubSteps { get; init; } = 10;
 
+    // Speed cap (m/s) for a pushing mover, overriding VehicleClass.Car.MaxSpeed (14.0). A panicked
+    // driver nosing onto the shoulder is manoeuvring at a crawl, not flooring it -- and, just as
+    // important, VehicleClass.Car's free-road MaxSpeed combined with the shaped NH steering's
+    // accel/decel and turn-rate limits produces a violent, oscillating "arrival" overshoot when the
+    // away-goal (recomputed every tick, clamped into the band) sits close to the mover itself (e.g.
+    // near a band corner) -- the high-speed swings can outrun the wall's shaped-VO braking in a single
+    // step. A modest cap keeps the pusher's own dynamics slow enough for the wall/mutual avoidance to
+    // actually track it, matching the believability target (a car nosing off the lane, not drag racing
+    // the shoulder).
+    public double OrcaPushMaxSpeed { get; init; } = 4.0;
+
+    // PRELIM fix (B1 review carry-over): MixedTrafficCrowd.SteerNonholonomic sets
+    // targetSpeed = max(min(CreepSpeed, desired), desired*cos(headingErr)); with CreepSpeed=0 a pusher
+    // whose goal is ~90 deg off its heading gets targetSpeed 0 and DEADLOCKS -- it can never nudge
+    // forward far enough to turn onto the shoulder (turn rate is tied to forward speed). A small creep
+    // floor (m/s) lets it creep forward to reorient toward a lateral away-goal instead of freezing.
+    public double OrcaCreepSpeed { get; init; } = 0.5;
+
     // The aggressive "flee" preset (R2): the bulk override applied to a panicked vehicle. Kept
     // DETERMINISTIC (no jmIgnoreFoe* lever — those consult a per-vehicle RNG); the gridlock is meant
     // to emerge from density + aggression converging on a few exits, not from stochastic gap-running.
