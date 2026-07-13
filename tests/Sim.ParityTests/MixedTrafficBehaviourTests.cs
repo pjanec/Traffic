@@ -404,6 +404,44 @@ public class MixedTrafficBehaviourTests
             $"heading jumped {maxHeadingStep * 180 / Math.PI:F0} deg in one step (pivot/flip)");
     }
 
+    // A wheeled vehicle pivots about its REAR AXLE, so through a turn the rear tracks a tighter arc
+    // than the front (off-tracking) -- NOT a body-centre spin where both ends sweep equally. Drive a
+    // single bus through a ~90 deg turn and confirm the front bumper travels a measurably LONGER path
+    // than the rear axle over the turning phase.
+    [Fact]
+    public void Nonholonomic_LongVehicle_RearAxleTracksInsideTurn()
+    {
+        var c = new MixedTrafficCrowd(2) { Nonholonomic = true, TimeHorizon = 3.0 };
+        var bus = c.Add(VehicleClass.Bus, new Vec2(-30, 0), new Vec2(0, 30), headingRad: 0.0,
+            maxSpeedOverride: 6.0);
+        var halfL = VehicleClass.Bus.Length * 0.5;
+
+        double frontPath = 0, rearPath = 0;
+        Vec2? prevFront = null, prevRear = null;
+        for (var step = 0; step < 120; step++)
+        {
+            c.Step(Dt);
+            var p = c.Position(bus);
+            var h = c.Heading(bus);
+            var dir = new Vec2(Math.Cos(h), Math.Sin(h));
+            var front = new Vec2(p.X + halfL * dir.X, p.Y + halfL * dir.Y);
+            var rear = new Vec2(p.X - halfL * dir.X, p.Y - halfL * dir.Y);
+            var hd = h * 180 / Math.PI;
+            if (prevFront.HasValue && hd > 5 && hd < 85)   // accumulate only during the turn
+            {
+                frontPath += (front - prevFront.Value).Abs;
+                rearPath += (rear - prevRear!.Value).Abs;
+            }
+
+            prevFront = front;
+            prevRear = rear;
+        }
+
+        _out.WriteLine($"through the turn: front path = {frontPath:F2} m, rear path = {rearPath:F2} m");
+        Assert.True(frontPath > rearPath + 1.0,
+            $"front should sweep a longer arc than the rear (off-tracking); front {frontPath:F2} vs rear {rearPath:F2}");
+    }
+
     // ------------------------------------------------------------------ hard invariant: determinism
 
     [Fact]

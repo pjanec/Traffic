@@ -139,7 +139,21 @@ footprints could overlap (the NH-ORCA problem); this is handled by a **tracking-
 margin** (`SafetyMargin`) that inflates the footprint *for the solve only* (rendering/overlap
 use the true footprint), keeping real bodies apart. Measured on the dense junction scene: the
 holonomic model had 16% of steps with >45° heading jumps and 9% backward flips; NH steering
-drops both to ~0% with no meaningful interpenetration. Scene inflow is metered by a
+drops both to ~0% with no meaningful interpenetration.
+
+**Kinematic-bicycle body motion (rear-axle pivot).** A vehicle does not rotate about its
+centre — it pivots about its **rear axle**, so through a turn the rear wheels track a tighter
+arc while the front and body sweep wide (off-tracking, very visible on a bus). The execute step
+integrates the bicycle model: the rear axle (a `Wheelbase`-derived offset behind the centre)
+advances along the mean heading while the heading rotates, then the body pose follows. Because
+the body is rigid, its orientation *is* the back→front chord (SUMO `MSVehicle::computeAngle`),
+so the correct long-vehicle heading falls out with no separate approximation — where the NuGet
+branch's render-side `PoseResolver` uses a documented Tier-B swept-path *approximation*
+(`off ≈ length·|Δψ|/2`) because it is constrained to follow a fixed lane polyline, our
+free-space case gets the real geometry. Shared conventions with that branch (issue #3): heading
+= back→front chord; a laneless *vehicle* follows a curved path with chord heading, it is not a
+holonomic point. Measured: a bus through a 90° turn sweeps ~54 m at the front vs ~49 m at the
+rear (the rear tracks up to ~7 m inside the front). Scene inflow is metered by a
 spawn-clearance gate (a vehicle enters only when its entry point is clear), which also removes
 the spawn-overlap that gentle NH acceleration would otherwise cause.
 

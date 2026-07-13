@@ -235,15 +235,37 @@ public sealed class MixedTrafficCrowd
                 continue;
             }
 
-            _velocity[i] = _newVelocity[i];
-            _position[i] += _velocity[i] * dt;
             if (Nonholonomic)
             {
-                _heading[i] = _newHeading[i];   // integrated by the bounded steer, not snapped to velocity
+                // Kinematic-bicycle integration: the body pivots about its REAR AXLE, not its centre.
+                // The rear axle advances along the (mean) heading while the heading rotates, so the
+                // rear tracks inside the turn and the front/body sweeps wide -- real off-tracking. For
+                // a rigid body the orientation IS the back->front chord (SUMO computeAngle), so this
+                // also yields the correct long-vehicle heading with no separate approximation.
+                var theta0 = _heading[i];
+                var theta1 = _newHeading[i];
+                var turn = theta1 - theta0;                 // bounded per step -> no wrap
+                var speed = _newVelocity[i].Abs;
+                var lc = 0.5 * _class[i].Wheelbase;          // centre-to-rear-axle offset
+                var c0 = _position[i];
+                var rear0 = new Vec2(c0.X - lc * Math.Cos(theta0), c0.Y - lc * Math.Sin(theta0));
+                var thetaMid = theta0 + 0.5 * turn;
+                var rear1 = new Vec2(
+                    rear0.X + speed * dt * Math.Cos(thetaMid),
+                    rear0.Y + speed * dt * Math.Sin(thetaMid));
+                var c1 = new Vec2(rear1.X + lc * Math.Cos(theta1), rear1.Y + lc * Math.Sin(theta1));
+                _velocity[i] = (c1 - c0) / dt;               // actual chord velocity (used by neighbours)
+                _position[i] = c1;
+                _heading[i] = theta1;
             }
-            else if (_velocity[i].Abs > HeadingHoldSpeed)
+            else
             {
-                _heading[i] = Math.Atan2(_velocity[i].Y, _velocity[i].X);
+                _velocity[i] = _newVelocity[i];
+                _position[i] += _velocity[i] * dt;
+                if (_velocity[i].Abs > HeadingHoldSpeed)
+                {
+                    _heading[i] = Math.Atan2(_velocity[i].Y, _velocity[i].X);
+                }
             }
         }
 
