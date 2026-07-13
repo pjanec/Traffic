@@ -144,8 +144,9 @@ while also working over plain **TCP/UDP**. Design principles:
   generator marshals arrays as C `fixed` buffers (primitive-only), and columns are simpler, allocation-free,
   and mirror the engine's own SoA layout while still giving a subscriber typed per-field access. Chunk sizing
   for **both** shapes is `SumoSharp.Replication.FrameChunker` (by byte budget for the blob, by sample count
-  for the batch), which is in the hermetic gate (`RungB25`) even though the DDS types themselves cannot run
-  here (CycloneDDS.NET native lib is win-x64).
+  for the batch), which is in the hermetic gate (`RungB25`). The DDS types compile + generate here and can
+  also run — CycloneDDS.NET 0.3.2 ships a `linux-x64` native lib (not win-x64 only) — so a loopback
+  round-trip test is a straightforward next step.
 - **Rate-limit at the writer** (§7): the high-rate topic writes at ≤10 Hz globally, and the adaptive policy
   decides *which* vehicles are even included in each frame (so a predictable vehicle simply isn't re-sent).
 
@@ -387,8 +388,8 @@ encode→decode→`PoseResolver` reconstructs the engine's own pose.
 `(Kind, ChunkIndex)` + `fixed byte Payload[64 KiB]`, `SetPayload`/`ReadPayload` bridging `FrameCodec`) —
 and `DdsVehicleLifecycle` — the low-rate **keyed** spawn/despawn+dims registry. **Deliberately NOT in
 `Traffic.sln`** (external `CycloneDDS.NET` + native DDS dep), so the hermetic gate never needs it; built
-explicitly (`dotnet build src/Sim.Replication.Dds`), **compile-verified here** (the CycloneDDS native
-runtime is win-x64, so it can't *run* on this Linux VM — publish/read usage is in the package README).
+explicitly (`dotnet build src/Sim.Replication.Dds`), **compile-verified here** (and runnable — CycloneDDS.NET
+0.3.2 ships a `linux-x64` native lib as well as `win-x64` — publish/read usage is in the package README).
 net8.0 only.
 
 **STATUS: `Sim.LiveHost` wired to the production `RenderMode`** (optional `chord`/`corner` CLI arg) **and to

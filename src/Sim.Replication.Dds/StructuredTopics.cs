@@ -14,9 +14,10 @@ namespace Sim.Replication.Dds;
 // primitives are exactly what this CycloneDDS generator serializes (a nested-struct array would need a
 // bounded sequence -- columns are simpler, allocation-free, and mirror the engine's own SoA layout).
 //
-// COMPILE-CHECKED but not run here (CycloneDDS.NET's native lib is win-x64 only). The column<->VehicleRecord
-// field mapping mirrors FrameCodec's exactly (same scalars, same order), which the hermetic gate round-trips
-// (RungB22); the chunk arithmetic that feeds it is RungB25. Both live in SumoSharp.Replication.
+// COMPILE-CHECKED here (a live DDS round-trip is possible too -- CycloneDDS.NET 0.3.2 ships a linux-x64
+// native lib, not win-x64 only). The column<->VehicleRecord field mapping mirrors FrameCodec's exactly
+// (same scalars, same order), which the hermetic gate round-trips (RungB22); the chunk arithmetic that
+// feeds it is RungB25. Both live in SumoSharp.Replication.
 public static class DdsStructured
 {
     // Movers per structured batch (column length). ~ (4+2+1+4 + 5*4 + 4*4) = 47 B/mover -> ~12 KiB/sample at

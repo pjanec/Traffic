@@ -27,8 +27,9 @@ TCP, and UDP; DDS just transports the bytes.
 
 > **Deliberately NOT in `Traffic.sln`.** It depends on the external `CycloneDDS.NET` package and a native
 > DDS library, so the hermetic offline parity gate (`dotnet test Traffic.sln`, no network / no native DDS)
-> never needs it. Build it explicitly: `dotnet build src/Sim.Replication.Dds`. net8.0 only; the CycloneDDS
-> native runtime currently ships win-x64 (so it compiles anywhere, runs where the native lib is present).
+> never needs it. Build it explicitly: `dotnet build src/Sim.Replication.Dds`. net8.0 only; CycloneDDS.NET
+> 0.3.2 ships native runtimes for **both `linux-x64` and `win-x64`** (`libddsc.so` / `ddsc.dll`), so it runs
+> on either.
 
 ## Publishing (host wrapper)
 
