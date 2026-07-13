@@ -1143,6 +1143,11 @@ public sealed partial class Engine : IEngine
     // mid-RVO/ORCA swerve this step (FreeKinematic) or effectively stopped (Stationary). Cast each byte to
     // `DrModel`. Populated only in the Step projection (off the golden path) -> hash unaffected.
     public ReadOnlySpan<byte> DrModels => _readBuffer.DrModel.AsSpan(0, _readBuffer.Count);
+    // DR2 (issue #3): the mid-manoeuvre bit aligned with VehicleHandles -- true when the vehicle is
+    // swerving/dodging this step (RVO/ORCA lateral, or a normal-mode obstacle/crowd/overtake/give-way
+    // steer), so its lateral is a reactive manoeuvre rather than steady lane-following. The DR publisher
+    // reads this to raise the vehicle's publish rate; the vehicle stays LaneArc regardless (see RegimeOf).
+    public ReadOnlySpan<bool> Manoeuvring => _readBuffer.Manoeuvring.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<float> PosX => _readBuffer.PosX.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<float> PosY => _readBuffer.PosY.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<float> PosZ => _readBuffer.PosZ.AsSpan(0, _readBuffer.Count);
@@ -1200,6 +1205,21 @@ public sealed partial class Engine : IEngine
         return DrModel.Stationary;
     }
 
+    // DR2 (issue #3): is this vehicle mid-manoeuvre (swerving/dodging) in the current published frame?
+    // The DR publisher's adaptive-rate signal (per-handle form of the Manoeuvring column). Inert-when-
+    // absent: a stale/absent handle -> false.
+    public bool IsManoeuvring(VehicleHandle handle)
+    {
+        var idx = (int)handle.Index;
+        if (idx >= 0 && idx < _vehicleGeneration.Length && _vehicleGeneration[idx] == handle.Generation
+            && _readBuffer.TryGetSlot(idx, out var slot))
+        {
+            return _readBuffer.Manoeuvring[slot];
+        }
+
+        return false;
+    }
+
     // Fill the read buffer from the current active vehicles, projecting each to (x, y, angle) with the SAME
     // LaneGeometry.PositionAtOffset call EmitTrajectory uses -- so the read columns match the FCD geometry
     // exactly. Reads only committed post-step state; mutates nothing in the simulation.
@@ -1222,29 +1242,22 @@ public sealed partial class Engine : IEngine
 
             _readBuffer.Add(handle, v.EntityIndex, v.Def.Id, v.Def.TypeId,
                 v.LaneHandle, v.LaneId, v.Kinematics.Pos, v.Kinematics.Speed, v.Kinematics.LatOffset,
-                (float)x, (float)y, (float)z, (float)angle, (byte)RegimeOf(v));
+                (float)x, (float)y, (float)z, (float)angle, (byte)RegimeOf(v), v.LateralManoeuvre);
         }
 
         DetectLifecycleEvents();
     }
 
-    // DR2 (issue #3): a lane vehicle's dead-reckoning regime for the current published frame. Derived from
-    // committed post-step state only. Stationary when effectively stopped (no extrapolation needed this
-    // frame); FreeKinematic when it actively coupled to a neighbour/crowd this step (mid-swerve, reactive
-    // lateral -> not linearly lane-predictable, so the DR publisher raises its rate or emits it as a
-    // FreeKinematic record for the manoeuvre); otherwise LaneArc (predict `pos` along the lane, `posLat`
-    // by `latSpeed`). Crowd/ORCA agents are NOT vehicles -- they are tagged FreeKinematic by the crowd
-    // source (OrcaCrowd via ICrowdFootprintSource/WorldDisc), not here. Inert for the parity path: a plain
-    // lane vehicle (LateralManoeuvre never set unless LanelessRvo && _sublane) is always LaneArc/Stationary.
-    private DrModel RegimeOf(VehicleRuntime v)
-    {
-        if (v.Kinematics.Speed <= DrStationarySpeed)
-        {
-            return DrModel.Stationary;
-        }
-
-        return v.LateralManoeuvre ? DrModel.FreeKinematic : DrModel.LaneArc;
-    }
+    // DR2 (issue #3, re-scoped per the NuGet reply): a lane vehicle's dead-reckoning regime for the
+    // current published frame. A VEHICLE is NEVER FreeKinematic -- even mid-swerve it stays LaneArc,
+    // because LaneArc extrapolates `pos` along the (possibly curved) lane polyline whereas FreeKinematic
+    // would extrapolate a straight world line and drift a swerving car off the road between updates. The
+    // mid-manoeuvre state is surfaced SEPARATELY as the `Manoeuvring` bit (the DR publisher reads it to
+    // raise that vehicle's publish rate, not to change its extrapolator). FreeKinematic comes only from
+    // the crowd source (OrcaCrowd via ICrowdFootprintSource/WorldDisc), never from a vehicle. So a vehicle
+    // is Stationary when effectively stopped, else LaneArc.
+    private DrModel RegimeOf(VehicleRuntime v) =>
+        v.Kinematics.Speed <= DrStationarySpeed ? DrModel.Stationary : DrModel.LaneArc;
 
     // Below this speed (m/s) a vehicle is classified Stationary for dead-reckoning (position only, no
     // extrapolation this frame). A render/DR-only threshold; never touches the parity path.
@@ -5960,6 +5973,10 @@ public sealed partial class Engine : IEngine
     // ComputeLateralEvasion path and is byte-identical.
     private double ComputeSublaneLateral(VehicleRuntime v, Lane lane, double dt)
     {
+        // DR2 (issue #3): sublane drift toward the alignment target is STEADY and lane-predictable (its
+        // latSpeed captures it for LaneArc extrapolation), so it is not a "manoeuvre" for the publish-rate
+        // signal. Side-write only; off the golden path.
+        v.LateralManoeuvre = false;
         var curLat = v.Kinematics.LatOffset;
         var halfLaneWidth = lane.Width * 0.5;
         // MSLCM_SL2015::getWidth() = vType width + NUMERICAL_EPS (keeps the vehicle NUMERICAL_EPS
@@ -6366,6 +6383,12 @@ public sealed partial class Engine : IEngine
         var curLat = v.Kinematics.LatOffset;
         var maxStep = SwerveMaxLateralSpeed * dt;
 
+        // DR2 (issue #3): default this step's manoeuvre bit to false; each ACTIVE-steer branch below sets
+        // it true (overtake spill, cooperative shift, give-way, an obstacle/crowd swerve or a threat-hold).
+        // Steady lane-following / recentre paths leave it false. Pure side-write (read only by the Step
+        // DR projection), so byte-identical / off the golden path.
+        v.LateralManoeuvre = false;
+
         // Rung OV3 (opposite-direction overtake execution): while committed to an overtake
         // (OvertakeActive, set by DetectOvertake / OV2's gap acceptance), spill laterally toward the
         // oncoming lane far enough to clear the leader's footprint, so the same-lane
@@ -6377,6 +6400,7 @@ public sealed partial class Engine : IEngine
         // every vehicle with OvertakeActive == false (i.e. every scenario with no lcOpposite vType).
         if (v.OvertakeActive)
         {
+            v.LateralManoeuvre = true;
             return DriftToward(curLat, v.VType.Width + OvertakeSpillGap, maxStep);
         }
 
@@ -6391,6 +6415,7 @@ public sealed partial class Engine : IEngine
         // below, which cannot co-occur with an opposite-direction overtake in a supported scenario.
         if (v.CooperativeShift)
         {
+            v.LateralManoeuvre = true;
             var outerMargin = Math.Max(0.0, lane.Width / 2.0 - v.VType.Width / 2.0);
             return DriftToward(curLat, -outerMargin, maxStep);
         }
@@ -6406,6 +6431,7 @@ public sealed partial class Engine : IEngine
         var singleLane = lane.LeftNeighbor < 0 && lane.RightNeighbor < 0;
         if (singleLane && v.GiveWaySide != 0)
         {
+            v.LateralManoeuvre = true;
             return DriftToward(curLat, GiveWayEdgeTarget(v, lane), maxStep);
         }
 
@@ -6568,9 +6594,11 @@ public sealed partial class Engine : IEngine
         }
         else
         {
+            v.LateralManoeuvre = true;   // engaged with a threat it cannot clear (about to hold + brake)
             return curLat; // cannot dodge -> hold; ObstacleConstraint brakes to a stop behind it
         }
 
+        v.LateralManoeuvre = true;       // actively swerving around the obstacle/crowd threat
         return DriftToward(curLat, chosen.Value, maxStep);
     }
 

@@ -314,20 +314,25 @@ this branch.** Nothing here changes the RVO/ORCA solvers; hash `909605E965BFFE59
   "swerving vehicle → `LaneArc`-at-high-rate vs `FreeKinematic`" is exactly what DR2 drives; the enum
   stays three. A byte leaves headroom if a genuinely new *extrapolation* regime ever appears. We mirror
   `DrModel.cs` verbatim on this branch (like `RvoNeighbor`); the merge reconciles them as identical.
-- **DR2 — "lane-predictable right now?" read: IMPLEMENTED, both shapes.** `ReadOnlySpan<byte>
-  Engine.DrModels` (the batched column aligned with `VehicleHandles`, the form the publisher iterates
-  for 10k) and `DrModel Engine.GetDrModel(VehicleHandle)` (the §16-named per-handle accessor). Source: a
-  per-vehicle `LateralManoeuvre` bit set in `ComputeRvoLateral` (`forbCount > 0` == actively coupled to a
-  neighbour/crowd this step == mid-swerve). Regime precedence: `Stationary` (speed ≤ 1 cm/s) →
-  `FreeKinematic` (mid-swerve) → `LaneArc`. A pure crowd/ORCA agent is NOT a vehicle and is tagged
-  `FreeKinematic` by the crowd source, not by `GetDrModel` (vehicles only) — consistent with §9. Gated:
-  `LateralManoeuvre` is only ever set under `LanelessRvo && _sublane`; a plain lane vehicle is always
-  `LaneArc`/`Stationary`; the column is populated only in the `Step()` projection (off the `Run()`/golden
-  path), so parity is untouched. **Open option for the publisher:** the normal-mode crowd swerve (Q6,
-  `ComputeLateralEvasion`) and B6 obstacle swerves do NOT currently flip `LateralManoeuvre` (only the
-  laneless `ComputeRvoLateral` path does). If you want a *normal-mode* vehicle swerving for a crowd agent
-  to also read `FreeKinematic`, that is a one-line addition (set it when `threatIsCrowd` drives a steer) —
-  say the word; I scoped DR2 to the path §16 named.
+- **DR2 — the DR read the publisher polls: IMPLEMENTED, then RE-SCOPED per the NuGet reply.** A VEHICLE
+  is never `FreeKinematic` — even mid-swerve it stays `LaneArc` (LaneArc extrapolates `pos` along the
+  curved lane polyline; `FreeKinematic`'s straight-world line would drift a swerving car off the road, and
+  it would force a world `(vx,vy)` onto the vehicle wire that DR3 deliberately keeps crowd-only). So the
+  regime read is simply `Stationary` (speed ≤ 1 cm/s) else `LaneArc`, and the mid-manoeuvre state is
+  surfaced *separately* as the publisher's adaptive-rate signal:
+  - `ReadOnlySpan<byte> Engine.DrModels` + `DrModel Engine.GetDrModel(VehicleHandle)` — LaneArc/Stationary
+    for vehicles, never FreeKinematic.
+  - `ReadOnlySpan<bool> Engine.Manoeuvring` + `bool Engine.IsManoeuvring(VehicleHandle)` — the per-vehicle
+    "swerving/dodging this step" bit.
+
+  Source: the per-vehicle `LateralManoeuvre` bit, now set on ALL the reactive-lateral paths (the NuGet ask
+  to extend it): `ComputeRvoLateral` (`forbCount > 0`), and `ComputeLateralEvasion`'s obstacle/crowd
+  swerve, overtake spill, cooperative shift, and give-way branches. Steady sublane drift
+  (`ComputeSublaneLateral`) and plain lane-following leave it false (lane-predictable via `latSpeed`).
+  `FreeKinematic` comes only from the crowd source (`OrcaCrowd`/`WorldDisc`), never a vehicle — §9. Gated:
+  the bit is a pure plan-phase side-write, the columns are populated only in the `Step()` projection (off
+  the `Run()`/golden path), so a plain lane vehicle is `LaneArc`/`Stationary`/not-manoeuvring and parity
+  is untouched.
 - **DR3 — `FreeKinematic` wire `{handle, x, y, (z), vx, vy, radius}`: CONFIRMED, no additions needed.**
   This maps 1:1 to an `OrcaCrowd` agent's state / a `WorldDisc` (`{X, Y, Vx, Vy, Radius}`). Notes: (a)
   **heading is NOT needed on the wire** — our crowd agents are holonomic discs with no facing independent

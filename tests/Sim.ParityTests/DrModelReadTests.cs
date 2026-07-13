@@ -6,79 +6,105 @@ using Xunit.Abstractions;
 
 namespace Sim.ParityTests;
 
-// DR2 (dead-reckoning coordination, issue #3): the per-vehicle DR-regime read the DR publisher polls to
-// classify a lane vehicle LaneArc vs FreeKinematic-while-swerving. Exposed two ways off the Step() read
-// surface: the batched `Engine.DrModels` column (aligned with `VehicleHandles`) and the per-handle
-// `Engine.GetDrModel(VehicleHandle)`. Additive/gated: a plain lane vehicle is always LaneArc/Stationary
-// (LateralManoeuvre is only ever set under LanelessRvo && _sublane), so the parity path and determinism
-// hash are unaffected -- the full suite + hash gate confirm it.
+// DR2 (dead-reckoning coordination, issue #3, re-scoped per the NuGet reply). The DR read surface the
+// publisher polls, off the Step() projection:
+//   - Engine.DrModels (byte column) / Engine.GetDrModel(handle): a VEHICLE is LaneArc while moving,
+//     Stationary when stopped -- NEVER FreeKinematic (LaneArc extrapolates along the curved lane; a
+//     swerving car stays LaneArc). FreeKinematic is only ever produced by the crowd source.
+//   - Engine.Manoeuvring (bool column) / Engine.IsManoeuvring(handle): the separate mid-manoeuvre bit
+//     (RVO/ORCA swerve, or a normal-mode obstacle/crowd/overtake/give-way steer) the publisher reads to
+//     raise the publish rate. True only during an active lateral manoeuvre.
+// Additive/gated: a plain lane vehicle is LaneArc/Stationary with Manoeuvring == false; the columns are
+// populated only in Step() (off the golden path); hash 909605E965BFFE59 and the suite are unaffected.
 public class DrModelReadTests
 {
-    private static readonly string LanelessDir =
-        Path.Combine(RepoRoot(), "scenarios", "_fixtures", "bridge-crossing");     // lateral-resolution=0.8
-    private static readonly string PlainDir =
-        Path.Combine(RepoRoot(), "scenarios", "60-sublane-drift");                 // a committed scenario
+    private static readonly string LanelessDir = Path.Combine(RepoRoot(), "scenarios", "_fixtures", "bridge-crossing");
+    private static readonly string NormalDir = Path.Combine(RepoRoot(), "scenarios", "_fixtures", "bridge-crossing-normal");
+    private static readonly string PlainDir = Path.Combine(RepoRoot(), "scenarios", "60-sublane-drift");
 
     private readonly ITestOutputHelper _out;
 
     public DrModelReadTests(ITestOutputHelper output) => _out = output;
 
-    // A laneless-RVO vehicle that must swerve for a pedestrian standing in its lane reads FreeKinematic
-    // WHILE swerving (actively coupled), and LaneArc / Stationary otherwise -- and the column agrees with
-    // the per-handle accessor at every step.
+    // A laneless-RVO vehicle swerving for a pedestrian stays LaneArc throughout (never FreeKinematic),
+    // but IsManoeuvring flips true WHILE it is coupled/swerving and false before & after. Column ==
+    // accessor every step.
     [Fact]
-    public void LanelessVehicleSwervingForCrowd_ReadsFreeKinematic_ColumnMatchesAccessor()
+    public void LanelessVehicleSwervingForCrowd_StaysLaneArc_ManoeuvringFlips()
     {
         var engine = new Engine { LanelessRvo = true };
         engine.LoadScenario(
             Path.Combine(LanelessDir, "net.net.xml"),
             Path.Combine(LanelessDir, "rou.rou.xml"),
             Path.Combine(LanelessDir, "config.sumocfg"));
-
-        // A person standing in the lane ahead (goal == start -> holds position). Direction B only: the
-        // vehicle sees the crowd via CrowdSource and swerves; the crowd need not move for this read test.
         var crowd = new OrcaCrowd();
         crowd.Add(new Vec2(30, -3.6), radius: 0.35, maxSpeed: 1.5, goal: new Vec2(30, -3.6));
         engine.CrowdSource = crowd;
 
-        var sawFreeKinematic = false;
-        var sawLaneArc = false;
+        var sawManoeuvring = false;
+        var sawSteady = false;
 
         for (var step = 0; step < 25; step++)
         {
             engine.Step();
             var handles = engine.VehicleHandles;
-            var col = engine.DrModels;
-            Assert.Equal(handles.Length, col.Length);
+            var drCol = engine.DrModels;
+            var mCol = engine.Manoeuvring;
+            Assert.Equal(handles.Length, drCol.Length);
+            Assert.Equal(handles.Length, mCol.Length);
 
             for (var i = 0; i < handles.Length; i++)
             {
-                var viaAccessor = engine.GetDrModel(handles[i]);
-                // The batched column MUST equal the per-handle accessor for the same vehicle.
-                Assert.Equal((byte)viaAccessor, col[i]);
+                var dr = engine.GetDrModel(handles[i]);
+                var m = engine.IsManoeuvring(handles[i]);
+                Assert.Equal((byte)dr, drCol[i]);
+                Assert.Equal(m, mCol[i]);
+                Assert.NotEqual(DrModel.FreeKinematic, dr);   // a VEHICLE is never FreeKinematic
 
-                if (viaAccessor == DrModel.FreeKinematic)
-                {
-                    sawFreeKinematic = true;
-                }
-                else if (viaAccessor == DrModel.LaneArc)
-                {
-                    sawLaneArc = true;
-                }
+                if (dr == DrModel.LaneArc && m) sawManoeuvring = true;
+                if (dr == DrModel.LaneArc && !m) sawSteady = true;
             }
         }
 
-        _out.WriteLine($"laneless swerve DR: sawFreeKinematic={sawFreeKinematic} sawLaneArc={sawLaneArc}");
-        Assert.True(sawFreeKinematic, "vehicle never read FreeKinematic despite swerving for the crowd agent");
-        Assert.True(sawLaneArc, "vehicle never read LaneArc (expected it before/after the manoeuvre)");
+        _out.WriteLine($"laneless: sawManoeuvring={sawManoeuvring} sawSteady={sawSteady}");
+        Assert.True(sawManoeuvring, "vehicle never reported Manoeuvring while swerving for the crowd agent");
+        Assert.True(sawSteady, "vehicle never reported steady LaneArc (expected before/after the manoeuvre)");
     }
 
-    // A plain lane vehicle (no LanelessRvo, no crowd) is NEVER FreeKinematic -- always LaneArc while
-    // moving, Stationary when stopped. This is the parity-path guarantee: DR classification is inert.
+    // A NORMAL-mode vehicle dodging a CrowdSource pedestrian (Q6) is also flagged Manoeuvring, while
+    // still classified LaneArc -- confirming the flag now covers the ComputeLateralEvasion path too.
     [Fact]
-    public void PlainLaneVehicle_IsNeverFreeKinematic()
+    public void NormalModeVehicleSwervingForCrowd_StaysLaneArc_IsManoeuvring()
     {
-        var engine = new Engine();   // no LanelessRvo, no CrowdSource
+        var engine = new Engine();   // NORMAL mode (no LanelessRvo)
+        engine.LoadScenario(
+            Path.Combine(NormalDir, "net.net.xml"),
+            Path.Combine(NormalDir, "rou.rou.xml"),
+            Path.Combine(NormalDir, "config.sumocfg"));
+        var crowd = new OrcaCrowd();
+        crowd.Add(new Vec2(30, -3.6), 0.35, 1.0, goal: new Vec2(30, -3.6));
+        engine.CrowdSource = crowd;
+
+        var sawManoeuvring = false;
+        for (var step = 0; step < 25; step++)
+        {
+            engine.Step();
+            var handles = engine.VehicleHandles;
+            for (var i = 0; i < handles.Length; i++)
+            {
+                Assert.NotEqual(DrModel.FreeKinematic, engine.GetDrModel(handles[i]));
+                if (engine.IsManoeuvring(handles[i])) sawManoeuvring = true;
+            }
+        }
+
+        Assert.True(sawManoeuvring, "normal-mode vehicle swerving for a crowd agent was not flagged Manoeuvring");
+    }
+
+    // A plain lane vehicle (no crowd, no obstacle) is LaneArc while moving and never Manoeuvring.
+    [Fact]
+    public void PlainLaneVehicle_LaneArc_NeverManoeuvring()
+    {
+        var engine = new Engine();
         engine.LoadScenario(
             Path.Combine(PlainDir, "net.net.xml"),
             Path.Combine(PlainDir, "rou.rou.xml"),
@@ -89,23 +115,19 @@ public class DrModelReadTests
         {
             engine.Step();
             var handles = engine.VehicleHandles;
-            var col = engine.DrModels;
             for (var i = 0; i < handles.Length; i++)
             {
-                var m = engine.GetDrModel(handles[i]);
-                Assert.Equal((byte)m, col[i]);
-                Assert.NotEqual(DrModel.FreeKinematic, m);   // never reactive for a plain vehicle
-                if (m == DrModel.LaneArc)
-                {
-                    sawLaneArc = true;
-                }
+                var dr = engine.GetDrModel(handles[i]);
+                Assert.NotEqual(DrModel.FreeKinematic, dr);
+                Assert.False(engine.IsManoeuvring(handles[i]), "a plain vehicle should never be Manoeuvring");
+                if (dr == DrModel.LaneArc) sawLaneArc = true;
             }
         }
 
         Assert.True(sawLaneArc, "a moving plain vehicle should read LaneArc");
     }
 
-    // A stale handle (never issued) resolves to Stationary -- nothing to extrapolate.
+    // A stale handle resolves to Stationary / not-manoeuvring.
     [Fact]
     public void StaleHandle_ResolvesToStationary()
     {
@@ -117,6 +139,7 @@ public class DrModelReadTests
         engine.Step();
 
         Assert.Equal(DrModel.Stationary, engine.GetDrModel(new VehicleHandle(9999, 1)));
+        Assert.False(engine.IsManoeuvring(new VehicleHandle(9999, 1)));
     }
 
     private static string RepoRoot()

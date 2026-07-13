@@ -31,9 +31,11 @@ internal sealed class VehicleReadBuffer
     public float[] PosZ = new float[InitialCapacity];
     public float[] Angle = new float[InitialCapacity];
     public float[] SpeedF = new float[InitialCapacity];
-    // DR2 (issue #3): per-vehicle dead-reckoning regime (DrModel as byte), for the DR publisher to read
-    // in bulk. Additive column, populated in the Step projection only (off the Run()/golden path).
+    // DR2 (issue #3): per-vehicle dead-reckoning regime (DrModel as byte) + the separate mid-manoeuvre
+    // bit (the DR publisher's adaptive-rate signal). Additive columns, populated in the Step projection
+    // only (off the Run()/golden path).
     public byte[] DrModel = new byte[InitialCapacity];
+    public bool[] Manoeuvring = new bool[InitialCapacity];
 
     // EntityIndex -> dense slot, frame-stamped so BeginFrame never has to clear it: a slot is current
     // only if its stamp equals the live frame counter.
@@ -52,7 +54,7 @@ internal sealed class VehicleReadBuffer
     public void Add(
         VehicleHandle handle, int entityIndex, string vehicleId, string vehicleType,
         int laneHandle, string laneId, double pos, double speed, double posLat,
-        float x, float y, float z, float angle, byte drModel)
+        float x, float y, float z, float angle, byte drModel, bool manoeuvring)
     {
         EnsureColumnCapacity(Count + 1);
 
@@ -72,6 +74,7 @@ internal sealed class VehicleReadBuffer
         Angle[i] = angle;
         SpeedF[i] = (float)speed;
         DrModel[i] = drModel;
+        Manoeuvring[i] = manoeuvring;
 
         _slotByEntity[entityIndex] = i;
         _frameOfEntity[entityIndex] = _frame;
@@ -119,6 +122,7 @@ internal sealed class VehicleReadBuffer
         Array.Resize(ref Angle, newCap);
         Array.Resize(ref SpeedF, newCap);
         Array.Resize(ref DrModel, newCap);
+        Array.Resize(ref Manoeuvring, newCap);
     }
 
     private void EnsureEntityCapacity(int needed)
