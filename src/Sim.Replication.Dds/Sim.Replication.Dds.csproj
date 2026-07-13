@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    DDS transport for the dead-reckoning replication layer (SUMOSHARP-DEADRECKONING.md §4.3). Wraps the
+    canonical packed blob (SumoSharp.Replication.FrameCodec) in CycloneDDS.NET topics: a high-rate opaque
+    blob state topic (canonical), a structured InlineArray chunk topic (option), a keyed low-rate lifecycle
+    topic, and a durable geometry topic.
+
+    DELIBERATELY OUT OF Traffic.sln: it depends on the external CycloneDDS.NET package (and a native DDS
+    library), so the hermetic offline parity gate (dotnet test Traffic.sln, no network / no native DDS on a
+    fresh VM) never needs it. Build it explicitly (dotnet build src/Sim.Replication.Dds) when you want DDS.
+    net8.0 only (CycloneDDS.NET targets net8.0).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>SumoSharp.Replication.Dds</PackageId>
+    <Description>SumoSharp — CycloneDDS transport for SumoSharp dead-reckoning replication: DDS topic types (opaque blob state, structured chunk, keyed lifecycle, durable geometry) wrapping the SumoSharp.Replication packed frames. Optional; not needed unless you replicate over DDS. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+    <PackageReference Include="CycloneDDS.NET" Version="0.3.2" />
+  </ItemGroup>
+
+</Project>

@@ -349,8 +349,16 @@ public interface IPublishPolicy { bool ShouldPublish(in PublishSignals s); }  //
 allocation-free, ns2.1-clean, round-trips both frame kinds), and `PublishPolicy` (`IPublishPolicy` +
 `DefaultPublishPolicy` + `PublishSignals`). Depends only on `Core`; in `Traffic.sln` (no external deps →
 hermetic gate safe). `RungB22` round-trips both frames, checks the policy, and proves an end-to-end
-encode→decode→`PoseResolver` reconstructs the engine's own pose. **Still to build:** the DDS wrappers
-(`SumoSharp.Replication.Dds`, out of `Traffic.sln`), the publisher wiring, and the `Sim.LiveHost` showcase.
+encode→decode→`PoseResolver` reconstructs the engine's own pose.
+
+**STATUS: `SumoSharp.Replication.Dds` landed** (CycloneDDS.NET 0.3.2 transport). `DdsTopics.cs`:
+`DdsWireFrame` — the high-rate **opaque blob** topic (`[DdsTopic] unsafe partial struct` with a keyed
+`(Kind, ChunkIndex)` + `fixed byte Payload[64 KiB]`, `SetPayload`/`ReadPayload` bridging `FrameCodec`) —
+and `DdsVehicleLifecycle` — the low-rate **keyed** spawn/despawn+dims registry. **Deliberately NOT in
+`Traffic.sln`** (external `CycloneDDS.NET` + native DDS dep), so the hermetic gate never needs it; built
+explicitly (`dotnet build src/Sim.Replication.Dds`), **compile-verified here** (the CycloneDDS native
+runtime is win-x64, so it can't *run* on this Linux VM — publish/read usage is in the package README).
+net8.0 only. **Still to build:** the `Sim.LiveHost` showcase wiring the packet + client-side resolver.
 
 ## 11. Phased implementation plan (each additive, gated, hash-stable)
 
