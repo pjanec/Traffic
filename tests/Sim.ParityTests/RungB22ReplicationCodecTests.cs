@@ -105,6 +105,12 @@ public class RungB22ReplicationCodecTests
         Assert.True(p.ShouldPublish(new PublishSignals(new VehicleHandle(1, 1), DrModel.LaneArc,
             speed: 10, accel: 0.05, secondsSinceLastSent: 1.0, laneChangingOrManoeuvring: false)));
 
+        // Stationary (stopped at a light) is predictable too -> deferred to the slow interval (issue #4).
+        Assert.False(p.ShouldPublish(new PublishSignals(new VehicleHandle(3, 1), DrModel.Stationary,
+            speed: 0, accel: 0.0, secondsSinceLastSent: 0.5, laneChangingOrManoeuvring: false)));
+        Assert.True(p.ShouldPublish(new PublishSignals(new VehicleHandle(3, 1), DrModel.Stationary,
+            speed: 0, accel: 0.0, secondsSinceLastSent: 1.0, laneChangingOrManoeuvring: false)));
+
         // Hard braking (high |accel|) -> full rate.
         Assert.True(p.ShouldPublish(new PublishSignals(new VehicleHandle(1, 1), DrModel.LaneArc,
             speed: 10, accel: -3.0, secondsSinceLastSent: 0.1, laneChangingOrManoeuvring: false)));
