@@ -1265,6 +1265,9 @@ public sealed partial class Engine : IEngine
     public ReadOnlySpan<float> PosZ => _readBuffer.PosZ.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<float> Angle => _readBuffer.Angle.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<float> Speed => _readBuffer.SpeedF.AsSpan(0, _readBuffer.Count);
+    // Body dimensions (metres) for sized rendering; from the vehicle's vType. Render-facing float.
+    public ReadOnlySpan<float> VehicleLengths => _readBuffer.Length.AsSpan(0, _readBuffer.Count);
+    public ReadOnlySpan<float> VehicleWidths => _readBuffer.Width.AsSpan(0, _readBuffer.Count);
     public ReadOnlySpan<int> LaneHandles => _readBuffer.LaneHandle.AsSpan(0, _readBuffer.Count);
     // DR lookahead: the next lane handle on each vehicle's route (-1 if none). Lets a dead-reckoning
     // client walk past the current lane's end during extrapolation (SUMOSHARP-DEADRECKONING.md §5.1/§6).
@@ -1346,7 +1349,7 @@ public sealed partial class Engine : IEngine
 
             _readBuffer.Add(handle, v.EntityIndex, v.Def.Id, v.Def.TypeId,
                 v.LaneHandle, nextLane, v.LaneId, v.Kinematics.Pos, v.Kinematics.Speed, v.Acceleration, v.Kinematics.LatOffset,
-                (float)x, (float)y, (float)z, (float)angle);
+                (float)x, (float)y, (float)z, (float)angle, (float)v.VType.Length, (float)v.VType.Width);
         }
 
         DetectLifecycleEvents();

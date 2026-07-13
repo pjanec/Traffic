@@ -20,6 +20,8 @@ public sealed class SimulationSnapshot
     public float[] PosZ { get; init; } = Array.Empty<float>();
     public float[] Angle { get; init; } = Array.Empty<float>();
     public float[] Speed { get; init; } = Array.Empty<float>();          // render-facing float
+    public float[] Length { get; init; } = Array.Empty<float>();         // body dims (metres) for sized rendering
+    public float[] Width { get; init; } = Array.Empty<float>();
     public double[] SpeedExact { get; init; } = Array.Empty<double>();   // parity-exact double
     public double[] Accel { get; init; } = Array.Empty<double>();        // longitudinal accel (DR extrapolation)
     public int[] LaneHandle { get; init; } = Array.Empty<int>();
@@ -57,6 +59,8 @@ public sealed class SimulationSnapshot
             PosZ = engine.PosZ.ToArray(),
             Angle = engine.Angle.ToArray(),
             Speed = engine.Speed.ToArray(),
+            Length = engine.VehicleLengths.ToArray(),
+            Width = engine.VehicleWidths.ToArray(),
             SpeedExact = engine.SpeedExactColumn.ToArray(),
             Accel = engine.Acceleration.ToArray(),
             LaneHandle = engine.LaneHandles.ToArray(),

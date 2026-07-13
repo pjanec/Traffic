@@ -125,6 +125,21 @@ internal static class HtmlPage
     cam.scale = s; cam.ox = cv.width/2 - cx*s; cam.oy = cv.height/2 + cy*s;
   }
 
+  // A small direction chevron at a lane's midpoint, pointing along travel.
+  function drawLaneArrow(lane){
+    const p = lane.pts, n = p.length/2; if(n < 2) return;
+    const mi = Math.max(0, Math.floor(n/2) - 1);
+    const x1=p[2*mi], y1=p[2*mi+1], x2=p[2*mi+2], y2=p[2*mi+3];
+    const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy)||1;
+    const s = w2s((x1+x2)/2, (y1+y2)/2);
+    const a = Math.atan2(-(dy/len), dx/len);  // world dir -> screen angle (y flipped)
+    const sz = Math.max(3, 1.3*cam.scale);
+    ctx.save(); ctx.translate(s[0], s[1]); ctx.rotate(a);
+    ctx.fillStyle = 'rgba(150,170,190,0.30)';
+    ctx.beginPath(); ctx.moveTo(sz,0); ctx.lineTo(-sz*0.6,-sz*0.7); ctx.lineTo(-sz*0.6,sz*0.7); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
   function speedColor(s){
     const t = Math.max(0, Math.min(1, s/13.9)); // 0 = stopped (red) .. 1 = free-flow (green)
     const r = Math.round(230*(1-t) + 40*t), g = Math.round(70*(1-t) + 200*t);
@@ -150,6 +165,21 @@ internal static class HtmlPage
       }
     }
 
+    // lane markings: a subtle dashed centre line + a travel-direction chevron per drivable lane.
+    ctx.setLineDash([6, 7]);
+    ctx.strokeStyle = 'rgba(200,210,225,0.14)';
+    ctx.lineWidth = 1;
+    for(const lane of net.lanes){
+      if(lane.internalLane){ continue; }
+      const p = lane.pts; if(p.length < 4) continue;
+      ctx.beginPath();
+      let a = w2s(p[0],p[1]); ctx.moveTo(a[0],a[1]);
+      for(let i=2;i<p.length;i+=2){ const q = w2s(p[i],p[i+1]); ctx.lineTo(q[0],q[1]); }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if(cam.scale > 1.2){ for(const lane of net.lanes){ if(!lane.internalLane) drawLaneArrow(lane); } }
+
     // traffic-light signals: a coloured dot at the end (stop line) of each controlled approach lane.
     for(const t of frameTl){
       const lane = net.lanes[t.ln]; if(!lane || lane.pts.length < 2) continue;
@@ -165,7 +195,6 @@ internal static class HtmlPage
     let dt = simRate * (performance.now()/1000 - frameRecvWall);
     if(!(dt >= 0)) dt = 0;
     if(dt > 2.0) dt = 2.0;
-    const L = Math.max(3, CAR_LEN*cam.scale), W = Math.max(2, CAR_W*cam.scale);
     let drawn = 0;
     for(const v of frameVehicles){
       const pose = resolvePose(v, dt);
@@ -174,6 +203,7 @@ internal static class HtmlPage
       // navi deg (0=N, cw) -> world dir (sin,cos) -> screen dir (x, -y flip) -> screen angle.
       const nr = pose.deg * Math.PI/180;
       const sa = Math.atan2(-Math.cos(nr), Math.sin(nr));
+      const L = Math.max(3, (v.l || CAR_LEN)*cam.scale), W = Math.max(2, (v.w || CAR_W)*cam.scale);
       ctx.save();
       ctx.translate(s[0], s[1]); ctx.rotate(sa);
       ctx.fillStyle = speedColor(v.s);

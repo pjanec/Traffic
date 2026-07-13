@@ -73,6 +73,8 @@ public sealed class SimHost : IDisposable
                 pl = Math.Round(snap.PosLat[i], 3),
                 s = Math.Round(snap.SpeedExact[i], 3),
                 a = Math.Round(snap.Accel[i], 3),
+                l = Math.Round(snap.Length[i], 2),   // body dims for a correctly-sized rectangle
+                w = Math.Round(snap.Width[i], 2),
             });
         }
 

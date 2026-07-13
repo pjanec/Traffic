@@ -328,6 +328,8 @@ public sealed class SimulationRunner : IDisposable
         private float[] _posZ = Array.Empty<float>();
         private float[] _angle = Array.Empty<float>();
         private float[] _speed = Array.Empty<float>();
+        private float[] _length = Array.Empty<float>();
+        private float[] _width = Array.Empty<float>();
         private double[] _speedExact = Array.Empty<double>();
         private double[] _accel = Array.Empty<double>();
         private int[] _laneHandle = Array.Empty<int>();
@@ -350,6 +352,8 @@ public sealed class SimulationRunner : IDisposable
             Copy(engine.PosZ, ref _posZ, n);
             Copy(engine.Angle, ref _angle, n);
             Copy(engine.Speed, ref _speed, n);
+            Copy(engine.VehicleLengths, ref _length, n);
+            Copy(engine.VehicleWidths, ref _width, n);
             Copy(engine.SpeedExactColumn, ref _speedExact, n);
             Copy(engine.Acceleration, ref _accel, n);
             Copy(engine.LaneHandles, ref _laneHandle, n);
@@ -378,6 +382,8 @@ public sealed class SimulationRunner : IDisposable
                 PosZ = _posZ,
                 Angle = _angle,
                 Speed = _speed,
+                Length = _length,
+                Width = _width,
                 SpeedExact = _speedExact,
                 Accel = _accel,
                 LaneHandle = _laneHandle,

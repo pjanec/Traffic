@@ -33,6 +33,8 @@ internal sealed class VehicleReadBuffer
     public float[] PosZ = new float[InitialCapacity];
     public float[] Angle = new float[InitialCapacity];
     public float[] SpeedF = new float[InitialCapacity];
+    public float[] Length = new float[InitialCapacity];     // vehicle body dims (render: sized rectangles)
+    public float[] Width = new float[InitialCapacity];
 
     // EntityIndex -> dense slot, frame-stamped so BeginFrame never has to clear it: a slot is current
     // only if its stamp equals the live frame counter.
@@ -51,7 +53,7 @@ internal sealed class VehicleReadBuffer
     public void Add(
         VehicleHandle handle, int entityIndex, string vehicleId, string vehicleType,
         int laneHandle, int nextLane, string laneId, double pos, double speed, double accel, double posLat,
-        float x, float y, float z, float angle)
+        float x, float y, float z, float angle, float length, float width)
     {
         EnsureColumnCapacity(Count + 1);
 
@@ -72,6 +74,8 @@ internal sealed class VehicleReadBuffer
         PosZ[i] = z;
         Angle[i] = angle;
         SpeedF[i] = (float)speed;
+        Length[i] = length;
+        Width[i] = width;
 
         _slotByEntity[entityIndex] = i;
         _frameOfEntity[entityIndex] = _frame;
@@ -120,6 +124,8 @@ internal sealed class VehicleReadBuffer
         Array.Resize(ref PosZ, newCap);
         Array.Resize(ref Angle, newCap);
         Array.Resize(ref SpeedF, newCap);
+        Array.Resize(ref Length, newCap);
+        Array.Resize(ref Width, newCap);
     }
 
     private void EnsureEntityCapacity(int needed)
