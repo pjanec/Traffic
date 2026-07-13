@@ -23,12 +23,16 @@ public sealed class SimHost : IDisposable
 
     public string NetworkJson { get; }
 
-    public SimHost(string netPath)
+    public SimHost(string netPath, RenderRealism renderMode = RenderRealism.ParityTangent)
     {
         _network = NetworkParser.Parse(netPath);
 
         _engine = new Engine();
         _engine.LoadNetwork(netPath);
+        // §6.3 production render mode: when set (e.g. CornerCutCorrected), the streamed world poses carry
+        // the SUMO chord heading + swept-path off-tracking so long vehicles on curves look right. Off by
+        // default (SUMO-exact tangent). Set before Start so the engine thread never races it.
+        _engine.RenderMode = renderMode;
         _vType = _engine.DefaultVType;
 
         _normalEdges = _network.EdgesById.Keys.Where(e => !e.StartsWith(':')).ToArray();

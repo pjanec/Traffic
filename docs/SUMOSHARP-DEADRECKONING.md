@@ -358,7 +358,15 @@ and `DdsVehicleLifecycle` — the low-rate **keyed** spawn/despawn+dims registry
 `Traffic.sln`** (external `CycloneDDS.NET` + native DDS dep), so the hermetic gate never needs it; built
 explicitly (`dotnet build src/Sim.Replication.Dds`), **compile-verified here** (the CycloneDDS native
 runtime is win-x64, so it can't *run* on this Linux VM — publish/read usage is in the package README).
-net8.0 only. **Still to build:** the `Sim.LiveHost` showcase wiring the packet + client-side resolver.
+net8.0 only.
+
+**STATUS: `Sim.LiveHost` wired to the production `RenderMode`.** An optional `chord` / `corner` CLI arg
+turns on `Engine.RenderMode` so the streamed world poses carry the chord heading / swept-path off-tracking
+(verified end-to-end with a headless-Chromium smoke: page serves, live frames stream, no JS errors, with
+`CornerCutCorrected` active). **Deferred (documented future demo, not built):** streaming the raw
+`FrameCodec` packet + a **JS port of `PoseResolver`** so the browser dead-reckons client-side over the
+network — a sizeable, hard-to-unit-test JS effort; the .NET replication path (codec + DDS) is complete and
+tested, and the browser already does client-side *interpolation* (§8), so this is polish, not core.
 
 ## 11. Phased implementation plan (each additive, gated, hash-stable)
 

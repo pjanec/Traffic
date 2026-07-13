@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using Sim.Core;
 using Sim.LiveHost;
 
 // SUMOSHARP-API.md §11: browser-live demo host. Usage:
@@ -15,7 +16,7 @@ if (netPath is null)
     return 2;
 }
 
-using var host = new SimHost(netPath);
+using var host = new SimHost(netPath, ParseRealism(args));
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -107,6 +108,21 @@ static void HandleClientMessage(SimHost host, string message)
 
 static async Task SendTextAsync(WebSocket ws, string text, CancellationToken ct) =>
     await ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, endOfMessage: true, ct);
+
+// Optional production render mode (SUMOSHARP-DEADRECKONING.md §6.3): pass "chord" or "corner"/"offtrack"
+// on the command line to render the SUMO chord heading / swept-path off-tracking (visible on curvy nets /
+// long vehicles). Default is SUMO-exact tangent.
+static RenderRealism ParseRealism(string[] args)
+{
+    foreach (var a in args)
+    {
+        var s = a.ToLowerInvariant();
+        if (s.Contains("corner") || s.Contains("offtrack")) return RenderRealism.CornerCutCorrected;
+        if (s.Contains("chord")) return RenderRealism.ChordHeading;
+    }
+
+    return RenderRealism.ParityTangent;
+}
 
 static string? ResolveNetPath(string[] args)
 {

@@ -10,7 +10,13 @@ an obstacle** and watch the cars queue behind it. Not a NuGet package, and not p
 dotnet run --project src/Sim.LiveHost                       # defaults to scenarios/15-reroute
 dotnet run --project src/Sim.LiveHost -- scenarios/39-...   # a scenario dir (uses its net.net.xml)
 dotnet run --project src/Sim.LiveHost -- path/to/net.net.xml
+dotnet run --project src/Sim.LiveHost -- scenarios/32-roundabout corner   # + production render mode
 ```
+
+Add `chord` or `corner` (a.k.a. `offtrack`) as an extra argument to enable the production `RenderMode`
+(`SUMOSHARP-DEADRECKONING.md` §6.3): `chord` renders SUMO's back→front chord heading, `corner` adds the
+swept-path off-tracking bow ("trucks swing wide"). Both are renderer-only (the parity-exact lane-relative
+state is unchanged) and are most visible on curvy nets / long vehicles.
 
 Then open <http://localhost:5055>. Wheel = zoom, drag = pan, click = drop an obstacle, and the
 **clear obstacles** button removes them.
