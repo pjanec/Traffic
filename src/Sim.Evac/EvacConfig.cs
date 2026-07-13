@@ -10,6 +10,32 @@ public sealed record EvacConfig
     // in Phase 1 essentially anyone inside the incident radius panics.
     public double ThetaPanic { get; init; } = 0.05;
 
+    // PANIC-EVAC-PHASE2-DESIGN.md §3/§4/§9: Phase-2 fear-field tunables. All ON/first-cut by default
+    // so the grid demo still cascades; setting EnableLineOfSight=EnableContagion=EnableJamUnease=false
+    // and FearDecay=1 reduces the model exactly to Phase 1 (radius-only instant latch).
+
+    // Gate the direct term on unoccluded line-of-sight to the incident (else always visible in-radius).
+    public bool EnableLineOfSight { get; init; } = true;
+
+    // Let panicking neighbours' fear spread to nearby vehicles (contagion term).
+    public bool EnableContagion { get; init; } = true;
+
+    // Contagion neighbourhood radius (m): the kernel is 1 at d=0, linear to 0 at this radius.
+    public double ContagionRadius { get; init; } = 25.0;
+
+    // Contagion gain (/s): how fast neighbours' fear bleeds into a vehicle's own fear.
+    public double ContagionRate { get; init; } = 0.6;
+
+    // Let being stuck (Stationary DR regime) amplify a vehicle's OWN existing fear (never originate it).
+    public bool EnableJamUnease { get; init; } = true;
+
+    // Jam amplification gain (/s).
+    public double JamUneaseRate { get; init; } = 0.3;
+
+    // Sub-threshold fear decay per step (<1): only matters below ThetaPanic -- a brief contagion blip
+    // fades if not sustained. Panicked (latched) vehicles are pinned to 1.0 regardless.
+    public double FearDecay { get; init; } = 0.98;
+
     // Fixed vicinity width (m) added beyond the road geometry to form the known-world's hard outer
     // edge where sidewalks are absent (R7). The pedestrian bounding wall sits this far out.
     public double VicinityWidth { get; init; } = 8.0;
