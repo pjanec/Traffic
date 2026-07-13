@@ -362,11 +362,14 @@ public interface IPublishPolicy { bool ShouldPublish(in PublishSignals s); }  //
   high-rate path is a **batched blob** (not per-vehicle keyed samples) to amortize DDS overhead for 10k+;
   crowd/laneless is first-class via its own tiny-record topic. (§4.3, §4.4)
 
-**Still open:**
-- **`CornerCutCorrected` scope:** Tier A (chord-heading only, cheap) to ship first — confirmed? And do you
-  want **Tier B** (full swept-path off-tracking, "trucks swing wide") built now or later? (§6.2)
-- **Sim-side chord heading:** keep the parity FCD `Angle` column as tangent (recommended — no parity risk),
-  or *also* pursue a parity-gated engine-side chord angle? (Separate, gated, may need golden regen.)
-- **DDS high-rate shape:** ship the **opaque blob** topic as canonical (recommended) and the structured
-  `InlineArray` chunk as an option, or only one of them?
+**Decided (round 2):**
+- **`CornerCutCorrected`:** ship **Tier A (chord heading)** *and* **Tier B (full swept-path off-tracking,
+  "trucks swing wide") now**. Both renderer-only, zero extra wire data. (§6.2)
+- **Sim-side chord heading:** **no** — the parity FCD `Angle` column stays tangent (zero parity risk); the
+  chord/off-tracking correction is render-only.
+- **DDS high-rate shape:** ship the **opaque blob** as canonical **and** the structured `InlineArray` chunk
+  as an option. (§4.3)
+
+All owner decisions are now made; implementation can proceed. Remaining coordination is DR1/DR2 with the
+laneless branch (issue #3), which is merge-order-independent and does not block the NuGet-side build.
 ```
