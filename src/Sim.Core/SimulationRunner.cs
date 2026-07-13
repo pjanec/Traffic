@@ -338,6 +338,8 @@ public sealed class SimulationRunner : IDisposable
         private int[] _laneWindow = Array.Empty<int>();
         private double[] _pos = Array.Empty<double>();
         private double[] _posLat = Array.Empty<double>();
+        private byte[] _drModels = Array.Empty<byte>();
+        private bool[] _manoeuvring = Array.Empty<bool>();
         private string[] _vehicleId = Array.Empty<string>();
         private string[] _vehicleType = Array.Empty<string>();
         private string[] _laneId = Array.Empty<string>();
@@ -364,6 +366,8 @@ public sealed class SimulationRunner : IDisposable
             Copy(engine.LaneWindows, ref _laneWindow, n * Engine.LaneWindowStride);
             Copy(engine.Pos, ref _pos, n);
             Copy(engine.PosLat, ref _posLat, n);
+            Copy(engine.DrModels, ref _drModels, n);
+            Copy(engine.Manoeuvring, ref _manoeuvring, n);
             Copy(engine.VehicleIds, ref _vehicleId, n);
             Copy(engine.VehicleTypes, ref _vehicleType, n);
             Copy(engine.LaneIds, ref _laneId, n);
@@ -397,6 +401,8 @@ public sealed class SimulationRunner : IDisposable
                 LaneWindowStride = Engine.LaneWindowStride,
                 Pos = _pos,
                 PosLat = _posLat,
+                DrModels = _drModels,
+                Manoeuvring = _manoeuvring,
                 VehicleId = _vehicleId,
                 VehicleType = _vehicleType,
                 LaneId = _laneId,

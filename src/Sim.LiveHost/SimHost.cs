@@ -101,13 +101,12 @@ public sealed class SimHost : IDisposable
             var id = snap.VehicleId[i];
             alive.Add(id);
 
-            // Demo signals: all viewer vehicles are lane-bound (LaneArc); a non-zero lateral offset stands in
-            // for "mid-manoeuvre" (lane change / lateral dodge), which forces the full rate. Per the frozen
-            // issue #3 contract, at the laneless merge this stand-in is replaced by `Engine.Manoeuvring[i]`
-            // (the sim's own reactive-manoeuvre bit) -- the DR regime stays LaneArc/Stationary for vehicles.
-            var manoeuvring = Math.Abs(snap.PosLat[i]) > 0.05;
+            // The DR regime and the mid-manoeuvre bit now come from the engine's OWN columns (the issue
+            // #3/#4 seam), not a stand-in: DrModel picks the extrapolator (LaneArc/Stationary for vehicles),
+            // Manoeuvring is the adaptive-rate signal that forces full rate during a reactive lateral dodge.
             if (!_scheduler.ShouldPublish(
-                    snap.Handles[i], DrModel.LaneArc, snap.SpeedExact[i], snap.Accel[i], snap.Time, manoeuvring))
+                    snap.Handles[i], (DrModel)snap.DrModels[i], snap.SpeedExact[i], snap.Accel[i], snap.Time,
+                    snap.Manoeuvring[i]))
             {
                 continue; // predictable + recently sent -> let the client keep dead-reckoning it
             }

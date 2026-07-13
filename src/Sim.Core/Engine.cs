@@ -1632,7 +1632,8 @@ public sealed partial class Engine : IEngine
             typeId, VClass: p.VClass, Sigma: p.Sigma, MaxSpeed: p.MaxSpeed, Accel: p.Accel, Decel: p.Decel,
             Tau: p.Tau, MinGap: p.MinGap, Length: p.Length, EmergencyDecel: p.EmergencyDecel,
             SpeedFactor: p.SpeedFactor, HasBluelight: p.HasBluelight, LcOpposite: p.LcOpposite,
-            CarFollowModel: p.CarFollowModel);
+            CarFollowModel: p.CarFollowModel,
+            MaxSpeedLat: p.MaxSpeedLat, LatAlignment: p.LatAlignment, MinGapLat: p.MinGapLat);
 
         var existing = _vTypeIds.IndexOf(typeId);
         _vTypesById[typeId] = raw;

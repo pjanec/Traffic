@@ -31,6 +31,11 @@ public sealed class SimulationSnapshot
     public int LaneWindowStride { get; init; }
     public double[] Pos { get; init; } = Array.Empty<double>();
     public double[] PosLat { get; init; } = Array.Empty<double>();
+    // Per-vehicle dead-reckoning regime (DrModel as byte) + the mid-manoeuvre bit (issue #3/#4 seam). The
+    // DR publisher reads DrModel to pick the extrapolator and Manoeuvring as the adaptive-rate signal, so
+    // it no longer has to assume LaneArc. Populated in the Step projection only (off the parity path).
+    public byte[] DrModels { get; init; } = Array.Empty<byte>();
+    public bool[] Manoeuvring { get; init; } = Array.Empty<bool>();
     public string[] VehicleId { get; init; } = Array.Empty<string>();
     public string[] VehicleType { get; init; } = Array.Empty<string>();
     public string[] LaneId { get; init; } = Array.Empty<string>();
@@ -73,6 +78,8 @@ public sealed class SimulationSnapshot
             LaneWindowStride = Engine.LaneWindowStride,
             Pos = engine.Pos.ToArray(),
             PosLat = engine.PosLat.ToArray(),
+            DrModels = engine.DrModels.ToArray(),
+            Manoeuvring = engine.Manoeuvring.ToArray(),
             VehicleId = engine.VehicleIds.ToArray(),
             VehicleType = engine.VehicleTypes.ToArray(),
             LaneId = engine.LaneIds.ToArray(),
