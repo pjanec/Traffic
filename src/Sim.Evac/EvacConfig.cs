@@ -71,6 +71,25 @@ public sealed record EvacConfig
     // the reachable exit whose far end is farthest from the incident.
     public string[] ExitEdges { get; init; } = Array.Empty<string>();
 
+    // PANIC-EVAC-PHASE3-DESIGN.md §4: Orca-push tunables (Option A, external shaped-mover handoff).
+    // All ON/first-cut by default so the grid demo actually pushes; EnableOrcaPush=false recovers
+    // exact Phase-1/2 behaviour (blocked+panicked converts straight to pedestrian, unchanged).
+
+    // Insert the shaped-mover Orca-push stage between "blocked+panicked" and the pedestrian handoff.
+    public bool EnableOrcaPush { get; init; } = true;
+
+    // Speed (m/s) below which a pushing mover counts as "not progressing" toward its away-goal.
+    public double OrcaWedgeSpeed { get; init; } = 0.1;
+
+    // Dwell (s) a mover must stay below OrcaWedgeSpeed before it is reported wedged.
+    public double OrcaWedgeDwellSeconds { get; init; } = 3.0;
+
+    // Shaped-VO tracking-inflation safety margin (m) for Orca-push movers (MixedTrafficCrowd.SafetyMargin).
+    public double OrcaPushSafetyMargin { get; init; } = 0.3;
+
+    // Orca-push mover sub-steps per engine step (mirrors CrowdSubSteps for the pedestrian crowd).
+    public int OrcaCrowdSubSteps { get; init; } = 10;
+
     // The aggressive "flee" preset (R2): the bulk override applied to a panicked vehicle. Kept
     // DETERMINISTIC (no jmIgnoreFoe* lever — those consult a per-vehicle RNG); the gridlock is meant
     // to emerge from density + aggression converging on a few exits, not from stochastic gap-running.

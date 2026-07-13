@@ -25,6 +25,11 @@ public sealed class FakeNavMesh
     // side (verified by the no-pedestrian-crosses-the-edge test; flip the winding if it ever fails).
     public IReadOnlyList<Vec2> BoundaryLoop { get; }
 
+    // PANIC-EVAC-PHASE3-DESIGN.md §4: the same boundary rectangle expressed as four wall segments for
+    // a MixedTrafficCrowd (AddWall per segment) -- the shaped-mover analogue of BoundaryLoop, first-cut
+    // band for Orca-push cars (outer hard edge; the richer per-lane buffered band is a later sub-task).
+    public IReadOnlyList<(Vec2 A, Vec2 B)> BandWalls { get; }
+
     public FakeNavMesh(NetworkModel net, double vicinityWidth)
     {
         double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
@@ -72,6 +77,18 @@ public sealed class FakeNavMesh
             new(MinX, MaxY),
             new(MaxX, MaxY),
             new(MaxX, MinY),
+        };
+
+        var bl = new Vec2(MinX, MinY);
+        var tl = new Vec2(MinX, MaxY);
+        var tr = new Vec2(MaxX, MaxY);
+        var br = new Vec2(MaxX, MinY);
+        BandWalls = new List<(Vec2 A, Vec2 B)>
+        {
+            (bl, tl),
+            (tl, tr),
+            (tr, br),
+            (br, bl),
         };
     }
 

@@ -9,11 +9,15 @@ verified its success conditions first-hand.
 > tunables). Implementation follows the orchestration loop (Sonnet implements, Opus reviews hard).
 
 ## S1 — VehicleMover + config
-- [ ] **T1.1** `EvacConfig` Phase-3 tunables (EnableOrcaPush + wedge/margin/substeps)
-- [ ] **T1.2** `VehicleMover` wrapping `MixedTrafficCrowd` (AddCar / Step / wedge tracking)
+- [x] **T1.1** `EvacConfig` Phase-3 tunables — *accepted (B1): EnableOrcaPush/OrcaWedgeSpeed/
+      OrcaWedgeDwellSeconds/OrcaPushSafetyMargin/OrcaCrowdSubSteps*
+- [x] **T1.2** `VehicleMover` wrapping `MixedTrafficCrowd` — *accepted (B1): Nonholonomic=true, ArmWalls/
+      AddBlock/AddCar/SetGoal/Step(sub-stepped)/Deactivate + per-index wedge dwell; 4 unit tests
+      (moves-to-goal, confinement, wedge before/after dwell, no-sideways-teleport)*
 
 ## S2 — Band walls
-- [ ] **T2.1** `FakeNavMesh` mover-band walls (first cut: outer hard edge) + confinement
+- [x] **T2.1** `FakeNavMesh.BandWalls` (outer hard edge) + confinement — *accepted (B1): 4 boundary
+      segments; VehicleMover confinement test holds (maxX≈96.9 vs a 100 wall)*
 
 ## S3 — Integration
 - [ ] **T3.1** Orca-push stage in `EvacDirector` (blocked→push→wedge→pedestrian; composite CrowdSource;
@@ -33,7 +37,13 @@ verified its success conditions first-hand.
 
 ---
 
-### Proposed batches
-- **B1:** S1 (T1.1, T1.2) + S2 (T2.1) — `VehicleMover` + config + band walls, with unit tests.
-- **B2:** S3 (T3.1) + S4 (T4.1–T4.6) — integration + behavioural/determinism/parity tests.
-- **B3:** S5 (T5.1, T5.2) — shaped-box viz (Opus renders to confirm).
+### Batches
+- **B1 — DONE (Sonnet, Opus-reviewed & accepted).** S1 + S2: config + `VehicleMover` + band walls, 4
+  unit tests. 410 pass / 3 skip; hash unmoved.
+- **B2 (next):** S3 (T3.1) + S4 (T4.1–T4.6) — integration + tests. **Watch-item (from B1):**
+  `MixedTrafficCrowd.SteerNonholonomic` uses `targetSpeed = max(min(CreepSpeed, desired), desired·cos(headingErr))`;
+  with the default `CreepSpeed=0`, a pusher whose away-goal is ~90° off its lane heading gets
+  `targetSpeed≈0` and **deadlocks** (can't nudge-and-turn onto the shoulder). B2 must add a small
+  `EvacConfig.OrcaCreepSpeed` (e.g. 0.5 m/s) and set `_crowd.CreepSpeed` in `VehicleMover`, plus a test
+  that a pusher with a lateral goal actually reorients + makes progress.
+- **B3 (after B2):** S5 (T5.1, T5.2) — shaped-box viz (Opus renders to confirm the shoulder-push reads).
