@@ -52,6 +52,7 @@ double? secondsCap = null;
 int? fleet = null;
 var perf = false;
 double? simRate = null;
+double? stepLen = null;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -92,6 +93,11 @@ for (var i = 0; i < args.Length; i++)
         case "--sim-rate":
             simRate = double.Parse(args[++i], CultureInfo.InvariantCulture);
             break;
+        // Preset the sim step length (s) for `--mode local` (SUMO's step-length / the sim resolution), the
+        // same knob the controls-panel "sim resolution" buttons drive. Smaller = finer/smoother, heavier.
+        case "--step":
+            stepLen = double.Parse(args[++i], CultureInfo.InvariantCulture);
+            break;
         case "--drop-obstacle":
             var parts = args[++i].Split(',');
             dropObstacle = (
@@ -127,7 +133,7 @@ if (inputPath is null)
 
 if (mode == "local")
 {
-    return RunLocal(ResolveNetPath(inputPath), screenshotPath, frames, dropObstacle, fleet, perf, secondsCap, simRate);
+    return RunLocal(ResolveNetPath(inputPath), screenshotPath, frames, dropObstacle, fleet, perf, secondsCap, simRate, stepLen);
 }
 
 if (mode == "loopback")
@@ -157,15 +163,16 @@ static string ResolveNetPath(string path)
 }
 
 static int RunLocal(string netPath, string? screenshotPath, int frames, (double X, double Y)? dropObstacle,
-    int? fleet, bool perf, double? secondsCap, double? simRate)
+    int? fleet, bool perf, double? secondsCap, double? simRate, double? stepLen)
 {
+    var step = stepLen ?? 1.0;
     using var host = fleet is { } cap
-        ? new EngineHost(netPath, spawnCap: cap, forceSandbox: true)
-        : new EngineHost(netPath);
+        ? new EngineHost(netPath, spawnCap: cap, forceSandbox: true, stepLength: step)
+        : new EngineHost(netPath, stepLength: step);
 
     // Default interactive speed to 1x real-time (what a viewer expects); perf runs keep the 10x fast-forward
-    // so the fleet warms up quickly. Either way the panel's "speed (x real-time)" slider overrides live.
-    host.SetSimStepsPerSecond(simRate ?? (perf ? 10.0 : 1.0));
+    // so the fleet warms up quickly. Either way the panel's "speed" slider overrides live.
+    host.SetSpeed(simRate ?? (perf ? 10.0 : 1.0));
 
     if (dropObstacle is { } drop)
     {
@@ -221,8 +228,15 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
     // smoothing adds no steady-state allocation. `smooth` is the panel toggle (default on).
     var renderClock = 0.0;
     var smooth = true;
-    var vehicleDraws = new List<Renderer.DrVehicleDraw>();
-    var prevIndex = new Dictionary<VehicleHandle, int>();
+    // Pre-size to the fleet so neither grows (and reallocates) while the sim warms up from 0 to ~10k -- that
+    // per-warmup-frame growth was itself a source of early allocations/stutter.
+    var interpCap = Math.Max(fleet ?? 0, 256);
+    var vehicleDraws = new List<Renderer.DrVehicleDraw>(interpCap);
+    var prevIndex = new Dictionary<VehicleHandle, int>(interpCap);
+    // Measured actual sim rate (sim-seconds delivered per wall-second), EMA-smoothed, used to PACE the render
+    // clock so playback matches what the engine actually delivers (never outrunning it into stutter).
+    var simRateEma = 0.0;
+    var lastCurTime = 0.0;
 
     // P1 drag-vs-click bookkeeping for the world camera (Camera2D pan/zoom/pick -- see Renderer.Flip's
     // doc comment for the world<->screen convention this camera operates in).
@@ -301,11 +315,28 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
             }
         }
 
-        // Atomic (cur, prev) pair; advance the render clock at the sim's speed and clamp it into the pair's
-        // [prev.Time, cur.Time] window, then blend. Clamping means we never extrapolate past the newest frame
-        // (starvation just freezes at cur) and we snap cleanly onto a new timeline after a restart.
+        // Atomic (cur, prev) pair. Pace the render clock by the MEASURED delivered sim rate (not the
+        // requested speed): measure sim-seconds advanced per wall-second, EMA-smooth it, and advance
+        // renderClock at that. Clamp into [prev.Time, cur.Time] so we interpolate between two real frames and
+        // never extrapolate past the newest. If the engine can't sustain the requested speed, playback simply
+        // runs at what it delivers instead of outrunning cur and pinning to it (which read as stutter).
         var (snapshot, prevSnapshot) = host.SnapshotPair;
-        renderClock += Raylib.GetFrameTime() * host.SimStepsPerSecond;
+        var frameDt = Raylib.GetFrameTime();
+        var simAdvanced = snapshot.Time - lastCurTime;
+        lastCurTime = snapshot.Time;
+        if (simAdvanced < 0)
+        {
+            // restart / step-length rebuild reset the timeline -> resync onto it
+            renderClock = snapshot.Time;
+            simRateEma = 0;
+        }
+        else if (frameDt > 0)
+        {
+            var alpha = 1.0 - Math.Exp(-frameDt / 0.4); // ~0.4s time constant
+            simRateEma += (simAdvanced / frameDt - simRateEma) * alpha;
+        }
+
+        renderClock += frameDt * simRateEma;
         if (renderClock > snapshot.Time) renderClock = snapshot.Time;
         if (renderClock < prevSnapshot.Time) renderClock = prevSnapshot.Time;
         BuildLocalVehicleDraws(snapshot, prevSnapshot, renderClock, smooth, vehicleDraws, prevIndex);
@@ -316,7 +347,7 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
         Renderer.DrawControlsPanel(host, ref fpsCap, ref smooth);
         if (showDiagnostics)
         {
-            Renderer.DrawDiagnosticsPanel(snapshot, frameStats);
+            Renderer.DrawDiagnosticsPanel(snapshot, frameStats, host.Speed, simRateEma, host.StepLength);
         }
 
         rlImGui.End();

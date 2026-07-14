@@ -1,3 +1,4 @@
+using System.Globalization;
 using Sim.Core;
 using Sim.Ingest;
 
@@ -43,14 +44,19 @@ public sealed class EngineHost : IDisposable
 
     private Timer? _spawnTimer;
     private volatile bool _randomTraffic;
+    private string? _stepCfgPath; // temp .sumocfg for a non-default sandbox step length (see WriteStepLengthConfig)
 
-    // Live sim-rate knob (native-viewer controls panel). The SimulationRunner ticks at BaseTickHz wall-clock
-    // and each tick Steps one step-length (1s) of sim time, so "sim steps per second" == effective ticks/s ==
-    // BaseTickHz * SpeedMultiplier. We drive SpeedMultiplier (a public, per-tick-read runner knob) rather than
-    // restarting the runner, so the rate changes live without resetting the sim. Remembered here so Restart()
-    // (which rebuilds the runner) can re-apply it.
+    // Two decoupled viewer knobs (native-viewer controls panel):
+    //   * _speed  -- playback speed as a multiple of real time (sim-seconds advanced per wall-second).
+    //   * _stepLength -- the engine's integration granularity (sim-seconds per Step), SUMO's step-length.
+    // The runner ticks at BaseTickHz*SpeedMultiplier wall-ticks/s and advances _stepLength sim-s per tick, so
+    //   real-time factor = wallTickRate * _stepLength  and  wallTickRate (== snapshots/s) = _speed/_stepLength.
+    // => SpeedMultiplier = _speed / (BaseTickHz * _stepLength). _speed is applied live via SpeedMultiplier (no
+    // restart); _stepLength is baked into the loaded config, so changing it rebuilds the sim (see SetStepLength).
+    // Both are remembered so a Restart() re-applies them.
     private const double BaseTickHz = 10.0;
-    private double _simStepsPerSecond = BaseTickHz;
+    private double _speed = 1.0;
+    private double _stepLength = 1.0;
 
     public NetworkModel Network { get; }
 
@@ -94,19 +100,38 @@ public sealed class EngineHost : IDisposable
     // Turn the runtime random-traffic spawner on/off (independent of mode) -- SimHost's SetRandomTraffic.
     public void SetRandomTraffic(bool on) => _randomTraffic = on;
 
-    // Current live sim rate in Steps (== 1s of sim time each) per wall-clock second, for the UI slider.
-    public double SimStepsPerSecond => _simStepsPerSecond;
+    // Playback speed (x real-time) and sim step length (s), for the UI + diagnostics.
+    public double Speed => _speed;
+    public double StepLength => _stepLength;
 
-    // Set the live sim rate (Steps per wall-clock second). Applied immediately to the running runner via
-    // SpeedMultiplier and remembered so a Restart()'s fresh runner picks up the same rate. Clamped to a sane
-    // positive range so the slider can't stall (0) or ask for an absurd catch-up.
-    public void SetSimStepsPerSecond(double stepsPerSecond)
+    // Set playback speed (x real-time). Live: only scales SpeedMultiplier, no rebuild. Clamped to a sane
+    // positive range so the slider can't stall (0) or ask for an absurd catch-up. NB: the sim may not sustain
+    // a high speed at a large vehicle count -- the render clock paces to the ACTUAL delivered rate, so an
+    // unsustainable request just plays at what the engine can manage rather than stuttering.
+    public void SetSpeed(double speed)
     {
-        _simStepsPerSecond = Math.Clamp(stepsPerSecond, 0.1, 60.0);
+        _speed = Math.Clamp(speed, 0.1, 20.0);
         lock (_lock)
         {
-            _runner.SpeedMultiplier = _simStepsPerSecond / BaseTickHz;
+            _runner.SpeedMultiplier = _speed / (BaseTickHz * _stepLength);
         }
+    }
+
+    // Set the engine step length (sim-seconds per Step) = SUMO's step-length / the sim's time resolution.
+    // Smaller = finer physics + more snapshots/s (smoother, better turns) but proportionally more compute, so
+    // an unsustainably small value at a large fleet just lowers the achievable real-time factor. Baked into
+    // the loaded config, so this REBUILDS the sim from t=0 (like Restart). Only meaningful in sandbox mode
+    // (scenario mode keeps its own .sumocfg step-length). No-op if unchanged.
+    public void SetStepLength(double stepLength)
+    {
+        var clamped = Math.Clamp(stepLength, 0.05, 1.0);
+        if (Math.Abs(clamped - _stepLength) < 1e-9)
+        {
+            return;
+        }
+
+        _stepLength = clamped;
+        BuildSim();
     }
 
     // Thread-safe snapshot of injected obstacle world-points, for the renderer's red-X marker.
@@ -126,9 +151,10 @@ public sealed class EngineHost : IDisposable
     // rou.rou.xml/.sumocfg and drives the net as a random-traffic sandbox even inside a committed scenario
     // dir -- the perf pass points at scenarios/_bench/city-15000 (a large grid) purely for its geometry and
     // fills it with a controllable `--fleet` count rather than replaying that scenario's fixed demand.
-    public EngineHost(string netPath, int spawnCap = 80, bool forceSandbox = false)
+    public EngineHost(string netPath, int spawnCap = 80, bool forceSandbox = false, double stepLength = 1.0)
     {
         _netPath = netPath;
+        _stepLength = Math.Clamp(stepLength, 0.05, 1.0); // set before BuildSim/front-load so both use it
         Network = NetworkParser.Parse(netPath);
         _normalEdges = Network.EdgesById.Keys.Where(e => !e.StartsWith(':')).ToArray();
 
@@ -145,9 +171,11 @@ public sealed class EngineHost : IDisposable
         _randomTraffic = !_scenarioMode; // sandbox: random traffic is the traffic; scenario: off by default
 
         _spawnCap = spawnCap;
-        // A big fleet needs a batched replenish (spawnCap/50, min 1) so warm-up/top-up reaches the cap in a
-        // few timer fires; the default 80-vehicle demo keeps the original one-at-a-time cadence.
-        _spawnBatch = spawnCap > 80 ? Math.Max(1, spawnCap / 50) : 1;
+        // A big fleet fills via bounded per-fire batches rather than one huge burst: each SpawnVehicle routes
+        // on the (13k-edge) grid, so draining thousands in a single tick stalls the sim for seconds (the old
+        // ~5s warm-up freeze). A capped batch keeps every tick light; the frequent timer (period below) still
+        // fills ~10k in ~15s. The default 80-vehicle demo keeps the original one-at-a-time cadence.
+        _spawnBatch = spawnCap > 80 ? Math.Clamp(spawnCap / 20, 1, 150) : 1;
 
         double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
         double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
@@ -180,22 +208,23 @@ public sealed class EngineHost : IDisposable
         // boundary exactly like the timer's own calls -- purely additive, same code path.
         if (_randomTraffic)
         {
-            // Front-load ~one burst per cap slot. All these posts queue before the first tick advances the
-            // count, so the cap gate can't yet throttle them -- posting exactly `_spawnCap` (not more) keeps
-            // the initial fill from overshooting the target fleet; routing failures leave it slightly under
-            // and the batched timer below tops it up to the cap.
-            var burst = _spawnCap > 80 ? _spawnCap : 60;
+            // Modest front-load only (was the whole cap): all these posts queue before the first tick, so a
+            // huge front-load routes thousands in ONE tick -> multi-second freeze. Cap it; the timer fills
+            // the rest in light batches. Small demo keeps its original 60-burst.
+            var burst = _spawnCap > 80 ? Math.Min(_spawnCap, 500) : 60;
             for (var i = 0; i < burst; i++)
             {
                 SpawnOne();
             }
         }
 
-        // Keep replenishing traffic thereafter (vehicles that reach their destination despawn). Fires a
-        // batch of `_spawnBatch` attempts (1 for the small demo, spawnCap/50 for a large fleet).
+        // Keep replenishing traffic thereafter (vehicles that reach their destination despawn), and finish
+        // the initial fill. Large fleets fire a bounded batch frequently (light ticks, ~15s to fill); the
+        // small demo keeps its original one-at-a-time / 900ms cadence.
+        var spawnPeriod = _spawnCap > 80 ? 200 : 900;
         _spawnTimer = new Timer(
             _ => { for (var i = 0; i < _spawnBatch; i++) SpawnOne(); },
-            null, dueTime: 500, period: 900);
+            null, dueTime: 400, period: spawnPeriod);
     }
 
     // (Re)build the engine + runner from scratch, at t=0 -- SimHost's BuildSim pattern. Under _lock so
@@ -211,9 +240,17 @@ public sealed class EngineHost : IDisposable
             {
                 engine.LoadScenario(_netPath, _rouPath!, _cfgPath!); // drives the scenario's OWN demand
             }
+            else if (Math.Abs(_stepLength - 1.0) < 1e-9)
+            {
+                engine.LoadNetwork(_netPath); // default 1s step -> Engine's own DefaultNetworkConfig
+            }
             else
             {
-                engine.LoadNetwork(_netPath);
+                // Sandbox with a non-default step length: LoadNetwork only reads the sumocfg for its config
+                // (timeline/flags), never its net/route refs, so a generated cfg carrying our step-length --
+                // every other field pinned to Engine.DefaultNetworkConfig's values -- changes ONLY the sim
+                // resolution and nothing else about sandbox behaviour.
+                engine.LoadNetwork(_netPath, WriteStepLengthConfig(_stepLength));
             }
 
             _vType = engine.DefaultVType;
@@ -230,7 +267,7 @@ public sealed class EngineHost : IDisposable
             // sim-rate slider drives SpeedMultiplier on top of this base (re-applied here so a Restart keeps
             // the user's chosen rate).
             runner.Start(targetHz: BaseTickHz);
-            runner.SpeedMultiplier = _simStepsPerSecond / BaseTickHz;
+            runner.SpeedMultiplier = _speed / (BaseTickHz * _stepLength);
 
             _engine = engine;
             _runner = runner;
@@ -243,6 +280,36 @@ public sealed class EngineHost : IDisposable
         {
             _obstacles.Clear();
         }
+    }
+
+    // Write a minimal .sumocfg carrying `stepLength`, every OTHER field pinned to the exact values in
+    // Engine.DefaultNetworkConfig (Begin 0, End 1e9, Euler, teleport off, action-step 0, speeddev 0, seed 42)
+    // -- the parser's own defaults differ (end 0, speeddev 0.1), so they must be stated explicitly or sandbox
+    // behaviour would change. Reused per instance (overwritten on each step-length change). Returns the path.
+    private string WriteStepLengthConfig(double stepLength)
+    {
+        _stepCfgPath ??= Path.Combine(
+            Path.GetTempPath(), $"sumosharp-viewer-{Environment.ProcessId}-{GetHashCode():x}.sumocfg");
+
+        var sl = stepLength.ToString("R", CultureInfo.InvariantCulture);
+        File.WriteAllText(_stepCfgPath,
+            "<configuration>\n" +
+            "  <time>\n" +
+            "    <begin value=\"0\"/>\n" +
+            "    <end value=\"1000000000\"/>\n" +
+            $"    <step-length value=\"{sl}\"/>\n" +
+            "  </time>\n" +
+            "  <processing>\n" +
+            "    <step-method.ballistic value=\"false\"/>\n" +
+            "    <time-to-teleport value=\"-1\"/>\n" +
+            "    <default.action-step-length value=\"0\"/>\n" +
+            "    <default.speeddev value=\"0\"/>\n" +
+            "  </processing>\n" +
+            "  <random_number>\n" +
+            "    <seed value=\"42\"/>\n" +
+            "  </random_number>\n" +
+            "</configuration>\n");
+        return _stepCfgPath;
     }
 
     // Rebuild the sim from t=0 (re-queues the scenario demand / empties the sandbox). Obstacles cleared.
@@ -395,6 +462,11 @@ public sealed class EngineHost : IDisposable
         lock (_lock)
         {
             _runner?.Dispose();
+        }
+
+        if (_stepCfgPath is not null)
+        {
+            try { File.Delete(_stepCfgPath); } catch { /* temp file, best-effort */ }
         }
     }
 }

@@ -296,7 +296,7 @@ public static class Renderer
     public static void DrawControlsPanel(EngineHost host, ref int fpsCap, ref bool smooth)
     {
         ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(360, 330), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(360, 390), ImGuiCond.FirstUseEver);
         ImGui.Begin("SumoSharp - controls");
         ImGui.Text(host.ScenarioMode ? "mode: SCENARIO" : "mode: SANDBOX");
         ImGui.Separator();
@@ -319,17 +319,29 @@ public static class Renderer
 
         ImGui.Separator();
 
-        // Speed relative to real time. Each sim Step advances 1s of sim time, so "sim steps per wall-second"
-        // == the real-time factor: 1x = real speed, 3x = triple speed, etc. It's also the update rate (N
-        // steps/s = N snapshots/s the interpolator blends), so higher = faster AND smoother. Drives
-        // EngineHost.SetSimStepsPerSecond (SpeedMultiplier) live, no restart. NB: at a high vehicle count the
-        // engine is CPU-bound and may not sustain a high factor (e.g. ~3x max at 10k) -- the slider requests,
-        // the sim delivers what it can.
-        var simRate = (float)host.SimStepsPerSecond;
-        if (ImGui.SliderFloat("speed", ref simRate, 0.25f, 10f, "%.2fx real-time"))
+        // Playback speed relative to real time (LIVE, no rebuild): 1x = real speed, 3x = triple, etc. The
+        // engine may not sustain a high factor at a large fleet (CPU-bound, ~3x max at 10k) -- the render
+        // clock paces to the ACTUAL delivered rate (see the diagnostics "actual" line), so the slider is a
+        // target, not a promise.
+        var speed = (float)host.Speed;
+        if (ImGui.SliderFloat("speed", ref speed, 0.25f, 10f, "%.2fx real-time"))
         {
-            host.SetSimStepsPerSecond(simRate);
+            host.SetSpeed(speed);
         }
+
+        // Sim resolution = 1 / step-length = how finely the engine integrates (SUMO's step-length). Higher Hz
+        // = smoother physics + more snapshots to interpolate + better turns, but proportionally MORE compute,
+        // so a high resolution at a large fleet just lowers the achievable speed. Changing it REBUILDS the sim
+        // from t=0 (step-length is baked into the loaded config), hence discrete buttons, not a live slider.
+        var hz = (int)Math.Round(1.0 / host.StepLength);
+        ImGui.Text("sim resolution (restarts):");
+        if (ImGui.RadioButton("1Hz", hz == 1)) host.SetStepLength(1.0);
+        ImGui.SameLine();
+        if (ImGui.RadioButton("2Hz", hz == 2)) host.SetStepLength(0.5);
+        ImGui.SameLine();
+        if (ImGui.RadioButton("5Hz", hz == 5)) host.SetStepLength(0.2);
+        ImGui.SameLine();
+        if (ImGui.RadioButton("10Hz", hz == 10)) host.SetStepLength(0.1);
 
         // Render-behind interpolation: blend the two latest authoritative snapshots up to the render rate so
         // vehicles glide instead of teleporting once per sim step. Costs ~one sim-step of latency; off = draw
@@ -353,19 +365,26 @@ public static class Renderer
     // P1 perf-diagnostics panel (SUMOSHARP-NATIVE-VIEWER.md P1): fps, frame-time min/avg/p99 (from the
     // ~120-sample ring buffer Program.cs maintains), vehicle count, sim time + step. Toggled with 'd',
     // default ON. Sized explicitly so text is never clipped. Must be called between rlImGui.Begin()/End().
-    public static void DrawDiagnosticsPanel(SimulationSnapshot snapshot, FrameStats frameStats)
+    public static void DrawDiagnosticsPanel(
+        SimulationSnapshot snapshot, FrameStats frameStats,
+        double requestedSpeed, double actualSpeed, double stepLength)
     {
         var (min, avg, p99) = frameStats.Compute();
-        ImGui.SetNextWindowPos(new Vector2(10, 320), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(360, 150), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowPos(new Vector2(10, 410), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(360, 200), ImGuiCond.FirstUseEver);
         ImGui.Begin("SumoSharp - diagnostics");
         ImGui.Text($"fps: {Raylib.GetFPS()}");
         ImGui.Text($"frame ms  min {min * 1000f:F2}  avg {avg * 1000f:F2}  p99 {p99 * 1000f:F2}");
         ImGui.Separator();
         ImGui.Text($"vehicles: {snapshot.Count}");
         ImGui.Text($"sim time: {snapshot.Time:F1}s   step: {snapshot.StepCount}");
+        // Requested vs ACTUAL playback speed: if actual << requested, the engine is CPU-bound at this fleet/
+        // resolution and can't run as fast as asked (lower the speed or the sim resolution). upd/s is the
+        // real snapshot rate the interpolator has to work with (actual speed / step-length).
+        ImGui.Text($"speed: {requestedSpeed:F2}x req / {actualSpeed:F2}x actual");
+        ImGui.Text($"sim res: {1.0 / stepLength:F0}Hz  ->  {actualSpeed / stepLength:F1} upd/s");
         // GC collection counts (gen0/1/2), to correlate any periodic frame hiccup with a collection. A
-        // climbing gen2 during hiccups points at GC pressure; flat counters rule GC out as the cause.
+        // climbing gen1/gen2 during hiccups points at GC pressure; flat counters rule GC out as the cause.
         ImGui.Text($"GC gen0/1/2: {GC.CollectionCount(0)} / {GC.CollectionCount(1)} / {GC.CollectionCount(2)}");
         ImGui.End();
     }
