@@ -159,7 +159,7 @@ public sealed class DrClock
             var dt = Math.Min(sampleT - newest.TimestampSeconds, 3.0);
             pk = newest.Record;
             posLat = pk.PosLat;
-            arc = pk.Pos + pk.Speed * dt + 0.5 * pk.Accel * dt * dt;
+            arc = ExtrapolateArc(pk.Pos, pk.Speed, pk.Accel, dt);
             extrapolated = true;
         }
         else if (sampleT <= oldest.TimestampSeconds)
@@ -168,7 +168,7 @@ public sealed class DrClock
             var dt = Math.Max(sampleT - oldest.TimestampSeconds, -3.0);
             pk = oldest.Record;
             posLat = pk.PosLat;
-            arc = pk.Pos + pk.Speed * dt + 0.5 * pk.Accel * dt * dt;
+            arc = ExtrapolateArc(pk.Pos, pk.Speed, pk.Accel, dt);
             extrapolated = true;
         }
         else
@@ -207,7 +207,7 @@ public sealed class DrClock
                 var dt = sampleT - a.TimestampSeconds;
                 pk = a.Record;
                 posLat = pk.PosLat;
-                arc = pk.Pos + pk.Speed * dt + 0.5 * pk.Accel * dt * dt;
+                arc = ExtrapolateArc(pk.Pos, pk.Speed, pk.Accel, dt);
                 extrapolated = true;
             }
         }
@@ -224,5 +224,35 @@ public sealed class DrClock
         };
 
         return new Resolved(state, pk.Upcoming, extrapolated);
+    }
+
+    // Constant-acceleration arc-length extrapolation, guarded so a DECELERATING vehicle never drives
+    // backward. The raw kinematic `pos + v*dt + 0.5*a*dt^2` is a downward parabola when a<0: it peaks at the
+    // stop time (dt = v/-a) and then DECREASES, i.e. predicts the car reversing past where it stopped. At a
+    // red light a slow/stopped vehicle publishes infrequently, so `sampleT` runs past its newest packet and
+    // this extrapolation is what's rendered -- producing the visible backward jump / reversing. Clamp
+    // forward-time dt to the stop time (freeze at the predicted stop), and hold an already-stopped vehicle in
+    // place. Backward-in-time (dt<=0, oldest-packet underrun) is left raw -- reconstructing an earlier
+    // position, where the parabola is monotonic the correct way.
+    private static double ExtrapolateArc(double pos, double speed, double accel, double dt)
+    {
+        if (dt > 0.0)
+        {
+            if (speed <= 0.0)
+            {
+                return pos; // already stopped -> stay put (no drift, no reverse)
+            }
+
+            if (accel < 0.0)
+            {
+                var timeToStop = speed / -accel;
+                if (dt > timeToStop)
+                {
+                    dt = timeToStop; // freeze at the stopping point instead of reversing past it
+                }
+            }
+        }
+
+        return pos + speed * dt + 0.5 * accel * dt * dt;
     }
 }
