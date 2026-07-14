@@ -494,6 +494,14 @@ static int RunPublish(string netPath, double? secondsCap, int? fleet, double? st
         // background thread, so most polls of this loop see an unchanged snapshot and would otherwise
         // re-publish identical state.
         var snap = host.Snapshot;
+        // Restart (remote command) rebuilds at t=0: sim time drops, so the `> lastPublishedSimTime` gate
+        // would suppress all publishing until it climbed back up -> the remote stays empty after a restart.
+        // Reset the gate so the fresh timeline republishes immediately.
+        if (!double.IsNaN(lastPublishedSimTime) && snap.Time < lastPublishedSimTime - 2.0)
+        {
+            lastPublishedSimTime = double.NaN;
+        }
+
         if (double.IsNaN(lastPublishedSimTime) || snap.Time > lastPublishedSimTime)
         {
             publisher.PublishStep();
