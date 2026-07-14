@@ -3997,6 +3997,11 @@ public sealed partial class Engine : IEngine
         Dictionary<Junction, Dictionary<int, VehicleRuntime>>? byJunction = null;
         foreach (var v in ActiveVehicles())
         {
+            // Fresh per-step decision: clear last step's hold for EVERY active vehicle before any is
+            // re-marked below, so a vehicle that was held last step but is no longer a cycle yielder
+            // (its cycle dissolved, or it committed onto its internal lane) is released, never stale.
+            v.JunctionCycleHold = false;
+
             var lane = _network!.LanesByHandle[v.LaneHandle];
             if (lane.EdgeId.Length > 0 && lane.EdgeId[0] == ':')
             {
@@ -4095,6 +4100,12 @@ public sealed partial class Engine : IEngine
                 }
 
                 links[idx].WillPass = pass;
+                // A yielder (pass == false) is HELD at the stop line this step -- the crossing gate's
+                // foe-relative `foeYieldsThisStep` cannot hold it (its higher-priority foe in the cycle
+                // is itself a yielder, WillPass=false), so mark it explicitly. The selected (pass ==
+                // true) vehicles are released (hold false) and cross; the resolver re-runs next step and
+                // admits the next lowest-index cycle member, staggering the movements out one at a time.
+                links[idx].JunctionCycleHold = !pass;
             }
         }
     }
@@ -4715,6 +4726,27 @@ public sealed partial class Engine : IEngine
         }
 
         var constraint = double.PositiveInfinity;
+
+        // C4-viii-b (bug C, the hold arm): ResolveRightBeforeLeftCycles (the willPass post-pass) has
+        // broken a symmetric right-before-left cycle by selecting one non-conflicting subset to pass
+        // and marking the rest to YIELD (JunctionCycleHold). A held vehicle must stop AT its junction
+        // stop line -- SUMO's deterministic analogue of the RNG-aborted request (mySetRequest=false,
+        // MSVehicle.cpp:2818-2839) that holds a car at the entry regardless of any foe's state. The
+        // foe-relative crossing arm below cannot enforce this (a held car's only higher-priority foe
+        // is itself a yielder, so no foe.WillPass is true for it to yield to). Applied ONLY in the real
+        // pass (the pre-pass computes each vNext WITHOUT this refinement, mirroring the foeYieldsThisStep
+        // gate) and ONLY before ego commits onto its internal lane (the hold gates ENTRY; once on the
+        // junction the on-junction leader path governs). Uses the SAME stop-line StopSpeedFor the
+        // crossing arm applies (approach-lane end minus PositionEps). Inert unless a real cycle exists.
+        if (!prePass && v.JunctionCycleHold && !egoOnInternal && approachLane is not null)
+        {
+            constraint = Math.Min(
+                constraint,
+                StopSpeedFor(
+                    v.VType, v.Kinematics.Speed,
+                    approachLane.Length - v.Kinematics.Pos - PositionEps,
+                    laneVehicleMaxSpeed, dt, actionStepLengthSecs, v.LevelOfService));
+        }
 
         // C3 (TASKS.md "on-ramp merge" / minor-link CAUTIOUS APPROACH): ported from
         // MSVehicle::planMoveInternal's minor-link arm (sumo/src/microsim/MSVehicle.cpp:2655-2664

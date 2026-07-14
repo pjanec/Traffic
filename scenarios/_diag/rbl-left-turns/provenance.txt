@@ -1,0 +1,80 @@
+rbl-left-turns — right-before-left LEFT-TURN conflict-cycle deblocker (bug C, the "hold" arm)
+============================================================================================
+
+WHAT THIS SCENARIO IS
+---------------------
+One single-lane `right_before_left` crossroads (node C at origin; N/S/E/W arms 100 m out),
+with FOUR vehicles departing t=0 from rest, one per approach, each turning LEFT:
+
+    nl:  NC -> CE    (from north, turns left to east)
+    el:  EC -> CS    (from east,  turns left to south)
+    sl:  SC -> CW    (from south, turns left to west)
+    wl:  WC -> CN    (from west,  turns left to north)
+
+Determinism per CLAUDE.md phase 1: sigma=0, fixed depart, actionStepLength=1, step 1 s,
+Euler (ballistic off), time-to-teleport = -1 (teleport OFF — no gridlock escape hatch).
+
+WHY IT IS DISTINCT FROM sym-rbl-straight
+----------------------------------------
+`scenarios/_diag/sym-rbl-straight` is the STRAIGHT-through version of the same crossroads. It
+already resolves with only the foe-relative crossing gate, because the resolver grants BOTH
+opposite-axis straight movements the pass at once (they do not conflict), and those two passing
+movements between them cover the "right" of BOTH yielding movements — so every yielder sees a
+foe with WillPass=true and correctly holds.
+
+The LEFT-TURN case is harder and was NOT covered by that test. netconvert emits a COMPLETE (K4)
+conflict graph for the four left turns — every pair geometrically conflicts, so only ONE may
+cross at a time — while the right-before-left response ("yield to the car on your right") forms
+a rock-paper-scissors CYCLE with no global order:
+
+    junction C requests (this net; left-turn links are 2,5,8,11):
+      link 2  (nl):  yields-to {8,11}   foes {5,8,11}
+      link 5  (el):  yields-to {2,11}   foes {2,8,11}
+      link 8  (sl):  yields-to {5}      foes {2,5,11}
+      link 11 (wl):  yields-to {8}      foes {2,5,8}
+    → "beats": nl>el, el>sl, sl>nl (a 3-cycle); + wl involved symmetrically.
+
+THE BUG (baseline, pre-fix)
+---------------------------
+Engine.ResolveRightBeforeLeftCycles correctly detects the cycle and greedily selects ONE
+non-conflicting link to pass (the lowest index, link 2 = nl), marking the other three
+WillPass=false. But WillPass=false ALONE does not hold a vehicle — the crossing gate only makes
+ego YIELD to a foe whose WillPass is TRUE (`foeYieldsThisStep = !foe.WillPass`). Of the three
+yielders, only `el` (which yields to the passing `nl`) actually held; `sl` and `wl` yield to
+foes that are THEMSELVES yielders (WillPass=false), so they saw no passing foe and drove onto
+the junction anyway — all locking mid-box, none exiting. All four permanently stuck, no physical
+blocker. This is the user-reported "all cars stuck at junctions with no apparent blocker" on a
+TL-less grid.
+
+THE FIX (VehicleRuntime.JunctionCycleHold + JunctionYieldConstraint hold arm)
+-----------------------------------------------------------------------------
+ResolveRightBeforeLeftCycles now marks every NON-selected cycle member with
+`JunctionCycleHold = true` (reset to false for all active vehicles each pass). The real
+(prePass=false) JunctionYieldConstraint applies a stop-line StopSpeed to a held vehicle before
+it commits onto its internal lane — the deterministic analogue of SUMO's RNG abort clearing
+`mySetRequest` (MSVehicle.cpp:2818-2839), which holds the aborted car at the entry regardless
+of any foe's WillPass. The resolver re-runs every step and admits the next lowest-index cycle
+member, so the four movements stagger out one at a time instead of all entering and locking.
+INERT wherever no directed right-before-left cycle exists (whole committed suite byte-identical;
+Sim.Bench determinism hash 909605E965BFFE59 unchanged, single + parallel).
+
+REFERENCE BEHAVIOR (why this is a BEHAVIORAL test, not an FCD-parity golden)
+---------------------------------------------------------------------------
+SUMO's tie-break is RNG-keyed (RandHelper::rand chooses which request to abort) and the engine's
+RNG stream is its own (VehicleRng, never SUMO's, per the C1/determinism policy), so EXACT @1e-3
+FCD parity is structurally unachievable — only stuck-count parity is. The test therefore
+asserts `stuck == 0` (the _diag convention), NOT FCD parity, and NO golden.fcd.xml is committed
+(it would also be a version-mismatch artifact — see below). Both engines break the deadlock and
+clear all four with 0 stuck and no teleport; the exact order/timing differs by design:
+
+    SUMO 1.18.0 (local reference run, NOT committed): all 4 clear, 0 stuck, network empty by
+      t=38 (el t=28, sl t=31, wl t=34, nl t=38).
+    Engine (with the fix): all 4 clear, 0 stuck, network empty by t=29 (nl t=20, el t=23,
+      sl t=26, wl t=29).
+
+NOTE ON SUMO VERSION: SUMO_VERSION pins 1.20.0; the SUMO binary available in this environment
+at authoring time was 1.18.0. Because this is a version-independent BEHAVIORAL assertion
+(stuck==0, no committed FCD golden), the minor-version difference does not affect the test. The
+net.net.xml here was produced by the committed `netconvert` (its junction request/response/foes
+matrix — the only thing the resolver reads — is reproduced verbatim above and is stable across
+these versions).

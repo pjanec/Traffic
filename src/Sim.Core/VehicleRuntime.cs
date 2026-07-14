@@ -250,6 +250,24 @@ internal sealed class VehicleRuntime
     // (every committed scenario) -- there, no vehicle's WillPass is ever read.
     public bool WillPass;
 
+    // C4-viii-b (bug C, the hold arm): set by Engine.ResolveRightBeforeLeftCycles when it breaks a
+    // symmetric right-before-left response cycle. The resolver selects a maximal non-conflicting
+    // subset of the cycle's links to PASS and marks the rest to YIELD; a yielding vehicle's WillPass
+    // is set false, but WillPass=false alone does NOT hold a vehicle -- the crossing gate only makes
+    // ego yield to a foe whose WillPass is TRUE, so in a rock-paper-scissors cycle where only ONE
+    // vehicle is granted the pass, the OTHER yielders (whose sole higher-priority foe is itself a
+    // yielder, WillPass=false) would see no passing foe and wrongly enter, re-locking the junction
+    // mid-box. This flag is the resolver's DIRECT abort of those vehicles' entry -- the deterministic
+    // analogue of SUMO's MSVehicle::planMoveInternal RNG abort clearing mySetRequest (MSVehicle.cpp:
+    // 2818-2839), which holds the aborted vehicle at the stop line regardless of any foe's state.
+    // Read ONLY in the real (prePass=false) JunctionYieldConstraint, and ONLY while ego is still on
+    // its approach lane (the hold gates ENTRY). Reset to false for every active vehicle at the top of
+    // each ResolveRightBeforeLeftCycles pass, then set true for the yielders -- so it is a fresh
+    // per-step decision, never stale. Default false; inert for every scenario without an actual
+    // right-before-left cycle (no committed golden has one -- the unchanged Sim.Bench hash + green
+    // suite are the proof, exactly as for the WillPass write the resolver already performs).
+    public bool JunctionCycleHold;
+
     // Perf (willPass/plan fusion): set by JunctionYieldConstraint DURING the willPass pre-pass
     // (Engine.ComputeWillPass) iff this vehicle takes the finite approaching-foe CROSSING yield --
     // the ONE and only place a real (prePass=false) plan can differ from the pre-pass plan (the
