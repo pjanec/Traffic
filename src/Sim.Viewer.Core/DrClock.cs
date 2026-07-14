@@ -37,6 +37,12 @@ public sealed class DrClock
     public int BackSteps => _backSteps;
     public double EffectiveDelay { get; private set; }
 
+    // EMA of the wall-clock gap between successive NEW distinct samples (Pump's dedupe below), i.e. the
+    // measured DDS packet inter-arrival interval. Feeds the "always interpolate" auto-delay (Renderer.cs /
+    // Program.cs): delay = ~1.5x this keeps the render clock reliably behind the newest packet even under
+    // jitter, so Resolve always lands in the interpolate branch instead of extrapolating.
+    public double AvgSampleInterval { get; private set; }
+
     // Re-anchor the clock to a fresh timeline (publisher restart at t=0). The long-baseline fit + renderSim
     // are cleared so they re-fit from the new stream instead of staying far ahead of it (which would
     // extrapolate wildly). Cumulative back-step count is left as a running health metric.
@@ -47,6 +53,7 @@ public sealed class DrClock
         _latestSim = 0.0;
         _renderSim = 0.0;
         _simRate = 1.0;
+        AvgSampleInterval = 0.0;
     }
 
     public readonly struct Resolved
@@ -85,6 +92,20 @@ public sealed class DrClock
 
         if (newestSampleTime is { } sim && sim != _lastIngestedSim)
         {
+            // Track the packet inter-arrival interval (EMA) for the "always interpolate" auto-delay. Guarded
+            // against the restart case below (a huge negative gap) and against absurd outliers -- either
+            // would otherwise drag the average somewhere useless for one packet.
+            if (!double.IsNaN(_lastIngestedSim))
+            {
+                var interval = sim - _lastIngestedSim;
+                if (interval > 0.001 && interval < 5.0)
+                {
+                    AvgSampleInterval = AvgSampleInterval <= 0.0
+                        ? interval
+                        : AvgSampleInterval + (interval - AvgSampleInterval) * 0.2;
+                }
+            }
+
             // Restart detection: the sim-axis timestamp jumping BACKWARD (the publisher rebuilt at t=0) breaks
             // the long-baseline fit and would strand renderSim far ahead of the stream -> wild forward
             // extrapolation (vehicles racing off after a restart). Re-anchor the fit + clock to the new

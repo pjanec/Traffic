@@ -590,6 +590,10 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
     var drClock = new DrClock();
     var delaySlider = initialDelaySeconds;
     var smooth = false;
+    // Default ON: auto-drive delaySlider from the measured DDS packet interval (see the per-frame update
+    // below) so playout always interpolates instead of extrapolating, without the user having to tune the
+    // slider by hand.
+    var alwaysInterpolate = true;
     var smoothed = new Dictionary<VehicleHandle, (float X, float Y, float Deg)>();
     var lastPublishedSimTime = double.NaN;
     var lastLoopSimTime = 0.0;
@@ -632,6 +636,13 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
         {
             publisher.PublishStep();
             lastPublishedSimTime = snapTimeNow;
+        }
+
+        // "always interpolate": override the manual slider with ~1.5x the measured packet interval, so the
+        // render clock stays reliably behind the newest DDS packet and Resolve always interpolates.
+        if (alwaysInterpolate)
+        {
+            delaySlider = (float)Math.Clamp(drClock.AvgSampleInterval * 1.5, 0.0, 1.5);
         }
 
         // P3 refactor: pumping DDS + resolving each tracked vehicle's dead-reckoned draw pose doesn't
@@ -694,7 +705,7 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
 
         Renderer.DrawWorldDds(camera, subscriber.Geometry, subscriber.TlStateByLane, vehicleDraws);
 
-        Renderer.DrawLoopbackControlsPanel(host, ref delaySlider, ref smooth);
+        Renderer.DrawLoopbackControlsPanel(host, ref delaySlider, ref smooth, ref alwaysInterpolate);
         if (showDiagnostics)
         {
             var wallElapsed = startWall.Elapsed.TotalSeconds;
@@ -791,6 +802,10 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
     var drClock = new DrClock();
     var delaySlider = initialDelaySeconds;
     var smooth = false;
+    // Default ON: auto-drive delaySlider from the measured DDS packet interval (see the per-frame update
+    // below) so playout always interpolates instead of extrapolating, without the user having to tune the
+    // slider by hand.
+    var alwaysInterpolate = true;
     var smoothed = new Dictionary<VehicleHandle, (float X, float Y, float Deg)>();
     var startWall = Stopwatch.StartNew();
 
@@ -823,6 +838,14 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
         }
 
         lastRemoteSimTime = status.SimTime;
+
+        // "always interpolate": override the manual slider with ~1.5x the measured packet interval, so the
+        // render clock stays reliably behind the newest DDS packet and Resolve always interpolates.
+        if (alwaysInterpolate)
+        {
+            delaySlider = (float)Math.Clamp(drClock.AvgSampleInterval * 1.5, 0.0, 1.5);
+        }
+
         PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoothed, vehicleDraws,
             paused: status.Paused);
 
@@ -893,7 +916,7 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
         }
 
         Renderer.DrawRemoteControlsPanel(commandWriter, status, ref remoteSpeed, ref remoteRandom,
-            ref delaySlider, ref smooth, subscriber.Connected, subscriber.GeometryComplete);
+            ref delaySlider, ref smooth, ref alwaysInterpolate, subscriber.Connected, subscriber.GeometryComplete);
         if (showDiagnostics)
         {
             var wallElapsed = startWall.Elapsed.TotalSeconds;

@@ -592,7 +592,7 @@ public static class Renderer
     // P2b controls panel: mode label, restart/clear/random (identical semantics to DrawControlsPanel,
     // driving the SAME publisher-owned EngineHost), plus the DR delay slider (0 = extrapolate, higher =
     // interpolate) and the smoothing toggle (extrapolation-only low-pass, HtmlPage.cs's `smooth`).
-    public static void DrawLoopbackControlsPanel(EngineHost host, ref float delaySeconds, ref bool smooth)
+    public static void DrawLoopbackControlsPanel(EngineHost host, ref float delaySeconds, ref bool smooth, ref bool alwaysInterpolate)
     {
         ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSize(new Vector2(380, 370), ImGuiCond.FirstUseEver);
@@ -650,7 +650,13 @@ public static class Renderer
         }
 
         ImGui.Separator();
+        // "always interpolate" auto-sets the delay slider each frame (Program.cs) to ~1.5x the measured DDS
+        // packet interval, so the render clock always sits behind the newest packet -> Resolve always
+        // interpolates instead of extrapolating. The manual slider is disabled while it's driving the value.
+        ImGui.Checkbox("always interpolate (auto delay)", ref alwaysInterpolate);
+        ImGui.BeginDisabled(alwaysInterpolate);
         ImGui.SliderFloat("DR delay (s)", ref delaySeconds, 0f, 1.5f, "%.2f");
+        ImGui.EndDisabled();
         ImGui.Checkbox("smooth (extrap only)", ref smooth);
         ImGui.TextWrapped("delay 0 = extrapolate (predict ahead, may snap); raise = interpolate between DDS packets (smooth, delayed)");
         ImGui.End();
@@ -690,7 +696,7 @@ public static class Renderer
     // draggable and re-synced to the host value when idle; random has no status field yet.
     public static void DrawRemoteControlsPanel(
         DdsCommandWriter cmd, ViewerStatus status, ref float speed, ref bool random,
-        ref float delaySeconds, ref bool smooth, bool connected, bool geometryComplete)
+        ref float delaySeconds, ref bool smooth, ref bool alwaysInterpolate, bool connected, bool geometryComplete)
     {
         ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSize(new Vector2(380, 380), ImGuiCond.FirstUseEver);
@@ -750,9 +756,15 @@ public static class Renderer
             speed = (float)status.Speed;
         }
 
-        // --- these two are LOCAL to this viewer (client-side dead-reckoning playout, not engine state) ---
+        // --- these are LOCAL to this viewer (client-side dead-reckoning playout, not engine state) ---
         ImGui.Separator();
+        // "always interpolate" auto-sets the delay slider each frame (Program.cs) to ~1.5x the measured DDS
+        // packet interval, so the render clock always sits behind the newest packet -> Resolve always
+        // interpolates instead of extrapolating. The manual slider is disabled while it's driving the value.
+        ImGui.Checkbox("always interpolate (auto delay)", ref alwaysInterpolate);
+        ImGui.BeginDisabled(alwaysInterpolate);
         ImGui.SliderFloat("DR delay (s)", ref delaySeconds, 0f, 1.5f, "%.2f");
+        ImGui.EndDisabled();
         ImGui.Checkbox("smooth (extrap only)", ref smooth);
         ImGui.TextWrapped("click a road to drop an obstacle (remote). delay 0 = extrapolate; raise = interpolate");
         ImGui.End();
