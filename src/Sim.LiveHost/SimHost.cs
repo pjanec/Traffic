@@ -6,30 +6,41 @@ using Sim.Replication;
 namespace Sim.LiveHost;
 
 // SUMOSHARP-API.md §11: the live-demo brain. Owns one Engine driven by a SimulationRunner, the parsed
-// network (for drawing + the screen->lane projection), a runtime traffic spawner, and the list of
-// injected obstacles. The web layer (Program.cs) only asks it for JSON messages and forwards clicks.
+// network (for drawing + the screen->lane projection), and the list of injected obstacles. Two modes,
+// auto-selected from the input:
+//   * SCENARIO mode -- the input dir has a rou.rou.xml (+ .sumocfg): LoadScenario drives the scenario's OWN
+//     demand (the exact vehicles that produce the golden trajectory), rendered live with dead reckoning.
+//   * SANDBOX mode -- a bare net.net.xml (no demand, e.g. samples/junctions/*): LoadNetwork + a runtime
+//     random-traffic spawner keeps the roads busy.
+// A "restart" rebuilds the sim from t=0; a "random traffic" toggle turns the spawner on/off in either mode
+// (default: on in sandbox, off in scenario). The engine+runner are rebuilt on restart, so they are mutable
+// and guarded by _lock; every cross-thread read (frame build, spawn, obstacle) takes that lock.
 public sealed class SimHost : IDisposable
 {
-    private readonly Engine _engine;
-    private readonly SimulationRunner _runner;
-    private readonly NetworkModel _network;
-    private readonly VTypeHandle _vType;
-    private readonly VTypeHandle _truckType;
+    private readonly string _netPath;
+    private readonly string? _rouPath;
+    private readonly string? _cfgPath;
+    private readonly bool _scenarioMode;
+    private readonly RenderRealism _renderMode;
+    private readonly NetworkModel _network;   // parsed once; the net never changes across a restart
     private readonly string[] _normalEdges;
-    private readonly Random _rng = new(12345);
+
+    private readonly object _lock = new();
+    private Engine _engine = null!;
+    private SimulationRunner _runner = null!;
+    private VTypeHandle _vType;
+    private VTypeHandle _truckType;
+    private Random _rng = new(12345);
 
     private readonly object _obsLock = new();
     private readonly List<(double X, double Y)> _obstacles = new();
 
     private Timer? _spawnTimer;
+    private volatile bool _randomTraffic;
 
     // §7 adaptive publish rate: the PublishScheduler runs the pluggable policy ONCE per sim step
-    // (BuildFrameJson is called ~20x/s but the sim ticks slower, and the client dedupes by step). Predictable
-    // steady followers are re-sent only at the slow keep-alive interval; the client keeps dead-reckoning the
-    // ones we skip. The per-step frame is cached so repeated sends of the same step return identical bytes
-    // (and don't re-run the scheduler). Intervals are scaled to THIS demo's 1 s sim step (the library
-    // defaults 0.1/1.0 target a 10 Hz publisher, where they'd defer 10:1): uncertain movers every step (1 s),
-    // predictable steady followers only every 3rd step (~1 send / 3 s).
+    // (BuildFrameJson is called ~20x/s but the sim ticks slower, and the client dedupes by step). The
+    // per-step frame is cached so repeated sends of the same step return identical bytes. Reset on restart.
     private readonly PublishScheduler _scheduler = new(new DefaultPublishPolicy
     {
         FastInterval = 1.0,
@@ -43,129 +54,167 @@ public sealed class SimHost : IDisposable
 
     public SimHost(string netPath, RenderRealism renderMode = RenderRealism.ParityTangent)
     {
+        _netPath = netPath;
+        _renderMode = renderMode;
         _network = NetworkParser.Parse(netPath);
-
-        _engine = new Engine();
-        _engine.LoadNetwork(netPath);
-        // §6.3 production render mode: when set (e.g. CornerCutCorrected), the streamed world poses carry
-        // the SUMO chord heading + swept-path off-tracking so long vehicles on curves look right. Off by
-        // default (SUMO-exact tangent). Set before Start so the engine thread never races it.
-        _engine.RenderMode = renderMode;
-        _vType = _engine.DefaultVType;
-        // A long vehicle so the renderer's swept-path off-tracking ("swing wide") is visible on turns.
-        _truckType = _engine.DefineVType(new VTypeParams { VClass = "truck", Length = 12.0 });
-
         _normalEdges = _network.EdgesById.Keys.Where(e => !e.StartsWith(':')).ToArray();
+
+        // Scenario mode iff the net sits beside a rou.rou.xml AND a .sumocfg (a committed scenario dir).
+        var dir = Path.GetDirectoryName(Path.GetFullPath(netPath));
+        if (dir is not null)
+        {
+            _rouPath = Directory.EnumerateFiles(dir, "*.rou.xml").FirstOrDefault();
+            _cfgPath = Directory.EnumerateFiles(dir, "*.sumocfg").FirstOrDefault();
+        }
+
+        _scenarioMode = _rouPath is not null && _cfgPath is not null;
+        _randomTraffic = !_scenarioMode; // sandbox: random traffic is the traffic; scenario: off by default
 
         NetworkJson = BuildNetworkJson();
 
-        _runner = new SimulationRunner(_engine);
-        // Reuse snapshot backing arrays across ticks (SUMOSHARP-API.md §7) -- the per-frame render read is
-        // then allocation-free in steady state. The published snapshot stays valid well beyond the brief
-        // window BuildFrameJson holds it (capacity-1 ticks at 30 Hz), so the cross-thread read is safe.
-        _runner.EnableSnapshotPool(capacity: 3);
-        // Deliberately a LOW sim/publish rate (2 Hz) so the browser's lane-relative dead reckoning is the
-        // thing producing smooth 60 fps motion between the sparse updates -- the whole point of the demo.
-        _runner.Start(targetHz: 2.0);
+        BuildSim();
 
-        // Keep traffic flowing by spawning routable trips at runtime (demonstrates SpawnVehicle).
+        // Always running; SpawnOne is a no-op while _randomTraffic is off.
         _spawnTimer = new Timer(_ => SpawnOne(), null, dueTime: 500, period: 900);
     }
 
-    // Current frame: LANE-RELATIVE dead-reckoning state per vehicle (SUMOSHARP-DEADRECKONING.md §5.1) --
-    // NOT world x/y. The browser reconstructs and extrapolates world pose by walking the once-sent lane
-    // geometry (see HtmlPage), so it renders smoothly at 60 fps from these sparse updates and follows the
-    // real lane curves (no corner-cutting). This is the demo of the dead-reckoning design end to end.
-    //   ln = current lane handle, nx = next lane handle (-1 if none), p = arc pos, pl = lat offset,
-    //   s = speed (m/s), a = longitudinal accel (m/s^2).
-    public string BuildFrameJson()
+    public bool ScenarioMode => _scenarioMode;
+
+    // (Re)build the engine + runner from scratch, at t=0. Under _lock so no frame/spawn races the swap.
+    private void BuildSim()
     {
-        var snap = _runner.Snapshot;
-        // Once per sim step only: repeated 20 Hz sends between ticks return the cached bytes (the client
-        // dedupes by step anyway), so the publish policy advances exactly one step per snapshot.
-        if (snap.StepCount == _lastFrameStep)
+        lock (_lock)
         {
-            return _lastFrameJson;
-        }
+            var old = _runner;
 
-        _lastFrameStep = snap.StepCount;
-        var stride = snap.LaneWindowStride;
-
-        // `alive` (every current id -- cheap) is the client's liveness/despawn signal; `vehicles` (full DR
-        // state) carries only the ids the policy chose to publish this step. Bandwidth is saved on the
-        // expensive per-vehicle state, not on the id list.
-        var alive = new List<string>(snap.Count);
-        var vehicles = new List<object>(snap.Count);
-        for (var i = 0; i < snap.Count; i++)
-        {
-            var id = snap.VehicleId[i];
-            alive.Add(id);
-
-            // The DR regime and the mid-manoeuvre bit now come from the engine's OWN columns (the issue
-            // #3/#4 seam), not a stand-in: DrModel picks the extrapolator (LaneArc/Stationary for vehicles),
-            // Manoeuvring is the adaptive-rate signal that forces full rate during a reactive lateral dodge.
-            if (!_scheduler.ShouldPublish(
-                    snap.Handles[i], (DrModel)snap.DrModels[i], snap.SpeedExact[i], snap.Accel[i], snap.Time,
-                    snap.Manoeuvring[i]))
+            var engine = new Engine();
+            if (_scenarioMode)
             {
-                continue; // predictable + recently sent -> let the client keep dead-reckoning it
+                engine.LoadScenario(_netPath, _rouPath!, _cfgPath!); // drives the scenario's OWN demand
+            }
+            else
+            {
+                engine.LoadNetwork(_netPath);
             }
 
-            // The lane window [prev2,prev1,current,next1,next2,next3] for multi-lane DR walks.
-            var lw = new int[stride];
-            Array.Copy(snap.LaneWindow, i * stride, lw, 0, stride);
+            // §6.3 production render mode: the streamed world poses carry the SUMO chord heading +
+            // swept-path off-tracking when set. Off by default (SUMO-exact tangent). Set before Start.
+            engine.RenderMode = _renderMode;
+            _vType = engine.DefaultVType;
+            // A long vehicle so the random spawner can show swept-path off-tracking ("swing wide") on turns.
+            _truckType = engine.DefineVType(new VTypeParams { VClass = "truck", Length = 12.0 });
 
-            vehicles.Add(new
-            {
-                id,
-                lw,
-                p = Math.Round(snap.Pos[i], 3),
-                pl = Math.Round(snap.PosLat[i], 3),
-                s = Math.Round(snap.SpeedExact[i], 3),
-                a = Math.Round(snap.Accel[i], 3),
-                l = Math.Round(snap.Length[i], 2),   // body dims for a correctly-sized rectangle
-                w = Math.Round(snap.Width[i], 2),
-            });
+            var runner = new SimulationRunner(engine);
+            runner.EnableSnapshotPool(capacity: 3);
+            // Deliberately a LOW sim/publish rate (2 Hz) so the browser's lane-relative dead reckoning is
+            // what produces smooth 60 fps motion between the sparse updates -- the point of the demo.
+            runner.Start(targetHz: 2.0);
+
+            _engine = engine;
+            _runner = runner;
+            _rng = new Random(12345);
+            _scheduler.Reset();
+            _lastFrameStep = -1;
+
+            old?.Dispose();
         }
 
-        // Forget vehicles that despawned this step so the scheduler's memory stays O(live vehicles).
-        _scheduler.EndStep();
-
-        object[] obstacles;
         lock (_obsLock)
         {
-            obstacles = _obstacles.Select(o => (object)new { x = Math.Round(o.X, 2), y = Math.Round(o.Y, 2) }).ToArray();
+            _obstacles.Clear();
         }
-
-        // Traffic-light state (SUMOSHARP-DEADRECKONING.md §5.2): the current signal char per controlled
-        // approach lane, so the renderer can draw junction signals. `ln` = lane handle, `st` = signal char.
-        var tl = new List<object>(snap.TlCount);
-        for (var i = 0; i < snap.TlCount; i++)
-        {
-            tl.Add(new { ln = snap.TlLaneHandle[i], st = ((char)snap.TlState[i]).ToString() });
-        }
-
-        // `time` is the sim clock (seconds); the client measures the sim rate from consecutive frames and
-        // extrapolates each vehicle by (renderSimTime - itsOwnLastPublishTime). `npub`/`nalive` let the HUD
-        // show the live bandwidth saving (state records sent vs vehicles alive).
-        _lastFrameJson = JsonSerializer.Serialize(new
-        {
-            type = "frame",
-            time = Math.Round(snap.Time, 3),
-            step = snap.StepCount,
-            alive,
-            vehicles,
-            obstacles,
-            tl,
-            npub = vehicles.Count,
-            nalive = alive.Count,
-        });
-        return _lastFrameJson;
     }
 
-    // A canvas click (already converted to WORLD coordinates by the browser) -> project to the nearest
-    // lane and inject a full-lane obstacle there; cars queue behind it. Ignored if the click is far from
-    // any lane. Applied on the engine thread via the runner's command dispatcher.
+    // Rebuild the sim from t=0 (re-queues the scenario demand / empties the sandbox). Obstacles cleared.
+    public void Restart() => BuildSim();
+
+    // Turn the runtime random-traffic spawner on/off (independent of mode).
+    public void SetRandomTraffic(bool on) => _randomTraffic = on;
+
+    // Current frame: LANE-RELATIVE dead-reckoning state per vehicle (SUMOSHARP-DEADRECKONING.md §5.1). The
+    // browser reconstructs + extrapolates world pose by walking the once-sent lane geometry, so it renders
+    // smoothly at 60 fps from these sparse updates. Runs the publish policy once per sim step.
+    public string BuildFrameJson()
+    {
+        lock (_lock)
+        {
+            var snap = _runner.Snapshot;
+            // Once per sim step only: repeated 20 Hz sends between ticks return the cached bytes (the client
+            // dedupes by step anyway), so the publish policy advances exactly one step per snapshot.
+            if (snap.StepCount == _lastFrameStep)
+            {
+                return _lastFrameJson;
+            }
+
+            _lastFrameStep = snap.StepCount;
+            var stride = snap.LaneWindowStride;
+
+            // `alive` (every current id -- cheap) is the client's liveness/despawn signal; `vehicles` (full
+            // DR state) carries only the ids the policy chose to publish this step.
+            var alive = new List<string>(snap.Count);
+            var vehicles = new List<object>(snap.Count);
+            for (var i = 0; i < snap.Count; i++)
+            {
+                var id = snap.VehicleId[i];
+                alive.Add(id);
+
+                // DR regime + mid-manoeuvre bit from the engine's own columns (issue #3/#4 seam): DrModel
+                // picks the extrapolator, Manoeuvring forces full rate during a reactive lateral dodge.
+                if (!_scheduler.ShouldPublish(
+                        snap.Handles[i], (DrModel)snap.DrModels[i], snap.SpeedExact[i], snap.Accel[i], snap.Time,
+                        snap.Manoeuvring[i]))
+                {
+                    continue; // predictable + recently sent -> let the client keep dead-reckoning it
+                }
+
+                var lw = new int[stride];
+                Array.Copy(snap.LaneWindow, i * stride, lw, 0, stride);
+
+                vehicles.Add(new
+                {
+                    id,
+                    lw,
+                    p = Math.Round(snap.Pos[i], 3),
+                    pl = Math.Round(snap.PosLat[i], 3),
+                    s = Math.Round(snap.SpeedExact[i], 3),
+                    a = Math.Round(snap.Accel[i], 3),
+                    l = Math.Round(snap.Length[i], 2),
+                    w = Math.Round(snap.Width[i], 2),
+                });
+            }
+
+            _scheduler.EndStep();
+
+            object[] obstacles;
+            lock (_obsLock)
+            {
+                obstacles = _obstacles.Select(o => (object)new { x = Math.Round(o.X, 2), y = Math.Round(o.Y, 2) }).ToArray();
+            }
+
+            var tl = new List<object>(snap.TlCount);
+            for (var i = 0; i < snap.TlCount; i++)
+            {
+                tl.Add(new { ln = snap.TlLaneHandle[i], st = ((char)snap.TlState[i]).ToString() });
+            }
+
+            _lastFrameJson = JsonSerializer.Serialize(new
+            {
+                type = "frame",
+                time = Math.Round(snap.Time, 3),
+                step = snap.StepCount,
+                alive,
+                vehicles,
+                obstacles,
+                tl,
+                npub = vehicles.Count,
+                nalive = alive.Count,
+            });
+            return _lastFrameJson;
+        }
+    }
+
+    // A canvas click (already WORLD coordinates) -> project to the nearest lane and inject a full-lane
+    // obstacle; cars queue behind it. Ignored if the click is far from any lane.
     public void InjectObstacleAtWorld(double wx, double wy)
     {
         if (!TryProjectToLane(wx, wy, out var laneId, out var pos, out var sx, out var sy, out var dist)
@@ -174,7 +223,21 @@ public sealed class SimHost : IDisposable
             return;
         }
 
-        _runner.Invoke(e => e.AddObstacle(e.GetLane(laneId), frontPos: pos, length: 2.0));
+        SimulationRunner runner;
+        lock (_lock)
+        {
+            runner = _runner;
+        }
+
+        try
+        {
+            runner.Invoke(e => e.AddObstacle(e.GetLane(laneId), frontPos: pos, length: 2.0));
+        }
+        catch
+        {
+            return; // runner disposed mid-restart -> drop this click
+        }
+
         lock (_obsLock)
         {
             _obstacles.Add((sx, sy));
@@ -183,7 +246,21 @@ public sealed class SimHost : IDisposable
 
     public void ClearObstacles()
     {
-        _runner.Invoke<object?>(e => { e.ClearObstacles(); return null; });
+        SimulationRunner runner;
+        lock (_lock)
+        {
+            runner = _runner;
+        }
+
+        try
+        {
+            runner.Invoke<object?>(e => { e.ClearObstacles(); return null; });
+        }
+        catch
+        {
+            // runner disposed mid-restart -> the rebuild already cleared obstacles
+        }
+
         lock (_obsLock)
         {
             _obstacles.Clear();
@@ -192,34 +269,41 @@ public sealed class SimHost : IDisposable
 
     private void SpawnOne()
     {
-        if (_normalEdges.Length < 2 || _runner.Snapshot.Count > 80)
+        if (!_randomTraffic || _normalEdges.Length < 2)
         {
             return;
         }
 
-        var from = _normalEdges[_rng.Next(_normalEdges.Length)];
-        var to = _normalEdges[_rng.Next(_normalEdges.Length)];
-        if (from == to)
+        lock (_lock)
         {
-            return;
-        }
+            if (_runner.Snapshot.Count > 80)
+            {
+                return;
+            }
 
-        var vt = _rng.Next(3) == 0 ? _truckType : _vType; // ~1/3 trucks, to show off-tracking on turns
-        _runner.Post(e =>
-        {
-            try
+            var from = _normalEdges[_rng.Next(_normalEdges.Length)];
+            var to = _normalEdges[_rng.Next(_normalEdges.Length)];
+            if (from == to)
             {
-                e.SpawnVehicle(vt, from, to, departPos: 0.0, departSpeed: 0.0, departLane: 0);
+                return;
             }
-            catch
+
+            var vt = _rng.Next(3) == 0 ? _truckType : _vType; // ~1/3 trucks, to show off-tracking on turns
+            _runner.Post(e =>
             {
-                // No route between this random pair -> skip (the next tick tries a fresh pair).
-            }
-        });
+                try
+                {
+                    e.SpawnVehicle(vt, from, to, departPos: 0.0, departSpeed: 0.0, departLane: 0);
+                }
+                catch
+                {
+                    // No route between this random pair -> skip (the next tick tries a fresh pair).
+                }
+            });
+        }
     }
 
-    // Nearest lane to a world point, plus the along-lane position and the projected point. Mirrors the
-    // point-to-polyline projection PolylineGeometry uses, returning the arc-length of the nearest point.
+    // Nearest lane to a world point, plus the along-lane position and the projected point.
     private bool TryProjectToLane(double wx, double wy,
         out string laneId, out double pos, out double sx, out double sy, out double dist)
     {
@@ -292,9 +376,12 @@ public sealed class SimHost : IDisposable
             lanes.Add(new { pts, len = Math.Round(lane.Length, 3), w = lane.Width, internalLane = lane.Id.StartsWith(':') });
         }
 
+        // `mode` + `randomTraffic` let the client label the run and initialise the traffic-toggle control.
         return JsonSerializer.Serialize(new
         {
             type = "network",
+            mode = _scenarioMode ? "scenario" : "sandbox",
+            randomTraffic = _randomTraffic,
             lanes,
             bounds = new { minX, minY, maxX, maxY },
         });
@@ -303,6 +390,9 @@ public sealed class SimHost : IDisposable
     public void Dispose()
     {
         _spawnTimer?.Dispose();
-        _runner.Dispose();
+        lock (_lock)
+        {
+            _runner?.Dispose();
+        }
     }
 }

@@ -1,0 +1,6 @@
+<routes>
+  <vehicle id="nl" depart="0"><route edges="NC CE"/></vehicle>
+  <vehicle id="el" depart="0"><route edges="EC CS"/></vehicle>
+  <vehicle id="sl" depart="0"><route edges="SC CW"/></vehicle>
+  <vehicle id="wl" depart="0"><route edges="WC CN"/></vehicle>
+</routes>

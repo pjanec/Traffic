@@ -32,9 +32,13 @@ public interface IPublishPolicy
 }
 
 // The default policy: send at the full rate when the mover is not steady-state predictable, otherwise stretch
-// toward a slow keep-alive interval. "Predictable" = LaneArc, small acceleration, not manoeuvring; such a
-// vehicle is re-sent only every SlowInterval. Everything else (FreeKinematic, |accel| over the threshold,
-// manoeuvring, or a stale keep-alive) is sent whenever it is at least FastInterval since the last send.
+// toward a slow keep-alive interval. "Predictable" = a lane-bound mover (LaneArc OR Stationary) with small
+// acceleration and not manoeuvring; such a vehicle is re-sent only every SlowInterval. Stationary counts
+// because a stopped vehicle is the MOST dead-reckonable regime (zero motion) -- exactly the queue-at-lights
+// case where the bandwidth saving matters most; the only cost is a bounded, self-correcting launch-from-stop
+// latency (accel-limited, fixed on the next publish). Everything else (FreeKinematic, |accel| over the
+// threshold, manoeuvring, or a stale keep-alive) is sent whenever it is at least FastInterval since the last
+// send. (Confirmed with the laneless branch, issue #4.)
 public sealed class DefaultPublishPolicy : IPublishPolicy
 {
     public double FastInterval { get; init; } = 0.1;   // 10 Hz for uncertain movers
@@ -43,7 +47,7 @@ public sealed class DefaultPublishPolicy : IPublishPolicy
 
     public bool ShouldPublish(in PublishSignals s)
     {
-        var predictable = s.Model == DrModel.LaneArc
+        var predictable = (s.Model == DrModel.LaneArc || s.Model == DrModel.Stationary)
             && !s.LaneChangingOrManoeuvring
             && Math.Abs(s.Accel) < AccelThreshold;
 

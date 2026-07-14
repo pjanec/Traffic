@@ -101,6 +101,12 @@ static void HandleClientMessage(SimHost host, string message)
             case "clear":
                 host.ClearObstacles();
                 break;
+            case "restart":
+                host.Restart();
+                break;
+            case "random":
+                host.SetRandomTraffic(doc.RootElement.GetProperty("on").GetBoolean());
+                break;
         }
     }
     catch (JsonException) { }

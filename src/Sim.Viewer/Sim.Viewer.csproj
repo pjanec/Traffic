@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    docs/SUMOSHARP-NATIVE-VIEWER.md P0: the native desktop viewer. raylib-cs draws the world (roads,
+    oriented vehicles), rlImgui-cs + ImGui.NET draw the HUD chrome. Deliberately OUT of Traffic.sln (pulls
+    raylib); never add a reference to this project from anything IN Traffic.sln.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <!-- Server + background GC for the interactive viewer: at 10k vehicles the engine's per-step churn
+         (Sim.Core, off-limits here) drives frequent gen0/gen1 collections whose STW pauses were the ~2s
+         frame hiccup. Server GC's much larger per-heap gen0 budget makes those collections far rarer and
+         shorter, and background GC runs gen2 concurrently. Costs memory + GC threads (fine on a desktop
+         GPU box); the parity test loop never builds this project, so nothing golden is affected. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Viewer.Core\Sim.Viewer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Raylib-cs" Version="7.0.1" />
+    <PackageReference Include="rlImgui-cs" Version="3.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bundled TTF (permissive DejaVu license) so ImGui text is crisp/identical on Linux and Windows,
+         not reliant on a system font being present (docs/SUMOSHARP-NATIVE-VIEWER.md "UI + font"). -->
+    <Content Include="assets\DejaVuSans.ttf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

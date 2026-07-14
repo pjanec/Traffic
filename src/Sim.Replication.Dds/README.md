@@ -24,6 +24,21 @@ TCP, and UDP; DDS just transports the bytes.
   to consume fields directly; prefer `DdsWireFrame` (fewer bytes, one codec across all transports) otherwise.
 - **`DdsVehicleLifecycle`** — the low-rate, **keyed** (by vehicle index) spawn/despawn + dims/type registry
   (DDS's "track many objects" sweet spot; affordable because it is low-rate).
+- **`DdsNetworkGeometry`** — durable-intent lane-polyline topic (opaque blob carrying `GeometryCodec` bytes),
+  published once so a remote viewer can draw roads without the net file. Chunked (`GeometryCodec.PlanChunks`)
+  across `DdsWire.MaxPayload`-sized samples for a large network; keyed by `ChunkIndex`, with `TotalChunks` so
+  a subscriber knows when it has the whole net.
+- **`DdsTlState`** — low-rate traffic-light state (opaque blob carrying `TlCodec` bytes): controlled-lane
+  handle + signal char pairs. Kept off the high-rate vehicle topic by design (`SUMOSHARP-DEADRECKONING.md`
+  §5.2); every committed scenario's TL state fits in one chunk.
+
+> **CRITICAL — always pass an explicit topic-name string.** The `[DdsTopic]` attribute on these structs does
+> **not** give the CycloneDDS.NET 0.3.2 generator a usable name: the 1-arg `new DdsWriter<T>(participant)` /
+> `new DdsReader<T>(participant)` ctor resolves to a NULL topic name and throws `ArgumentNullException`.
+> Every writer and reader in this repo is constructed with the 2-arg ctor and a name from
+> `DdsTopicNames` (`Vehicles`/`Lifecycle`/`Geometry`/`Tl`) — a writer and its matching reader **must** use the
+> identical string, e.g. `new DdsWriter<DdsWireFrame>(participant, DdsTopicNames.Vehicles)` and
+> `new DdsReader<DdsWireFrame>(participant, DdsTopicNames.Vehicles)`.
 
 > **Deliberately NOT in `Traffic.sln`.** It depends on the external `CycloneDDS.NET` package and a native
 > DDS library, so the hermetic offline parity gate (`dotnet test Traffic.sln`, no network / no native DDS)
@@ -39,7 +54,7 @@ using Sim.Replication;        // FrameCodec, VehicleRecord
 using Sim.Replication.Dds;    // DdsWireFrame
 
 using var participant = new DdsParticipant();
-using var writer = new DdsWriter<DdsWireFrame>(participant);
+using var writer = new DdsWriter<DdsWireFrame>(participant, DdsTopicNames.Vehicles);
 
 // Per tick (<=10 Hz), for each chunk of vehicles:
 Span<byte> buf = new byte[FrameCodec.VehicleFrameSize(chunk.Length)];
@@ -52,7 +67,7 @@ writer.Write(frame);
 ## Reading (renderer wrapper)
 
 ```csharp
-using var reader = new DdsReader<DdsWireFrame>(participant);
+using var reader = new DdsReader<DdsWireFrame>(participant, DdsTopicNames.Vehicles);
 using var loan = reader.Take(maxSamples: 32);
 Span<byte> bytes = stackalloc byte[DdsWire.MaxPayload];
 var recs = new VehicleRecord[2048];
@@ -71,7 +86,7 @@ Same per-tick chunking, but typed columns instead of a blob. `FrameChunker` size
 by byte budget for the blob, by sample count here:
 
 ```csharp
-using var writer = new DdsWriter<DdsVehicleBatch>(participant);
+using var writer = new DdsWriter<DdsVehicleBatch>(participant, "sumo/vehicle-batch"); // pick your own name; must match the reader
 
 var maxPerChunk = DdsStructured.MaxSamples;                      // 256 movers / structured sample
 for (var c = 0; c < FrameChunker.ChunkCount(recs.Length, maxPerChunk); c++)

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    docs/SUMOSHARP-NATIVE-VIEWER.md P0: the headless-testable brain for the native viewer. Owns the
+    Engine + SimulationRunner (lifted from Sim.LiveHost/SimHost.cs, minus the web/JSON/ImGui bits) so it
+    can be exercised without raylib. Deliberately OUT of Traffic.sln (see the design doc); never add a
+    reference to this project from anything IN Traffic.sln.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <ProjectReference Include="..\Sim.Ingest\Sim.Ingest.csproj" />
+    <!-- P2a (DDS data path): the replication codecs + CycloneDDS.NET topics. Both are OUT of Traffic.sln
+         (see their own csproj headers), same as this project; pulling them in here does not touch the
+         hermetic gate. -->
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+    <ProjectReference Include="..\Sim.Replication.Dds\Sim.Replication.Dds.csproj" />
+  </ItemGroup>
+
+</Project>

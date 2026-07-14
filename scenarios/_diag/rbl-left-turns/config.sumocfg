@@ -1,0 +1,6 @@
+<configuration>
+  <input><net-file value="net.net.xml"/><route-files value="rou.rou.xml"/></input>
+  <time><begin value="0"/><end value="60"/></time>
+  <processing><step-method.ballistic value="false"/><default.action-step-length value="1"/><default.speeddev value="0"/><step-length value="1"/><time-to-teleport value="-1"/></processing>
+  <random_number><seed value="42"/></random_number>
+</configuration>
