@@ -217,28 +217,9 @@ public sealed class EngineHost : IDisposable
         MaxX = maxX;
         MaxY = maxY;
 
+        // Build the engine/runner (and front-load the sandbox burst -- BuildSim does that itself now, so a
+        // Restart repopulates too, not just the ctor).
         BuildSim();
-
-        // Front-load a burst of spawn attempts in sandbox mode so the network already has traffic on it
-        // from the very first published Snapshot, instead of relying solely on the periodic wall-clock
-        // Timer below. SimHost's browser demo runs for minutes, so waiting out the timer's 500ms dueTime
-        // is invisible there; a short-lived headless run (e.g. the P0 Xvfb screenshot recipe, a few
-        // hundred milliseconds to a few seconds of real wall time) can otherwise race the Timer and finish
-        // before it has fired even once, or fire only once or twice, leaving the roads empty or sparse.
-        // SpawnOne() itself gates on `_randomTraffic` (false in scenario mode, so this is a no-op there)
-        // and each call is independently queued via SimulationRunner.Post, applied at the next Tick
-        // boundary exactly like the timer's own calls -- purely additive, same code path.
-        if (_randomTraffic)
-        {
-            // Modest front-load only (was the whole cap): all these posts queue before the first tick, so a
-            // huge front-load routes thousands in ONE tick -> multi-second freeze. Cap it; the timer fills
-            // the rest in light batches. Small demo keeps its original 60-burst.
-            var burst = _spawnCap > 80 ? Math.Min(_spawnCap, 500) : 60;
-            for (var i = 0; i < burst; i++)
-            {
-                SpawnOne();
-            }
-        }
 
         // Keep replenishing traffic thereafter (vehicles that reach their destination despawn), and finish
         // the initial fill. Large fleets fire a bounded batch frequently (light ticks, ~15s to fill); the
@@ -302,6 +283,21 @@ public sealed class EngineHost : IDisposable
         lock (_obsLock)
         {
             _obstacles.Clear();
+        }
+
+        // Front-load a burst of random traffic (sandbox only) so the network has traffic from the very first
+        // published Snapshot -- on EVERY build, including a Restart (this used to be ctor-only, so a restarted
+        // sandbox started empty and refilled only via the slow replenish timer -> "vehicles: 0" for ~30s).
+        // Capped (not the whole fleet) so it doesn't route thousands in one tick; the timer tops up the rest.
+        // No-op in scenario mode (_randomTraffic false) -- the scenario re-departs its own demand. SpawnOne
+        // gates on the cap and Posts each spawn, applied at the next tick.
+        if (_randomTraffic)
+        {
+            var burst = _spawnCap > 80 ? Math.Min(_spawnCap, 500) : 60;
+            for (var i = 0; i < burst; i++)
+            {
+                SpawnOne();
+            }
         }
     }
 
@@ -463,7 +459,10 @@ public sealed class EngineHost : IDisposable
 
         lock (_lock)
         {
-            if (_runner.Snapshot.Count > _spawnCap)
+            // Snapshot is null until the runner's first Tick publishes one; a spawn fired in that window
+            // (front-load right after Start, or an early timer fire) must treat the fleet as empty, not NRE.
+            var snap = _runner.Snapshot;
+            if (snap is not null && snap.Count > _spawnCap)
             {
                 return;
             }
