@@ -265,13 +265,19 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
         }
 
         // Window resized: match the offscreen road layer to the new framebuffer and re-centre the camera
-        // offset so the current view stays put (pan/zoom otherwise unchanged).
-        if (Raylib.IsWindowResized())
+        // offset so the current view stays put (pan/zoom otherwise unchanged). Guard against a minimized /
+        // degenerate 0-size framebuffer -- LoadRenderTexture(0,0) segfaults the GL driver.
+        if (Raylib.IsWindowResized() && !Raylib.IsWindowMinimized())
         {
-            screenW = Raylib.GetScreenWidth();
-            screenH = Raylib.GetScreenHeight();
-            roadLayer.Resize(screenW, screenH);
-            camera.Offset = new Vector2(screenW / 2f, screenH / 2f);
+            var w = Raylib.GetScreenWidth();
+            var h = Raylib.GetScreenHeight();
+            if (w > 0 && h > 0)
+            {
+                screenW = w;
+                screenH = h;
+                roadLayer.Resize(w, h);
+                camera.Offset = new Vector2(w / 2f, h / 2f);
+            }
         }
 
         Raylib.BeginDrawing();
@@ -957,7 +963,7 @@ static void BuildLocalVehicleDraws(
     // (netconvert internal-link-detail=5), so the raw/interpolated heading rotates in ~5 discrete bursts; a
     // ~0.18s low-pass on the RENDER heading spreads them into one continuous rotation. Straights (constant
     // heading) converge instantly -> no lag; only actual rotation is smoothed.
-    var headAlpha = smooth ? 1f - MathF.Exp(-frameDtWall / 0.18f) : 1f;
+    var headAlpha = smooth ? 1f - MathF.Exp(-frameDtWall / 0.25f) : 1f;
 
     var a = 0f;
     if (interp)
