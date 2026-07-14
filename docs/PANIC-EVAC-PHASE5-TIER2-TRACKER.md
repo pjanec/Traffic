@@ -5,12 +5,13 @@ Status for Phase-5 Tier 2 (`PANIC-EVAC-PHASE5-TIER2-DESIGN.md` / `-TASKS.md`). P
 the city-size items (10k scenario, viz payload, auto-track scan). Both new hashes are opt-in + proven
 bit-identical; parity hash `909605E965BFFE59` stays unmoved throughout.
 
-> **Status:** design-first docs drafted; **awaiting owner go for Tier2-B1.**
+> **Status:** **Tier2-B1 DONE and Opus-reviewed** (both crowd hashes bit-identical + measurably faster;
+> 432 pass / 3 skip; hash `909605E965BFFE59` unmoved). **Awaiting owner go for Tier2-B2** (10k demo).
 
 ## STAGE T2-S1 — spatial-hash the two crowd solvers
-- [ ] **T2.1** `MixedTrafficCrowd` uniform-grid neighbour query (opt-in, `Array.Sort` candidate gather; exact Position+Heading equality test incl. MaxNeighbours + non-holonomic path) — #1 hotspot
-- [ ] **T2.2** enable `OrcaCrowd.UseSpatialHash` for the evac ped crowd (`EvacConfig` flag; demo-level grid==brute signature test) — #2 hotspot
-- [ ] **T2.3** heavy-load micro-benchmark (N≈250/1000/2000, brute vs grid, both solvers) — proves the reason for the work
+- [x] **T2.1** `MixedTrafficCrowd` uniform-grid neighbour query — brute+grid share `GatherVehicleNeighbours` (grid = sorted 3×3-cell candidates) → bit-identical by construction; `MixedTrafficSpatialHashTests` asserts exact Position+Heading equality incl. MaxNeighbours-binding + non-holonomic paths. Opt-in, default off.
+- [x] **T2.2** `EvacConfig.UseCrowdSpatialHash` enables the hash on BOTH `_peds` (OrcaCrowd) and `_mover` (MixedTrafficCrowd via VehicleMover pass-through); `EvacCrowdSpatialHashTests` proves the 604-ped/151-pusher organic demo signature is identical off vs on.
+- [x] **T2.3** micro-benchmark (`Sim.EvacProfile --microbench`): at N=2000 OrcaCrowd **3.7×**, MixedTrafficCrowd **2.65×**; crossover ~N=1000 (grid slightly slower at N=250 due to rebuild overhead, as expected).
 
 ## STAGE T2-S2 — the 10k demo + payload/scan handling
 - [ ] **T2.4** 10k host scenario (spike: 2-lane `--rand` @10k → adopt; else fall back to committed `city-15000`; decision logged)

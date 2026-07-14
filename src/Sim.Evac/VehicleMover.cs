@@ -59,6 +59,15 @@ public sealed class VehicleMover : ICrowdFootprintSource
 
     public int Count => _crowd.Count;
 
+    // PANIC-EVAC-PHASE5-TIER2-DESIGN.md §2a/§2b: pass-through so EvacConfig.UseCrowdSpatialHash can
+    // reach the inner MixedTrafficCrowd's opt-in uniform spatial hash (T2.1). Default false (unset) ->
+    // the inner crowd's own default -> brute-force, byte-identical.
+    public bool UseSpatialHash
+    {
+        get => _crowd.UseSpatialHash;
+        set => _crowd.UseSpatialHash = value;
+    }
+
     // Arm the band walls (PANIC-EVAC-PHASE3-DESIGN.md §4 / FakeNavMesh.BandWalls) -- confines pushers
     // to the known world, the shaped analogue of the pedestrian BoundaryLoop. Confinement is now
     // guaranteed by the solver's own swept wall clip (docs/MIXED-WALL-CONTAINMENT.md W1); this just

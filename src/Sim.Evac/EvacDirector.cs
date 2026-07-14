@@ -94,6 +94,15 @@ public sealed class EvacDirector
 
         _peds.AddObstacle(_navmesh.BoundaryLoop);   // R7 hard outer edge
         _peds.MaxNeighbours = 8;                     // convergence aid for dense foot-exodus
+
+        // PANIC-EVAC-PHASE5-TIER2-DESIGN.md §2b: opt-in spatial hash for BOTH crowd solvers (pedestrian
+        // OrcaCrowd + pusher MixedTrafficCrowd via VehicleMover's pass-through). Default off -> every
+        // existing demo/test byte-identical; proven bit-identical to brute-force when on.
+        if (cfg.UseCrowdSpatialHash)
+        {
+            _peds.UseSpatialHash = true;
+            _mover.UseSpatialHash = true;
+        }
         // T3.1 §3: composite source -- pedestrians AND pushing cars are both obstacles to the lane
         // engine. Still one seam, inert when both are empty, so parity is unaffected.
         _engine.CrowdSource = new CompositeFootprintSource(_peds, _mover);   // R5

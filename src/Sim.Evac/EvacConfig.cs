@@ -82,6 +82,13 @@ public sealed record EvacConfig
     // vehicles still need fear/flee/blocked treatment once they enter the region).
     public double WorkingRadius { get; init; } = 250.0;
 
+    // PANIC-EVAC-PHASE5-TIER2-DESIGN.md §2b: opt-in uniform spatial hash for the two O(m^2) crowd
+    // solvers (the pedestrian OrcaCrowd and the pusher MixedTrafficCrowd via VehicleMover), proven
+    // bit-identical to brute-force (OrcaSpatialHashTests / MixedTrafficSpatialHashTests). Default false
+    // so every existing demo/test stays byte-identical; a caller opts in for the perf win on a
+    // heavily-loaded working region (see Sim.EvacProfile --microbench for the measured speedup).
+    public bool UseCrowdSpatialHash { get; init; } = false;
+
     // PANIC-EVAC-PHASE3-DESIGN.md §4: Orca-push tunables (Option A, external shaped-mover handoff).
     // All ON/first-cut by default so the grid demo actually pushes; EnableOrcaPush=false recovers
     // exact Phase-1/2 behaviour (blocked+panicked converts straight to pedestrian, unchanged).

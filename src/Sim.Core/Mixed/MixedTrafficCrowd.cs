@@ -103,6 +103,24 @@ public sealed class MixedTrafficCrowd
 
     private int _stepIndex;
 
+    // PANIC-EVAC-PHASE5-TIER2-DESIGN.md §2a: uniform spatial hash for the vehicle-neighbour query,
+    // mirroring OrcaCrowd's proven Q3 grid EXACTLY (own copies -- not shared with OrcaCrowd's grid).
+    // Default false -> brute-force, byte-identical to pre-Tier2 behaviour. When true, RebuildGrid()
+    // buckets the frozen start-of-step positions (cell edge == NeighbourDist, so a vehicle's whole
+    // neighbourhood lies within its cell + the 8 around it); GridCandidates(i) gathers that 3x3 block
+    // and SORTS it ascending by index before handing it to GatherVehicleNeighbours -- the SAME method
+    // the brute path calls (useAll:true) -- so the neighbour set AND order (hence every LP, hence
+    // every position/heading) are bit-identical to brute-force. Walls are NOT gridded (unchanged, few
+    // in number, appended after the capped vehicle set).
+    public bool UseSpatialHash { get; set; }
+
+    private readonly Dictionary<long, int> _cellToBucket = new();
+    private int[][] _bucketAgents = Array.Empty<int[]>();
+    private int[] _bucketFill = Array.Empty<int>();
+    private int _bucketCount;
+    private double _cellSize;
+    private int[] _candidateScratch = Array.Empty<int>();
+
     public MixedTrafficCrowd(int capacity = 16)
     {
         capacity = Math.Max(1, capacity);
@@ -216,6 +234,15 @@ public sealed class MixedTrafficCrowd
                     _velocity[i] = Vec2.Zero;
                 }
             }
+        }
+
+        // Rebuild the spatial hash from the frozen (post-removal) positions before planning, so every
+        // per-vehicle query this step reads a consistent index. Inert unless UseSpatialHash (mirrors
+        // OrcaCrowd.Step exactly). Safe/order-independent because Step is already PLAN/EXECUTE double-
+        // buffered: the plan loop below only reads frozen _position/_velocity/_heading.
+        if (UseSpatialHash)
+        {
+            RebuildGrid();
         }
 
         for (var i = 0; i < _count; i++)
@@ -357,28 +384,21 @@ public sealed class MixedTrafficCrowd
         var rangeSq = NeighbourDist * NeighbourDist;
         var maxN = MaxNeighbours;
         var assertI = _assert[i];
-        var k = 0;
 
-        // Vehicle neighbours: reciprocal but asymmetric. Ego's responsibility for j is
-        // assert_j / (assert_i + assert_j) -- ego yields more to a more assertive neighbour.
-        for (var j = 0; j < _count; j++)
+        // Vehicle neighbours: reciprocal but asymmetric (ego's responsibility for j is
+        // assert_j / (assert_i + assert_j) -- ego yields more to a more assertive neighbour), gathered
+        // through the SAME method for both the brute-force scan (useAll:true, iterate 0.._count) and
+        // the spatial-hash path (useAll:false, iterate the sorted 3x3-cell candidates) -- so the two
+        // are bit-identical by construction (PANIC-EVAC-PHASE5-TIER2-DESIGN.md §2a).
+        int k;
+        if (UseSpatialHash)
         {
-            if (j == i || !_active[j])
-            {
-                continue;
-            }
-
-            var dsq = (_position[j] - pos).AbsSq;
-            if (dsq > rangeSq)
-            {
-                continue;
-            }
-
-            var assertJ = _assert[j];
-            var resp = assertJ / (assertI + assertJ);
-            var agent = new ShapedVoSolver.ShapedAgent(
-                _position[j], _velocity[j], _solveProto[j].RotatedTo(_heading[j]), resp);
-            k = Insert(agent, dsq, k, maxN);
+            var candidates = GridCandidates(i);
+            k = GatherVehicleNeighbours(i, pos, assertI, rangeSq, maxN, 0, candidates, useAll: false);
+        }
+        else
+        {
+            k = GatherVehicleNeighbours(i, pos, assertI, rangeSq, maxN, 0, default, useAll: true);
         }
 
         // Walls: full-yield static shaped obstacles (responsibility 1.0). Range test is by centre
@@ -565,6 +585,128 @@ public sealed class MixedTrafficCrowd
         tEnter = tMin;
         return true;
     }
+
+    // The single vehicle-neighbour gather used by BOTH the brute-force and spatial-hash paths (so they
+    // are bit-identical by construction, mirroring OrcaCrowd.GatherAgentNeighbours). Iterates either
+    // every vehicle (useAll) or the caller's candidate indices (already sorted ascending), applying the
+    // exact same self/active/range filter and the exact same nearest-k bounded Insert. Returns the
+    // updated running count k.
+    private int GatherVehicleNeighbours(
+        int i, Vec2 pos, double assertI, double rangeSq, int maxN, int k, ReadOnlySpan<int> candidates, bool useAll)
+    {
+        var m = useAll ? _count : candidates.Length;
+        for (var idx = 0; idx < m; idx++)
+        {
+            var j = useAll ? idx : candidates[idx];
+            if (j == i || !_active[j])
+            {
+                continue;
+            }
+
+            var dsq = (_position[j] - pos).AbsSq;
+            if (dsq > rangeSq)
+            {
+                continue;
+            }
+
+            var assertJ = _assert[j];
+            var resp = assertJ / (assertI + assertJ);
+            var agent = new ShapedVoSolver.ShapedAgent(
+                _position[j], _velocity[j], _solveProto[j].RotatedTo(_heading[j]), resp);
+            k = Insert(agent, dsq, k, maxN);
+        }
+
+        return k;
+    }
+
+    // Rebuild the uniform spatial hash from the frozen (post-removal) positions. Cell size ==
+    // NeighbourDist so a vehicle's whole in-range neighbourhood is within its cell + the 8 around it.
+    // Pooled per-bucket arrays are cleared (fill reset) and reused; only growth allocates. Mirrors
+    // OrcaCrowd.RebuildGrid exactly (own copies, not shared).
+    private void RebuildGrid()
+    {
+        _cellSize = NeighbourDist;
+        _cellToBucket.Clear();
+        _bucketCount = 0;
+        for (var i = 0; i < _count; i++)
+        {
+            if (!_active[i])
+            {
+                continue;
+            }
+
+            var key = CellKey(_position[i]);
+            if (!_cellToBucket.TryGetValue(key, out var bi))
+            {
+                bi = _bucketCount++;
+                EnsureBucket(bi);
+                _bucketFill[bi] = 0;
+                _cellToBucket[key] = bi;
+            }
+
+            var arr = _bucketAgents[bi];
+            var f = _bucketFill[bi];
+            if (f == arr.Length)
+            {
+                Array.Resize(ref arr, arr.Length * 2);
+                _bucketAgents[bi] = arr;
+            }
+
+            arr[f] = i;
+            _bucketFill[bi] = f + 1;
+        }
+    }
+
+    // Candidate vehicle indices for ego `i`: every vehicle in the 3x3 cell block around ego's cell,
+    // SORTED ascending so the downstream gather matches brute-force order exactly. Reuses
+    // _candidateScratch. Mirrors OrcaCrowd.GridCandidates exactly.
+    private ReadOnlySpan<int> GridCandidates(int i)
+    {
+        if (_candidateScratch.Length < _count)
+        {
+            Array.Resize(ref _candidateScratch, _count);
+        }
+
+        var cx = FloorDiv(_position[i].X, _cellSize);
+        var cy = FloorDiv(_position[i].Y, _cellSize);
+        var n = 0;
+        for (var dx = -1; dx <= 1; dx++)
+        {
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                if (_cellToBucket.TryGetValue(PackCell(cx + dx, cy + dy), out var bi))
+                {
+                    var fill = _bucketFill[bi];
+                    var arr = _bucketAgents[bi];
+                    for (var t = 0; t < fill; t++)
+                    {
+                        _candidateScratch[n++] = arr[t];
+                    }
+                }
+            }
+        }
+
+        Array.Sort(_candidateScratch, 0, n);
+        return _candidateScratch.AsSpan(0, n);
+    }
+
+    private void EnsureBucket(int bi)
+    {
+        if (_bucketAgents.Length <= bi)
+        {
+            var newLen = Math.Max(bi + 1, Math.Max(8, _bucketAgents.Length * 2));
+            Array.Resize(ref _bucketAgents, newLen);
+            Array.Resize(ref _bucketFill, newLen);
+        }
+
+        _bucketAgents[bi] ??= new int[8];
+    }
+
+    private int FloorDiv(double v, double cell) => (int)Math.Floor(v / cell);
+
+    private static long PackCell(int cx, int cy) => ((long)cx << 32) | (uint)cy;
+
+    private long CellKey(Vec2 p) => PackCell(FloorDiv(p.X, _cellSize), FloorDiv(p.Y, _cellSize));
 
     // Nearest-k bounded insertion (sorted nearest-first), identical in spirit to OrcaCrowd's. maxN<=0
     // means unlimited (simple append). Returns the new count.
