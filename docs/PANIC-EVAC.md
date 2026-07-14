@@ -139,6 +139,9 @@ a realistic-enough backdrop; the evacuation is the product. **Not** an "Indian t
 3. **Vehicle Orca-mode / off-road** — cars push into the vicinity (shaped NH free-space model, in
    the core) before blocking; richer fake-navmesh buffer.
 4. **Sublane realism (optional, separate)** — filter-to-front at lights in the organized phase.
+   **DEFERRED** — see `PANIC-EVAC-PHASE4-DECISION.md`: needs a cohesive `MSLCM_SL2015` parity port (two
+   prior attempts failed) and is parity-BOUND; the 10k-vehicle perf is safe because sublane is a global
+   per-scenario switch (the fast non-sublane city is a separate run), so this is low-value/high-risk now.
 5. **Scale** — hundreds → thousands; spatial indexing; far side stays jammed and unaware.
 
 ## 7. Resolved decisions + remaining tunables
