@@ -146,7 +146,7 @@ if (mode == "local")
 
 if (mode == "loopback")
 {
-    return RunLoopback(ResolveNetPath(inputPath), screenshotPath, frames, delaySeconds, dropObstacle, traceVeh);
+    return RunLoopback(ResolveNetPath(inputPath), screenshotPath, frames, delaySeconds, dropObstacle, traceVeh, fleet);
 }
 
 if (mode == "publish")
@@ -539,9 +539,14 @@ static int RunPublish(string netPath, double? secondsCap, int? fleet, double? st
 // and the subscriber/renderer, over DDS intra-host. Renders the DEAD-RECKONED poses coming through DDS
 // (DrClock + PoseResolver against the SUBSCRIBER's decoded geometry/history), not the local Snapshot --
 // the single-app DR test the design doc's "loopback" mode exists for.
-static int RunLoopback(string netPath, string? screenshotPath, int frames, float initialDelaySeconds, (double X, double Y)? dropObstacle, string? traceVeh = null)
+static int RunLoopback(string netPath, string? screenshotPath, int frames, float initialDelaySeconds, (double X, double Y)? dropObstacle, string? traceVeh = null, int? fleet = null)
 {
-    using var host = new EngineHost(netPath);
+    // `--fleet N` runs the net as a random-traffic SANDBOX (like --mode publish) so a demand-less net
+    // (e.g. the evac-grid samples) can be filled for a loopback DR review; without it, a scenario dir
+    // drives its own committed demand.
+    using var host = fleet is { } fleetCap
+        ? new EngineHost(netPath, spawnCap: fleetCap, forceSandbox: true)
+        : new EngineHost(netPath);
     using var participant = new DdsParticipant();
     using var publisher = new DdsPublisher(host, participant);
     using var subscriber = new DdsSubscriber(participant);
