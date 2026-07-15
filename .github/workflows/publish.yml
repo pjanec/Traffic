@@ -48,8 +48,25 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "packing version $VERSION"
           dotnet build Traffic.sln -c Release "-p:Version=$VERSION"
-          dotnet pack src/Sim.Core/Sim.Core.csproj    -c Release --no-build "-p:Version=$VERSION" -o ./nupkgs
-          dotnet pack src/Sim.Ingest/Sim.Ingest.csproj -c Release --no-build "-p:Version=$VERSION" -o ./nupkgs
+          # Portable + managed packages (all in Traffic.sln, already built above -> --no-build):
+          #   Core/Ingest (engine), Replication (transport-neutral API + contract), Viewer.Motion
+          #   (portable render-side motion), Testing (Sim.Harness), Evac (Sim.Evac), and the
+          #   SumoSharp meta-package. See docs/SUMOSHARP-PACKAGING-DESIGN.md §2.
+          for proj in \
+            src/Sim.Core/Sim.Core.csproj \
+            src/Sim.Ingest/Sim.Ingest.csproj \
+            src/Sim.Replication/Sim.Replication.csproj \
+            src/Sim.Viewer.Motion/Sim.Viewer.Motion.csproj \
+            src/Sim.Harness/Sim.Harness.csproj \
+            src/Sim.Evac/Sim.Evac.csproj \
+            packaging/SumoSharp.Meta/SumoSharp.Meta.csproj ; do
+            dotnet pack "$proj" -c Release --no-build "-p:Version=$VERSION" -o ./nupkgs
+          done
+          # Native transport binding: Sim.Replication.Dds is NOT in Traffic.sln (the hermetic gate
+          # never needs CycloneDDS), so build+pack it standalone (restores CycloneDDS.NET on the runner).
+          dotnet pack src/Sim.Replication.Dds/Sim.Replication.Dds.csproj -c Release "-p:Version=$VERSION" -o ./nupkgs
+          # NOTE: SumoSharp.Viewer.Raylib (native raylib desktop viewer, P3.3) is added here once it
+          # is split out of the demo exe into a packable component.
           ls -l ./nupkgs
 
       - name: Upload packages as build artifact
