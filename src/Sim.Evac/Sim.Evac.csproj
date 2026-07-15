@@ -3,18 +3,23 @@
   <!-- PANIC-EVAC.md: the EXTERNAL evac layer (fear/panic decision, pedestrians-as-obstacles,
        fake-navmesh). Parity-EXEMPT and app-layer: it consumes Sim.Core's frozen seams (DrModel,
        SetVehicleParams, SetDestination, Despawn, AddObstacle, CrowdSource/WorldDisc, OrcaCrowd)
-       but the driving core never references it, so nothing here can move the determinism hash.
-       Not packaged (the NuGet surface is Sim.Core/Sim.Ingest only). -->
+       but the driving core never references it, so nothing here can move the determinism hash. -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
-    <IsPackable>false</IsPackable>
+
+    <!-- NuGet: the panic-evacuation subsystem — an optional domain extension layered over
+         Sim.Core's public seams. Parity-exempt app layer. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SumoSharp.Evac</PackageId>
+    <Description>SumoSharp — panic-evacuation subsystem for the SumoSharp traffic engine: fear/panic decision, pedestrians-as-obstacles, and a lightweight navmesh, built on SumoSharp.Core's frozen seams. Parity-exempt app layer. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <None Include="README.md" Pack="true" PackagePath="/" Condition="Exists('README.md')" />
   </ItemGroup>
 
 </Project>
