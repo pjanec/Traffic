@@ -131,10 +131,17 @@ prerequisite for the motion package (which consumes the sample defined here).*
 
 ---
 
-## Stage P3 — `SumoSharp.Viewer.Raylib`
+## Stage P3 — Raylib viewer (OPEN: package vs demo — D5)
 
-### P3.1 — Make the raylib viewer component packable; keep the exe a thin sample
-- **Design ref:** §5 (last paragraph), §6.
+> **Decision pending (D5).** Main repositioned the native viewer as an interactive **demo tool**
+> (`DemoCatalog` picker + live evac; `Sim.Viewer.Core` now depends on `Sim.Evac`). Recommendation:
+> ship the raylib viewer as a **demo/sample** and skip `SumoSharp.Viewer.Raylib` unless a drop-in
+> raylib renderer is actually wanted. If packaged, it wraps **only** the reusable rendering primitives
+> (draw vehicle / road layer / camera) — never `DemoCatalog`, `DemoSession`, the evac render path, or
+> the ImGui picker, which stay demo-side. Task P3.1 below applies only if the user opts to package.
+
+### P3.1 — (if opted in) Make the reusable raylib primitives packable; keep the exe the demo tool
+- **Design ref:** §3 (D5), §5 (last paragraph), §6.
 - **Files:** `src/Sim.Viewer.Core` (retained as the raylib-tier host + DDS adapter, now depending on
   `Viewer.Motion`), `src/Sim.Viewer/*` (exe reduced to a thin shell), csproj metadata, `Traffic.sln`.
 - **csproj shape:** component `IsPackable=true`, `PackageId=SumoSharp.Viewer.Raylib`, net8.0,

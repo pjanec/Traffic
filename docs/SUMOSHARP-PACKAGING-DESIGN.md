@@ -45,6 +45,12 @@ bundled), an optional `SumoSharp.Runtime`, and a dev-time `SumoSharp.Tools`. Sin
    transport; `Sim.Core` stays network-agnostic."* So D8/D9 below are **extending an already-adopted
    principle to the subscribe/transport side**, not introducing a new one — and part of the motion
    extraction (the shared arc extrapolation) is **already done**.
+8. **The native viewer is being repositioned as an interactive demo tool**
+   (`SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md`): a `local`-mode `DemoCatalog` scenario picker with a live
+   panic-evac category. `Sim.Viewer.Core` now `ProjectReference`s **`Sim.Evac`**, and `Sim.Core`
+   gained a nullable/inert `SimulationRunner.OnAfterStep` seam (parity + determinism hash unchanged;
+   446 tests green). This sharpens the viewer split (D5) — reusable motion math vs the showcase app —
+   and is why the raylib-viewer-as-package decision is now open again.
 
 The user's ask names all of these: viewer tools as (maybe standalone) packages, and a
 reimplementation guide for dead-reckoning/smoothing across viewers. So the packaging surface has to
@@ -178,10 +184,22 @@ sample shell). These demonstrate; they are not the product.
   accel, posLat, latSpeed, laneHandle, time }`. The subscribe-side timestamped sample should be the
   same field set (it *is* the DR state the viewer predicts from), so publisher and subscriber share
   one sample shape — not two parallel definitions.
-- **D5 — Ship the raylib viewer as a *package* (`SumoSharp.Viewer.Raylib`), not only a sample.**
-  The user explicitly wants "viewer tools (maybe standalone nugets)". The reusable brain is already
-  split into `Sim.Viewer.Core`; this doc extends that split so the render component is consumable,
-  while the `Sim.Viewer` exe remains a thin runnable sample. Native raylib keeps it a leaf.
+- **D5 — Raylib viewer packaging: REVISIT given the demo-tool direction (open).** The user first
+  chose "ship the raylib viewer as a standalone package." Since then, main has repositioned the
+  native viewer as an **interactive demo/showcase tool** (`SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md`):
+  a `local`-mode `DemoCatalog` scenario picker + a live panic-evac category, and `Sim.Viewer.Core`
+  now `ProjectReference`s **`Sim.Evac`**. That splits the viewer code three ways by reuse value:
+  - **High, portable — package it:** DR motion reconstruction (`DrClock` + as-built pipeline helpers
+    + `PoseResolver`) → `SumoSharp.Viewer.Motion` (P2). Unaffected by the demo-tool change and the
+    clear win for a game/3D integrator.
+  - **Medium, native — optional:** raylib *rendering primitives* (draw vehicle / road layer / camera)
+    → could be `SumoSharp.Viewer.Raylib`; most engines have their own renderer.
+  - **None — demo-tool only, stays in the exe/sample:** `DemoCatalog`, `DemoSession`, the evac render
+    path, the ImGui scenario picker. Packaging a showcase app as a NuGet has no value.
+  **Recommendation (updated):** package `Viewer.Motion` now; ship the raylib viewer as a **demo/sample
+  tool** (its new purpose), and defer `SumoSharp.Viewer.Raylib` until someone actually wants a drop-in
+  raylib renderer. Awaiting the user's call (see §9 note). If they still want `Viewer.Raylib`, it
+  packages only the reusable rendering primitives — never `DemoCatalog`/evac/picker.
 - **D6 — `SumoSharp.Testing` and `SumoSharp.Tools` are dev-time packages.** Never referenced by a
   shipping game build. `Testing` = the existing `Sim.Harness`. `Tools` is still design-only (§2 of
   `SUMOSHARP-API.md`) — implement last, or ship as a `dotnet sumosharp` global tool.
@@ -211,7 +229,10 @@ sample shell). These demonstrate; they are not the product.
 **Problem.** The reusable render-side reconstruction — the thing a game/3D integrator most wants —
 is today split across `Sim.Core` (`PoseResolver`, `ILaneShapeSource`) and `Sim.Viewer.Core`
 (`DrClock`). `Sim.Viewer.Core` is **not packable** and, worse, `ProjectReference`s
-`Sim.Replication.Dds`, so it transitively drags the **native DDS binary**. And `DrClock.Resolve`
+`Sim.Replication.Dds` **and now `Sim.Evac`** (the demo-tool evac path), so it transitively drags the
+**native DDS binary** *and* the evac domain layer — neither of which a motion consumer wants. Pulling
+`DrClock` + the pipeline helpers into their own `Viewer.Motion` project is thus doubly motivated: it
+escapes both unwanted dependencies. And `DrClock.Resolve`
 takes a `DdsSubscriber.VehicleSample` / `DdsSubscriber.HistoryCap` — i.e. the clock is **coupled at
 the type level to the DDS subscriber**, even though `SUMOSHARP-VIEWER-DR-SMOOTHING.md §8` already
 argues (correctly) that `DrClock` is *conceptually* transport-agnostic.
@@ -268,8 +289,8 @@ raylib/ImGui rendering + the DDS subscriber adapter; the `Sim.Viewer` exe become
 | `Sim.Core` | lib (net8;ns2.1) | **`SumoSharp.Core`** (shipped) |
 | `Sim.Replication` | lib (net8;ns2.1) | **`SumoSharp.Replication`** (shipped) |
 | `Sim.Replication.Dds` | lib (net8) ⚠native | **`SumoSharp.Replication.Dds`** (shipped) |
-| `Sim.Viewer.Core` | lib (net8) | **split**: portable reconstruction → new `SumoSharp.Viewer.Motion`; DDS/host wiring → `Viewer.Raylib` internal |
-| `Sim.Viewer` | exe ⚠native | reusable parts → **`SumoSharp.Viewer.Raylib`**; exe stays a thin **sample** |
+| `Sim.Viewer.Core` | lib (net8) → Core, Ingest, Replication, Replication.Dds, **Evac** | **split**: portable reconstruction → new `SumoSharp.Viewer.Motion`; demo-tool wiring (`DemoCatalog`, `DemoSession`, evac path) stays demo-side, not packaged |
+| `Sim.Viewer` | exe ⚠native | now an **interactive demo tool** (`DemoCatalog` picker + live evac). Ships as a **demo/sample**; optional `SumoSharp.Viewer.Raylib` (D5, open) would package only reusable raylib primitives |
 | `Sim.Harness` | lib (net8) | **`SumoSharp.Testing`** (opt-in dev-time package) |
 | `Sim.Evac` | lib (net8) | **`SumoSharp.Evac`** (opt-in package) |
 | `Sim.EvacProfile` | exe | sample (unchanged) |
