@@ -12,7 +12,9 @@ namespace Sim.Viewer.Core;
 //
 // CRITICAL (see Sim.Replication.Dds/README.md): every reader below is constructed with the SAME explicit
 // DdsTopicNames.* string the matching DdsPublisher writer used.
-public sealed class DdsSubscriber : IDisposable
+// docs/SUMOSHARP-PACKAGING-DESIGN.md P1 (D8): implements the transport-neutral IReplicationSource so a
+// consumer can be coded against Sim.Replication alone; the DDS-specific members below are unchanged.
+public sealed class DdsSubscriber : IReplicationSource
 {
     private const int HistoryCap = 8;
 
