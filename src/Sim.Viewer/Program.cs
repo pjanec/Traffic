@@ -10,6 +10,7 @@ using Sim.Core;
 using Sim.Replication;
 using Sim.Viewer;
 using Sim.Viewer.Core;
+using Sim.Viewer.Motion;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P0/P1/P2b/P3: the native desktop viewer entry point.
 //   dotnet run --project src/Sim.Viewer -- --mode <local|loopback|publish> <scenarioDir|net.xml> [opts]
@@ -797,7 +798,7 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
     // idea"). A stable manual delay reads far smoother. Still available via the checkbox for the rare case
     // where minimising latency matters more than steadiness.
     var alwaysInterpolate = false;
-    var smoothed = new Dictionary<VehicleHandle, (float X, float Y, float Deg)>();
+    var smoother = new DrPoseSmoother();
     var lastPublishedSimTime = double.NaN;
     var lastGeneration = host.Generation;
     VehicleHandle? traceHandle = null; // diagnostic: resolved once from --trace-veh id
@@ -891,7 +892,7 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
         // depend on this frame's camera input, so it's hoisted before the input/drawing block into a
         // function shared with `--mode remote` (PumpAndBuildVehicleDraws below) -- same math, same DR
         // resolve, same smoothing, just called from one place instead of duplicated per mode.
-        PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoothed, vehicleDraws,
+        PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoother, vehicleDraws,
             paused: host.IsPaused, traceHandle: traceHandle);
 
         Raylib.BeginDrawing();
@@ -1050,7 +1051,7 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
     // idea"). A stable manual delay reads far smoother. Still available via the checkbox for the rare case
     // where minimising latency matters more than steadiness.
     var alwaysInterpolate = false;
-    var smoothed = new Dictionary<VehicleHandle, (float X, float Y, float Deg)>();
+    var smoother = new DrPoseSmoother();
     var startWall = Stopwatch.StartNew();
 
     var vehicleDraws = new List<Renderer.DrVehicleDraw>();
@@ -1103,7 +1104,7 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
             }
         }
 
-        PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoothed, vehicleDraws,
+        PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoother, vehicleDraws,
             paused: status.Paused);
 
         if (!cameraFitted && subscriber.Geometry.Count > 0)
@@ -1202,14 +1203,15 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
 // P3 refactor: the DDS-pump + dead-reckoned-pose-resolve step shared by `--mode loopback` and `--mode
 // remote` -- identical math to the block this replaces in each (DrClock.Resolve + PoseResolver.Resolve(dt=0)
 // + the extrapolation-only smoothing low-pass), just called from one place. Mutates `vehicleDraws` (cleared
-// and repopulated) and `smoothed` (the low-pass's per-vehicle running state) in place.
+// and repopulated) and `smoother` (the DrPoseSmoother's per-vehicle running state, Sim.Viewer.Motion) in
+// place.
 static void PumpAndBuildVehicleDraws(
     DdsSubscriber subscriber,
     DrClock drClock,
     float delaySeconds,
     bool smooth,
     FrameStats frameStats,
-    Dictionary<VehicleHandle, (float X, float Y, float Deg)> smoothed,
+    DrPoseSmoother smoother,
     List<Renderer.DrVehicleDraw> vehicleDraws,
     bool paused,
     VehicleHandle? traceHandle = null)
@@ -1294,58 +1296,10 @@ static void PumpAndBuildVehicleDraws(
         var (_, avgFrame, _) = frameStats.Compute();
         var frameDt = avgFrame > 0f ? avgFrame : 1f / 60f;
 
-        if (smoothed.TryGetValue(handle, out var prevPose))
-        {
-            var laneHr = pdeg * MathF.PI / 180f;               // lane-forward heading (PoseResolver / lane lerp)
-            float lhx = MathF.Sin(laneHr), lhy = MathF.Cos(laneHr);
-
-            // (1) POSITION error-smoothing (netcode-style, capped correction): the rendered position chases the
-            // DR target but its correction speed is CAPPED, so smooth constant-speed motion passes through with
-            // ZERO lag while a reconciliation snap is absorbed over a few frames instead of teleporting. Forward-
-            // biased: a backward correction is a gentle ~50% slowdown (floor 0.5*trueStep), never a reverse or a
-            // freeze. Lateral catch-up eases both ways, capped. A >7 m gap snaps (respawn). Moved AHEAD of the
-            // heading step so the motion-tilt below sees the FINAL rendered displacement.
-            var tx = (float)px - prevPose.X;
-            var ty = (float)py - prevPose.Y;
-            if (tx * tx + ty * ty <= 49f)
-            {
-                var along = tx * lhx + ty * lhy;               // longitudinal part of the needed correction
-                var perp = tx * -lhy + ty * lhx;                // lateral part
-                var trueStep = (float)resolved.State.Speed * frameDt;
-                var fwdCap = trueStep + 6f * frameDt;          // real travel + 6 m/s catch-up
-                var latCap = 4f * frameDt;                     // 4 m/s lateral catch-up
-                along = Math.Clamp(along, 0.5f * trueStep, fwdCap);
-                perp = Math.Clamp(perp, -latCap, latCap);
-                px = prevPose.X + along * lhx + perp * -lhy;
-                py = prevPose.Y + along * lhy + perp * lhx;
-            }
-
-            // (2) MOTION-DERIVED heading tilt: lean toward the vehicle's ACTUAL render motion this frame, so a
-            // lane-change slide leans into the change in BOTH directions (the outbound straddle AND the return,
-            // which is rendered via extrapolation + the lateral error-smoothing above and otherwise stays pinned
-            // to the lane tangent). Decompose the final render displacement in the lane-heading frame; tilt =
-            // atan2(perp, along), capped. ~0 on straight cruise and on turns (motion follows the lane).
-            var mdx = (float)px - prevPose.X;
-            var mdy = (float)py - prevPose.Y;
-            var mAlong = mdx * lhx + mdy * lhy;
-            var mPerp = mdx * -lhy + mdy * lhx;
-            if (mAlong > 0.01f)
-            {
-                var tiltDeg = (float)(Math.Atan2(mPerp, mAlong) * 180.0 / Math.PI);
-                tiltDeg = Math.Clamp(tiltDeg, -25f, 25f);
-                // SUBTRACT: navi heading is clockwise (0=N, 90=E) but atan2 is counter-clockwise, so the
-                // lateral tilt must be negated or the lean shows the wrong way (car pointing right while
-                // sliding left, and vice versa).
-                pdeg = (pdeg - tiltDeg + 360f) % 360f;
-            }
-
-            // (3) heading low-pass toward the (tilt-adjusted) target: ease over ~0.18 s; a >100 deg jump snaps.
-            var aHead = 1f - MathF.Exp(-frameDt / 0.18f);
-            var dh = ((pdeg - prevPose.Deg + 540f) % 360f) - 180f;
-            pdeg = MathF.Abs(dh) > 100f ? pdeg : (prevPose.Deg + dh * aHead + 360f) % 360f;
-        }
-
-        smoothed[handle] = ((float)px, (float)py, pdeg);
+        var (sx, sy, sdeg) = smoother.Smooth(handle, px, py, pdeg, resolved.State.Speed, frameDt);
+        px = sx;
+        py = sy;
+        pdeg = sdeg;
 
         // Diagnostic (opt-in via --trace-veh): dump the FINAL drawn pose for the traced vehicle -- AFTER the
         // heading low-pass + position filter, i.e. exactly what vehicleDraws renders (placed here, not before

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Sim.Core;
 using Sim.Replication;
 
-namespace Sim.Viewer.Core;
+namespace Sim.Viewer.Motion;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P2b / SUMOSHARP-DEADRECKONING.md §7/§8 — a direct port of
 // Sim.LiveHost/HtmlPage.cs's dead-reckoning pacing: `ingestFrame`'s long-baseline wall<->sim rate fit, the

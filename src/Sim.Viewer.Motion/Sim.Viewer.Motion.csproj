@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 + netstandard2.1 (Unity/Godot can reconstruct motion too). -->
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+
+    <!-- NuGet: the portable render-side motion-reconstruction package (SUMOSHARP-PACKAGING-DESIGN.md §5,
+         SUMOSHARP-VIEWER-DR-SMOOTHING.md §8/§10): DrClock (dead-reckoning render clock + Resolve) plus
+         DrPoseSmoother (the as-built capped position error-smoothing + motion-derived heading tilt +
+         heading low-pass pipeline). Depends only on SumoSharp.Core (PoseResolver/ILaneShapeSource/DrState)
+         and SumoSharp.Replication (TimestampedSample/IVehicleSampleHistory/DrExtrapolation.Arc). No native
+         GPU/UI toolkit, no wire transport, no dependency on the desktop viewer's headless brain: a game/3D
+         engine with its own renderer takes this package alone to turn sparse authoritative/DDS samples into
+         smooth per-frame poses. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SumoSharp.Viewer.Motion</PackageId>
+    <Description>SumoSharp — portable render-side dead-reckoning &amp; motion reconstruction for the SumoSharp traffic engine: DrClock (render clock + interpolate/extrapolate resolve) and DrPoseSmoother (capped position error-smoothing + motion-derived heading tilt + heading low-pass) turn sparse authoritative/DDS samples into smooth per-frame vehicle poses. No renderer, no transport. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <ProjectReference Include="..\Sim.Ingest\Sim.Ingest.csproj" />
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+    <None Include="README.md" Pack="true" PackagePath="/" Condition="Exists('README.md')" />
+    <Compile Include="..\Shared\NetstandardPolyfills.cs" Link="NetstandardPolyfills.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+  </ItemGroup>
+
+</Project>

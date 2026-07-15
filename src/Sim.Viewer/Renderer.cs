@@ -6,6 +6,7 @@ using Sim.Core;
 using Sim.Ingest;
 using Sim.Replication;
 using Sim.Viewer.Core;
+using Sim.Viewer.Motion;
 
 namespace Sim.Viewer;
 

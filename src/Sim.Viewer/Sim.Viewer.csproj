@@ -24,6 +24,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sim.Viewer.Core\Sim.Viewer.Core.csproj" />
+    <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md §5 (P2-C): DrClock + DrPoseSmoother moved out of Sim.Viewer.Core
+         into the portable, packable Sim.Viewer.Motion. Only this exe uses them (Sim.Viewer.Core does not). -->
+    <ProjectReference Include="..\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
     <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md D5/D10 (P3.2): the demo tool's own reference to Sim.Evac,
          relocated from Sim.Viewer.Core: this exe is the demo/sample layer, not the packageable
          generic viewer, so it is the right place for a domain feature's dependency to live. Sim.Evac is

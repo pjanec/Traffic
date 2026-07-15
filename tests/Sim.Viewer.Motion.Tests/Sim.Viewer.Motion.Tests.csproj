@@ -6,8 +6,10 @@
     DDS-local DdsSubscriber.VehicleSample to the transport-neutral Sim.Replication.TimestampedSample /
     IVehicleSampleHistory.
 
-    Deliberately OUT of Traffic.sln (same convention as Sim.Viewer.Core, see that project's csproj
-    header): DrClock still lives in Sim.Viewer.Core today, which is itself out of the hermetic gate.
+    P2-C: DrClock now lives in the portable Sim.Viewer.Motion (which IS in Traffic.sln, see that
+    project's csproj header), so this test project's only ProjectReference is to it, dropping the
+    transitive Sim.Viewer.Core to Sim.Replication.Dds dependency and making this test project hermetic.
+    Still deliberately OUT of Traffic.sln itself (it is a test project, not a shipped/packaged one).
   -->
 
   <PropertyGroup>
@@ -33,8 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- P2-C re-points this to Sim.Viewer.Motion once DrClock moves there -->
-    <ProjectReference Include="..\..\src\Sim.Viewer.Core\Sim.Viewer.Core.csproj" />
+    <ProjectReference Include="..\..\src\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
   </ItemGroup>
 
 </Project>

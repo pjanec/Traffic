@@ -1,6 +1,6 @@
 using Sim.Core;
 using Sim.Replication;
-using Sim.Viewer.Core;
+using Sim.Viewer.Motion;
 using Xunit;
 
 namespace Sim.Viewer.Motion.Tests;
