@@ -131,30 +131,45 @@ prerequisite for the motion package (which consumes the sample defined here).*
 
 ---
 
-## Stage P3 — Raylib viewer (OPEN: package vs demo — D5)
+## Stage P3 — Generic `SumoSharp.Viewer.Raylib` + demo-tool separation (D5, D10)
 
-> **Decision pending (D5).** Main repositioned the native viewer as an interactive **demo tool**
-> (`DemoCatalog` picker + live evac; `Sim.Viewer.Core` now depends on `Sim.Evac`). Recommendation:
-> ship the raylib viewer as a **demo/sample** and skip `SumoSharp.Viewer.Raylib` unless a drop-in
-> raylib renderer is actually wanted. If packaged, it wraps **only** the reusable rendering primitives
-> (draw vehicle / road layer / camera) — never `DemoCatalog`, `DemoSession`, the evac render path, or
-> the ImGui picker, which stay demo-side. Task P3.1 below applies only if the user opts to package.
+*Split the packaged **generic** viewer from the opinionated **demo tool**. The package must render any
+SUMO stream and carry no domain (no evac) or curated content.*
 
-### P3.1 — (if opted in) Make the reusable raylib primitives packable; keep the exe the demo tool
-- **Design ref:** §3 (D5), §5 (last paragraph), §6.
-- **Files:** `src/Sim.Viewer.Core` (retained as the raylib-tier host + DDS adapter, now depending on
-  `Viewer.Motion`), `src/Sim.Viewer/*` (exe reduced to a thin shell), csproj metadata, `Traffic.sln`.
-- **csproj shape:** component `IsPackable=true`, `PackageId=SumoSharp.Viewer.Raylib`, net8.0,
-  `ProjectReference` → `Viewer.Motion` + `Replication.Dds`; native raylib/ImGui + TTF as
-  content/runtime assets.
+### P3.1 — Add the render-overlay seam to the generic viewer (D10)
+- **Design ref:** §3 (D10), §5.
+- **Files:** `src/Sim.Viewer.Core` (generic host/render), `src/Sim.Viewer/Renderer.cs`.
+- **Change:** the generic render loop exposes a per-frame custom-draw callback carrying the camera /
+  world→screen transform + the frame's render data, so a consumer can paint extra layers.
 - **Success:**
-  1. `dotnet pack` yields `SumoSharp.Viewer.Raylib.<v>.nupkg` with the native raylib runtime assets
-     and the bundled font.
-  2. The `Sim.Viewer` exe still runs local/loopback/remote (manual smoke per `README.md`); no
-     reusable logic remains in `Program.cs` beyond arg parsing + render-loop wiring.
-  3. `Viewer.Raylib` is one of exactly two packable projects with a native dep (the other:
+  1. A trivial test/sample overlay (e.g. draw a marker at a world point) renders through the seam
+     without the viewer referencing the overlay's type.
+  2. Solution builds; **G1** holds.
+
+### P3.2 — Relocate the demo/evac code out of the packaged viewer into the demo layer
+- **Design ref:** §3 (D5), §6.
+- **Files:** move `DemoCatalog`, `DemoSession`, `EvacRenderSnapshot`, the evac draw pass, and the evac
+  `EngineHost` mode out of `src/Sim.Viewer.Core` into the demo project (`src/Sim.Viewer` exe or a new
+  `Sim.Viewer.Demos`); relocate the `Sim.Viewer.Core → Sim.Evac` `ProjectReference` to that layer;
+  re-express the evac draw as a D10 overlay registered by the demo tool. `Traffic.sln`.
+- **Success:**
+  1. `grep -R "Sim.Evac\|DemoCatalog\|EvacRenderSnapshot" src/Sim.Viewer.Core` returns **nothing**.
+  2. `src/Sim.Viewer.Core/Sim.Viewer.Core.csproj` has **no** `ProjectReference` to `Sim.Evac`.
+  3. The demo tool still runs the `DemoCatalog` picker + live evac (manual smoke per `README.md`),
+     drawing evac through the D10 seam.
+  4. **G1** holds (Sim.Core's inert `OnAfterStep` seam unchanged; determinism hash + 446 tests green).
+
+### P3.3 — Make the generic viewer packable; demo tool stays a sample
+- **Design ref:** §3 (D5), §6.
+- **csproj shape:** generic viewer `IsPackable=true`, `PackageId=SumoSharp.Viewer.Raylib`, net8.0,
+  `ProjectReference` → `Viewer.Motion` + `Replication.Dds`; native raylib/ImGui + TTF as
+  content/runtime assets. The demo exe stays `IsPackable=false`.
+- **Success:**
+  1. `dotnet pack` yields `SumoSharp.Viewer.Raylib.<v>.nupkg` (native raylib assets + font) with **no**
+     evac/`DemoCatalog`/curated-scenario types in it.
+  2. `Viewer.Raylib` is one of exactly two packable projects with a native dep (the other:
      `Replication.Dds`) — asserted by the guard (P5.2).
-  4. **G1** holds.
+  3. The demo tool still runs local/loopback/remote + the picker; **G1** holds.
 
 ---
 
@@ -193,6 +208,8 @@ prerequisite for the motion package (which consumes the sample defined here).*
   3. Exactly two packable projects reference a native dep: `Sim.Replication.Dds`, `Viewer.Raylib`.
   4. `IReplicationSink`/`IReplicationSource` are declared under `src/Sim.Replication/` (D8), not in
      `src/Sim.Replication.Dds/`.
+  4b. The packaged generic viewer (`Sim.Viewer.Core`/`Viewer.Raylib`) has **no** `ProjectReference` to
+     `Sim.Evac` and no `DemoCatalog`/`EvacRenderSnapshot` source (D5/D10 — package stays generic).
   5. The new test runs inside `dotnet test` and passes; total count rises; **G1** otherwise unchanged.
 
 ### P5.3 — Publish CI covers the new package IDs

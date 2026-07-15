@@ -36,9 +36,12 @@ verified first-hand (build / `dotnet pack` / `dotnet test`), per the CLAUDE.md a
       no DDS/raylib deps; packs `lib/net8.0` + `lib/netstandard2.1`.
 - [ ] P2.3 — DR/smoothing guide shipped as the package README (+ license/disclaimer).
 
-## Stage P3 — `SumoSharp.Viewer.Raylib`
-- [ ] P3.1 — raylib/ImGui component packable (`PackageId=SumoSharp.Viewer.Raylib`, native assets);
-      `Sim.Viewer` exe reduced to a thin sample; viewer modes still run.
+## Stage P3 — Generic `SumoSharp.Viewer.Raylib` + demo-tool separation (D5, D10)
+- [ ] P3.1 — render-overlay seam (D10) on the generic viewer (domain draws plug in, no viewer dep).
+- [ ] P3.2 — relocate demo/evac code (`DemoCatalog`, `DemoSession`, `EvacRenderSnapshot`, evac path)
+      out of `Sim.Viewer.Core`; move the `→ Sim.Evac` edge to the demo layer; evac draws via the seam.
+- [ ] P3.3 — generic viewer packable (`PackageId=SumoSharp.Viewer.Raylib`, native assets, NO evac/demo);
+      demo tool stays a sample; viewer modes + picker still run.
 
 ## Stage P4 — Dev-time & domain packages
 - [ ] P4.1 — `SumoSharp.Testing` from `Sim.Harness`.

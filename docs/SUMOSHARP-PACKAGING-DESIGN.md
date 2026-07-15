@@ -108,12 +108,13 @@ Tier 1 — Replication API (the data model) / transports (bindings)
   SumoSharp.Replication.*    future sibling bindings (WebSocket / named-pipe / shared-mem / ENet)
                              — each implements the same contract; DDS is just the first
 
-Tier 2 — Render-side motion / viewers
-  SumoSharp.Viewer.Motion    DrClock + DR pipeline glue (auto-delay, low-pass) → Core, Replication
+Tier 2 — Render-side motion / viewers  (generic packages; opinionated demo is a sample, below)
+  SumoSharp.Viewer.Motion    DrClock + DR pipeline glue                       → Core, Replication
                              consumes the Replication timestamped sample + history;
                              (portable render-side reconstruction; NO raylib, NO DDS)   (portable)
-  SumoSharp.Viewer.Raylib ⚠  the 2D desktop viewer as a reusable component   → Viewer.Motion,
-                             (raylib + ImGui, native, desktop-only)             Replication.Dds (net8.0)
+  SumoSharp.Viewer.Raylib ⚠  GENERIC 2D viewer: renders ANY SUMO stream       → Viewer.Motion,
+                             (vehicles/roads/lanes/TLs/HUD/camera) + a render-   Replication.Dds (net8.0)
+                             overlay seam (D10). NO evac, NO DemoCatalog, NO curated scenarios.
 
 Tier 3 — Dev-time / tooling  (net8.0, optional, never referenced by a shipping game build)
   SumoSharp.Tools            SUMO-binary fetch + netconvert/duarouter wrappers          (net8.0)
@@ -126,10 +127,12 @@ Convenience
   SumoSharp (meta)           references Core + Ingest + Replication (+ Viewer.Motion) — "just simulate & stream"
 ```
 
-**Not packaged — shipped as samples/demos** (unchanged): `Sim.Run`, `Sim.Viz`, `Sim.Bench`,
-`Sim.BenchCity`, `Sim.ExtDemo`, `Sim.EvacProfile`, `Sim.LiveHost`, and the `Sim.Viewer` **exe**
-(the raylib viewer's *reusable* code moves into `SumoSharp.Viewer.Raylib`; the exe stays a thin
-sample shell). These demonstrate; they are not the product.
+**Not packaged — shipped as samples/demos:** `Sim.Run`, `Sim.Viz`, `Sim.Bench`, `Sim.BenchCity`,
+`Sim.ExtDemo`, `Sim.EvacProfile`, `Sim.LiveHost`, and **the native-viewer demo tool** — the
+opinionated showcase (`DemoCatalog` picker + live evac overlay + curated scenarios; references
+`Sim.Evac`). The demo tool is built *on top of* the generic `SumoSharp.Viewer.Raylib` package via the
+D10 overlay seam; its reusable rendering code lives in the package, its curated/evac content stays in
+the sample. These demonstrate; they are not the product.
 
 ### Legend of "who installs what"
 
@@ -138,7 +141,7 @@ sample shell). These demonstrate; they are not the product.
 | Headless sim / training / digital-twin backend | `SumoSharp.Core` (+ `Ingest`) |
 | …that streams state to a decoupled process | + `SumoSharp.Replication` (the API) + a transport binding, e.g. `SumoSharp.Replication.Dds` |
 | **Game / 3D engine with its own renderer** | `SumoSharp.Core` + `SumoSharp.Viewer.Motion` (+ a transport) |
-| Wants the batteries-included 2D desktop view | + `SumoSharp.Viewer.Raylib` |
+| Wants the batteries-included **generic** 2D desktop view | + `SumoSharp.Viewer.Raylib` (renders any sim; add own overlays via the D10 seam) |
 | Content pipeline (build a `.net.xml` from OSM) | + `SumoSharp.Tools` (dev-time) |
 | Validating their own scenarios vs SUMO goldens | + `SumoSharp.Testing` (dev-time) |
 | Evacuation / crowd scenarios | + `SumoSharp.Evac` |
@@ -184,22 +187,29 @@ sample shell). These demonstrate; they are not the product.
   accel, posLat, latSpeed, laneHandle, time }`. The subscribe-side timestamped sample should be the
   same field set (it *is* the DR state the viewer predicts from), so publisher and subscriber share
   one sample shape — not two parallel definitions.
-- **D5 — Raylib viewer packaging: REVISIT given the demo-tool direction (open).** The user first
-  chose "ship the raylib viewer as a standalone package." Since then, main has repositioned the
-  native viewer as an **interactive demo/showcase tool** (`SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md`):
-  a `local`-mode `DemoCatalog` scenario picker + a live panic-evac category, and `Sim.Viewer.Core`
-  now `ProjectReference`s **`Sim.Evac`**. That splits the viewer code three ways by reuse value:
-  - **High, portable — package it:** DR motion reconstruction (`DrClock` + as-built pipeline helpers
-    + `PoseResolver`) → `SumoSharp.Viewer.Motion` (P2). Unaffected by the demo-tool change and the
-    clear win for a game/3D integrator.
-  - **Medium, native — optional:** raylib *rendering primitives* (draw vehicle / road layer / camera)
-    → could be `SumoSharp.Viewer.Raylib`; most engines have their own renderer.
-  - **None — demo-tool only, stays in the exe/sample:** `DemoCatalog`, `DemoSession`, the evac render
-    path, the ImGui scenario picker. Packaging a showcase app as a NuGet has no value.
-  **Recommendation (updated):** package `Viewer.Motion` now; ship the raylib viewer as a **demo/sample
-  tool** (its new purpose), and defer `SumoSharp.Viewer.Raylib` until someone actually wants a drop-in
-  raylib renderer. Awaiting the user's call (see §9 note). If they still want `Viewer.Raylib`, it
-  packages only the reusable rendering primitives — never `DemoCatalog`/evac/picker.
+- **D5 — Split a *generic* viewer (packaged) from the *demo tool* (a sample).** Main repositioned the
+  native viewer as an interactive demo/showcase tool (`SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md`): a
+  `local`-mode `DemoCatalog` picker + a live panic-evac category, and `Sim.Viewer.Core` now
+  `ProjectReference`s **`Sim.Evac`**. That coupling makes the viewer *opinionated about a domain
+  feature* — unacceptable for a NuGet, which must render **any** SUMO simulation generically. So the
+  viewer is split into three layers by reuse value:
+  - **`SumoSharp.Viewer.Motion`** (portable NuGet) — motion reconstruction (`DrClock` + as-built
+    pipeline helpers + `PoseResolver`). No renderer, transport, or domain. (P2.)
+  - **`SumoSharp.Viewer.Raylib`** (native NuGet) — a **generic** raylib viewer that renders any SUMO
+    stream (vehicles / roads / lanes / TLs / HUD / camera). **No evac, no `DemoCatalog`, no curated
+    scenarios.** It exposes a generic **render-overlay seam** (D10) so any domain can paint extra
+    layers without the viewer depending on them.
+  - **The demo tool** — a **sample exe, not packaged** — `DemoCatalog` + picker + the evac overlay
+    (registered through the D10 seam). This is the only place `Sim.Evac` is referenced.
+  **The refactor:** move `DemoCatalog`, `DemoSession`, `EvacRenderSnapshot`, the evac draw pass, and
+  the evac `EngineHost` mode **out** of the packaged viewer core into the demo layer, and relocate the
+  `Sim.Viewer.Core → Sim.Evac` edge to the demo project. The generic viewer keeps only the overlay hook.
+- **D10 — Domain visualizations plug into a generic render-overlay seam, they are not viewer
+  dependencies.** The generic viewer exposes a per-frame custom-draw callback carrying the camera /
+  world→screen transform + the frame's render data; a consumer (the demo tool's evac overlay, a game's
+  own HUD, a future 3D-IG layer) registers a draw pass without the viewer knowing the domain. This
+  mirrors the engine's "external agents" seam: the package provides the extension point; evac is one
+  client of it, living in the sample — so the NuGet stays generic and un-opinionated.
 - **D6 — `SumoSharp.Testing` and `SumoSharp.Tools` are dev-time packages.** Never referenced by a
   shipping game build. `Testing` = the existing `Sim.Harness`. `Tools` is still design-only (§2 of
   `SUMOSHARP-API.md`) — implement last, or ship as a `dotnet sumosharp` global tool.
@@ -275,9 +285,12 @@ Together these make "reimplement DR over a different transport/viewer" an implem
 `PackageReference` job, not a copy-paste. After them, the DR/smoothing guide
 (`SUMOSHARP-VIEWER-DR-SMOOTHING.md`) becomes the **README/primary doc** of `SumoSharp.Viewer.Motion`.
 
-`SumoSharp.Viewer.Raylib` then depends on `Viewer.Motion` + `Replication.Dds` and holds the
-raylib/ImGui rendering + the DDS subscriber adapter; the `Sim.Viewer` exe becomes a thin
-`Program.cs` over it.
+`SumoSharp.Viewer.Raylib` (the **generic** viewer, D5) then depends on `Viewer.Motion` +
+`Replication.Dds` and holds the raylib/ImGui rendering + the DDS subscriber adapter + the render-overlay
+seam (D10) — but **not** `DemoCatalog`, the evac path, or curated scenarios. The **demo tool** (a
+sample exe) sits on top: it references the generic viewer + `Sim.Evac`, adds the `DemoCatalog` picker
+and the evac overlay through the seam. So the `Sim.Viewer.Core → Sim.Evac` edge main just added is
+relocated to the demo layer, keeping the packaged viewer generic.
 
 ---
 
