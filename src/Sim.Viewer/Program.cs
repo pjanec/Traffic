@@ -45,6 +45,14 @@ string? mode = null;
 string? inputPath = null;
 string? screenshotPath = null;
 string? selftestPath = null;
+// docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5/§1: pick the INITIAL demo from DemoCatalog.Resolve by name
+// (case-insensitive substring match), for `--mode local`. Omit it (with an ad-hoc <path> instead) to keep
+// today's behaviour exactly -- see RunLocal.
+string? demoName = null;
+// Hidden headless smoke test (T4 success condition): build a demo, DemoSession.SwitchTo a second one, then
+// SwitchTo an Evac demo, and exit -- no window, no --mode needed. Proves a live switch doesn't leak/hang
+// across scenario/sandbox/evac boundaries.
+var demoSmoke = false;
 var frames = 150;
 var delaySeconds = 1.0f; // default DR playout delay (s). The auto "always interpolate" delay is OFF by
                          // default -- it fluctuated and made rendered speed visibly pulse; a stable manual
@@ -112,10 +120,22 @@ for (var i = 0; i < args.Length; i++)
                 double.Parse(parts[0], CultureInfo.InvariantCulture),
                 double.Parse(parts[1], CultureInfo.InvariantCulture));
             break;
+        case "--demo":
+            demoName = args[++i];
+            break;
+        case "--demo-smoke":
+            demoSmoke = true;
+            break;
         default:
             inputPath ??= args[i];
             break;
     }
+}
+
+// T4 headless smoke test: no --mode, no window -- dispatched before every other guard.
+if (demoSmoke)
+{
+    return RunDemoSmoke();
 }
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P2 — a headless (no window, no raylib) proof that the DDS data path
@@ -133,6 +153,14 @@ if (mode == "remote")
     return RunRemote(screenshotPath, frames, delaySeconds);
 }
 
+// docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `--mode local --demo "<name>"` needs NO <path> at all --
+// the DemoCatalog entry supplies it -- so the `inputPath is null` guard below (still required for
+// loopback/publish, which have no --demo path yet) is skipped for this one case.
+if (mode == "local" && demoName is not null)
+{
+    return RunLocal(null, demoName, screenshotPath, frames, dropObstacle, fleet, perf, secondsCap, simRate, stepLen);
+}
+
 if (inputPath is null)
 {
     Console.Error.WriteLine("Sim.Viewer: missing <scenarioDir|net.xml> argument.");
@@ -141,7 +169,7 @@ if (inputPath is null)
 
 if (mode == "local")
 {
-    return RunLocal(ResolveNetPath(inputPath), screenshotPath, frames, dropObstacle, fleet, perf, secondsCap, simRate, stepLen);
+    return RunLocal(ResolveNetPath(inputPath), demoName, screenshotPath, frames, dropObstacle, fleet, perf, secondsCap, simRate, stepLen);
 }
 
 if (mode == "loopback")
@@ -170,13 +198,52 @@ static string ResolveNetPath(string path)
     return path;
 }
 
-static int RunLocal(string netPath, string? screenshotPath, int frames, (double X, double Y)? dropObstacle,
-    int? fleet, bool perf, double? secondsCap, double? simRate, double? stepLen)
+// docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `netPath` is the ad-hoc "(custom)" path (today's
+// `--mode local <path>`, no catalog entry backing it); `demoName` is the §1 catalog selector (`--demo
+// "<name>"`). Exactly one is non-null (enforced by the two call sites in the top-level dispatch above).
+// A demo build ignores `fleet`/`stepLen` (the catalog entry's own SandboxFleet/scenario config decides
+// those); an ad-hoc path keeps using them exactly as before -- this is the "keep working exactly as
+// today" invariant §5 requires for `--mode local <path>` with no `--demo`.
+static int RunLocal(string? netPath, string? demoName, string? screenshotPath, int frames,
+    (double X, double Y)? dropObstacle, int? fleet, bool perf, double? secondsCap, double? simRate, double? stepLen)
 {
     var step = stepLen ?? 1.0;
-    using var host = fleet is { } fleetCap
-        ? new EngineHost(netPath, spawnCap: fleetCap, forceSandbox: true, stepLength: step)
-        : new EngineHost(netPath, stepLength: step);
+    var repoRoot = DemoCatalog.RepoRoot();
+
+    EngineHost initialHost;
+    DemoEntry? initialEntry;
+
+    if (demoName is not null)
+    {
+        var catalog = DemoCatalog.Resolve(repoRoot);
+        initialEntry = catalog.FirstOrDefault(e => e.Name.Contains(demoName, StringComparison.OrdinalIgnoreCase))
+            ?? catalog.FirstOrDefault(e => e.Category == DemoCategory.Junctions)
+            ?? catalog.FirstOrDefault();
+        if (initialEntry is null)
+        {
+            Console.Error.WriteLine("Sim.Viewer: --demo given but DemoCatalog.Resolve found no usable entries.");
+            return 1;
+        }
+
+        if (!string.Equals(initialEntry.Name, demoName, StringComparison.OrdinalIgnoreCase)
+            && !initialEntry.Name.Contains(demoName, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine(
+                $"Sim.Viewer: --demo '{demoName}' not found -- falling back to '{initialEntry.Name}'.");
+        }
+
+        initialHost = DemoSession.BuildHost(initialEntry, repoRoot);
+    }
+    else
+    {
+        initialEntry = null; // ad-hoc "(custom)" -- no catalog entry backs this host (§5)
+        initialHost = fleet is { } fleetCap
+            ? new EngineHost(netPath!, spawnCap: fleetCap, forceSandbox: true, stepLength: step)
+            : new EngineHost(netPath!, stepLength: step);
+    }
+
+    using var session = new DemoSession(initialHost, initialEntry, repoRoot);
+    var host = session.Host;
 
     // Default interactive speed to 1x real-time (what a viewer expects); perf runs keep the 10x fast-forward
     // so the fleet warms up quickly. Either way the panel's "speed" slider overrides live.
@@ -266,6 +333,29 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
     while (!Raylib.WindowShouldClose())
     {
         frameStats.Add(Raylib.GetFrameTime());
+
+        // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: apply a queued demo switch (T5's ImGui picker will
+        // call session.RequestSwitch(entry) from inside the frame below; this batch has no UI yet, so
+        // nothing queues one interactively -- but the mechanism is wired here now) at the TOP of the frame,
+        // before anything this frame reads `host`. On a switch: re-fit the camera to the new host's bounds,
+        // force the static road-layer cache to re-bake (it is keyed on the OLD host.Network -- without this
+        // it keeps drawing the old net's roads, per the design doc's explicit warning), and reset the
+        // render-behind interpolation/heading state so it doesn't blend across the switch's timeline jump.
+        if (session.TryApplyPending(out var switchedHost, out _))
+        {
+            host = switchedHost;
+            camera = Renderer.FitCamera(host.MinX, host.MinY, host.MaxX, host.MaxY, screenW, screenH);
+            roadLayer.Invalidate();
+            renderClock = 0.0;
+            lastSnapSimTime = double.NaN;
+            lastSnapWall = 0.0;
+            intervalEma = 0.0;
+            vehicleDraws.Clear();
+            prevIndex.Clear();
+            headingPrev.Clear();
+            headingCur.Clear();
+            host.SetSpeed(simRate ?? (perf ? 10.0 : 1.0));
+        }
 
         if (Raylib.IsKeyPressed(KeyboardKey.D))
         {
@@ -440,6 +530,41 @@ static int RunLocal(string netPath, string? screenshotPath, int frames, (double 
 
     rlImGui.Shutdown();
     Raylib.CloseWindow();
+    return 0;
+}
+
+// docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5 / -TASKS.md T4 success condition: a HEADLESS (no window,
+// no raylib) proof that DemoSession.SwitchTo can move a live host from one pure-SUMO demo to another and
+// then into an Evac demo -- disposing the old host each time -- without leaking or hanging. `--demo-smoke`
+// dispatches here before any --mode is even looked at.
+static int RunDemoSmoke()
+{
+    var repoRoot = DemoCatalog.RepoRoot();
+    var catalog = DemoCatalog.Resolve(repoRoot);
+
+    var demoA = catalog.FirstOrDefault(e => e.Category == DemoCategory.Junctions)
+        ?? throw new InvalidOperationException("DEMO-SMOKE: no Junctions entry resolved.");
+    var demoB = catalog.FirstOrDefault(e => e.Category == DemoCategory.TrafficLights)
+        ?? throw new InvalidOperationException("DEMO-SMOKE: no TrafficLights entry resolved.");
+    var demoEvac = catalog.FirstOrDefault(e => e.Kind == DemoKind.Evac)
+        ?? throw new InvalidOperationException("DEMO-SMOKE: no Evac entry resolved.");
+
+    Console.WriteLine($"DEMO-SMOKE: building '{demoA.Name}' ({demoA.Kind})...");
+    using var session = new DemoSession(DemoSession.BuildHost(demoA, repoRoot), demoA, repoRoot);
+    Thread.Sleep(300); // let the runner/spawner actually tick at least once
+    Console.WriteLine($"DEMO-SMOKE: built. edges={session.Host.Network.EdgesById.Count} snap.time={session.Host.Snapshot.Time:F2}");
+
+    Console.WriteLine($"DEMO-SMOKE: switching to '{demoB.Name}' ({demoB.Kind})...");
+    session.SwitchTo(demoB);
+    Thread.Sleep(300);
+    Console.WriteLine($"DEMO-SMOKE: switched. current='{session.Current?.Name}' edges={session.Host.Network.EdgesById.Count} snap.time={session.Host.Snapshot.Time:F2}");
+
+    Console.WriteLine($"DEMO-SMOKE: switching to evac '{demoEvac.Name}' ({demoEvac.Kind}, EvacKind={demoEvac.EvacKind})...");
+    session.SwitchTo(demoEvac);
+    Thread.Sleep(300);
+    Console.WriteLine($"DEMO-SMOKE: switched. current='{session.Current?.Name}' edges={session.Host.Network.EdgesById.Count} snap.time={session.Host.Snapshot.Time:F2} evac={(session.Host.Evac is not null ? "present" : "null")}");
+
+    Console.WriteLine("DEMO-SMOKE: OK (no exception, no hang).");
     return 0;
 }
 

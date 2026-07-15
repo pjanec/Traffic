@@ -67,6 +67,12 @@ public sealed class RoadLayerCache : IDisposable
         Raylib.DrawTextureRec(_rt.Texture, source, Vector2.Zero, Color.White);
     }
 
+    // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: force a re-bake on the NEXT EnsureAndBlit call,
+    // regardless of whether the camera changed -- called after a live demo switch, whose new net's roads
+    // must never be skipped just because the new camera happens to land on the same Target/Zoom as the
+    // old one (SameCamera below would otherwise wrongly keep serving the stale bake).
+    public void Invalidate() => _baked = false;
+
     private static bool SameCamera(Camera2D a, Camera2D b) =>
         a.Target == b.Target && a.Offset == b.Offset && a.Rotation == b.Rotation && a.Zoom == b.Zoom;
 
