@@ -63,7 +63,8 @@ grow past the four shipped packages, and the growth has to stay **layered and op
    raylib, and the streaming client **without** committing to DDS.
 3. **Separate "reconstruct motion" (pure math) from "render motion" (a windowing/GPU toolkit).**
    This is the load-bearing new split (§5). The reconstruction pipeline (`DrClock`, `PoseResolver`,
-   `ILaneShapeSource`, auto-delay, extrapolation low-pass) is portable scalar maths and belongs in
+   `ILaneShapeSource`, stable delay, capped position error-smoothing, motion-derived heading tilt) is
+   portable scalar maths and belongs in
    its own portable package; raylib/ImGui belong in an optional desktop-viewer package.
 4. **The replication data model *is* the API; transports are bindings.** `SumoSharp.Replication`
    is the replication **API** — the data model (records + their semantics), the packed codec, the
@@ -231,8 +232,10 @@ SumoSharp.Replication  (net8.0;netstandard2.1)  — the data-model API
 SumoSharp.Viewer.Motion  (net8.0;netstandard2.1, NO raylib, NO DDS)
   ├─ DrClock                 (moved from Sim.Viewer.Core; consumes Replication's sample + history;
   │                           already delegates arc extrapolation to Replication.DrExtrapolation)
-  ├─ DrPipeline helpers      (auto-delay §5.4, extrapolation low-pass §5.5 — plain scalar maths;
-  │                           arc extrapolation is NOT re-extracted — it lives in Replication)
+  ├─ DrPipeline helpers      (as-built guide §10: capped position error-smoothing §10.2,
+  │                           motion-derived heading tilt §10.3, stable manual delay §10.1,
+  │                           heading low-pass — plain scalar maths; arc extrapolation is NOT
+  │                           re-extracted — it lives in Replication)
   └─ (re-exports) PoseResolver, ILaneShapeSource, Pose, DrState   [these stay defined in Core]
       depends on → SumoSharp.Core (PoseResolver), SumoSharp.Replication (data model + DR math + sample)
 

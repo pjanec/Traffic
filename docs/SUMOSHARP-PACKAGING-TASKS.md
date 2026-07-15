@@ -108,8 +108,10 @@ prerequisite for the motion package (which consumes the sample defined here).*
 ### P2.2 — Create the `Sim.Viewer.Motion` project (portable, packable)
 - **Design ref:** §4, §5, §6.
 - **Files:** new `src/Sim.Viewer.Motion/Sim.Viewer.Motion.csproj` + moved `DrClock.cs` and the
-  DR-pipeline scalar helpers (auto-delay §5.4, extrapolation low-pass §5.5) extracted from
-  `Program.cs`; `Traffic.sln`; `Sim.Viewer.Core`/`Sim.Viewer` references.
+  as-built DR-pipeline scalar helpers from `PumpAndBuildVehicleDraws` in `Program.cs` — capped
+  position error-smoothing (guide §10.2), motion-derived heading tilt (§10.3), stable manual delay
+  (§10.1), heading low-pass; `Traffic.sln`; `Sim.Viewer.Core`/`Sim.Viewer` references. (The older
+  §5.4 auto-delay / §5.5 low-pass are superseded — do not extract those.)
 - **Do NOT re-extract arc extrapolation:** `DrExtrapolation.Arc` already lives in `Sim.Replication`
   and `DrClock` already delegates to it (landed with DR-error publishing). `Viewer.Motion` depends on
   `Sim.Replication` for it — keep one source of truth.
