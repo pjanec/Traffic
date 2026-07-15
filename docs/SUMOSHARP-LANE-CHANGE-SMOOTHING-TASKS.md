@@ -65,44 +65,55 @@ verification is via the `--trace-veh` harness on loopback (no `dotnet test` / SU
 
 ---
 
-## Tracker
+## Tracker — ✅ COMPLETE (shipped on `main`, user-confirmed live 2026-07-15)
 
-- [x] **T1** — `DrClock.Resolve` classifies downstream vs lateral straddle; lateral returns two-state result.
-      Also discovered & fixed the *real* root cause of the "stuck on old lane" behaviour: the wire's
-      `Upcoming[0]` (lane-sequence pool) lags the record's own `LaneHandle` after a same-edge tactical
-      change, so `PoseResolver` sampled the OLD lane's geometry — `NormalizeUpcoming` re-anchors index 0
-      to the record's `LaneHandle` (viewer-side read fix, no Sim.Core touch).
-- [x] **T2** — `PumpAndBuildVehicleDraws` Cartesian pose blend + chord heading + sanity guard (guard gated
-      on the bracket's REAL span `resolved.PacketSpan`, not the smoothed EMA, so a slow-sampled slide is
-      not wrongly snapped).
-- [~] **T3** — regression & coverage (verified first-hand from DRTRACE):
-    - [x] **44 junction regression** — max lateral/frame **0.081 m** ≤ 0.10 m ✅ (NormalizeUpcoming safe).
-    - [x] **61 sublane** — max lateral/frame **0.000 m**, steady offset preserved ✅.
-    - [~] **12-overtake** — now traverses BOTH lanes with an 85° chord tilt (was stuck at one lane);
-      **residual 1.24 m step on ENTRY** to the slide (the prior frame was extrapolating on the old lane
-      and overshot `pos` ~16 m; the slide itself is smooth). Slide property met; entry-step > 0.5 m bar.
-    - [ ] **07-keep-right** — startup/acceleration-dominated (veh0 departs from standstill on a single
-      1000 m edge; bracketing packets ~65 m apart during accel). Not a clean steady-state lane-change
-      signal; the guard snaps the large longitudinal bracket. Revisit with a mid-run change scenario.
-- [~] **T4** *(heading fix DONE, pending interactive sign-off)* — added an ALWAYS-ON render-heading
-      low-pass (τ=0.18 s, shortest-arc, >100° snap) in `PumpAndBuildVehicleDraws`, mirroring the local
-      viewer's heading filter; also moved the `DRTRACE` print AFTER the smoothing block so the harness
-      observes the DRAWN pose (it was structurally blind before — logged the raw pre-smoothing pose).
-      Verified (drawn pose): 12-overtake per-frame heading step **4.6° → 0.40°** (tilt still eases in);
-      44-junction heading smooth (1.1°/frame), full turn sweep preserved. Side effect to watch: the
-      low-pass adds ~0.18 s heading lag to junction turns (same filter/lag family the local viewer uses).
-      Open: interactive sign-off; tune τ (↓ toward 0.10 s) if the junction reads laggy. The position
-      entry-step (~1.2 m) is the SEPARATE jitter/extrapolation item, not this.
-- [ ] ~~**T4** *(polish — NEXT, user-prioritised 2026-07-15 live review)*~~ — the abrupt part is the
-      **initial ORIENTATION (heading) jump when the lane change STARTS**, not the position: the frame the
-      lateral straddle engages, `pdeg` snaps from the straight-lane heading to the chord tilt (~85°) in one
-      step. Fix the HEADING discontinuity first (position slide already reads fine). Candidates: low-pass the
-      lane-change heading toward the chord tilt (like the local viewer's τ≈0.25 s render-heading filter in
-      `BuildLocalVehicleDraws`), and/or ease the tilt in over the first frames of the straddle rather than
-      snapping to it, and/or ensure interpolation-entry (delay) so the prior frame isn't an extrapolated
-      straight-heading pose. Then interactive sign-off. (Position entry-step ~1.24 m is secondary — same
-      extrapolation-reconciliation family as the junction pass's residual, not the reported annoyance.)
+All lane-change smoothing work is done and visually confirmed by the user (smooth slide + correct
+two-way lean; no junction/sublane regression). The implementation evolved beyond the original T1–T4
+plan above — the boxes below record what actually shipped, and §"Evolution" notes where it diverged.
 
-**Status:** core mechanism (T1+T2) done and visually confirmed smooth by the user on the interactive
-viewer; no regressions (44/61). Remaining work is the entry-transition polish (T4) and a cleaner
-mid-run lane-change test to replace 07.
+- [x] **T1** — `DrClock.Resolve` classifies downstream (arc-window) vs **lateral straddle** (returns the
+      two-state result). Also fixed the real "stuck on old lane" root cause: the wire's `Upcoming[0]`
+      lags the record's own `LaneHandle` after a same-edge tactical change → `NormalizeUpcoming`
+      re-anchors index 0 (viewer-side read fix, no `Sim.Core` touch). Commit `103870d`.
+- [x] **T2** — `PumpAndBuildVehicleDraws` lateral-straddle **Cartesian pose blend** + sanity guard (gated
+      on the bracket's REAL span `PacketSpan`, not the smoothed EMA). Commit `103870d`. *(The chord
+      heading from the original plan was later replaced — see T4.)*
+- [x] **T3** — regression & coverage (verified from DRTRACE, final state):
+    - **44 junction** — max lateral/frame **0.081 m** ≤ 0.10 m ✅; heading still sweeps the full turn,
+      no wobble (≤1.7°/frame) after the motion-tilt.
+    - **61 sublane** — steady `posLat` offset preserved, no new jitter ✅.
+    - **12-overtake** — traverses both lanes, smooth slide, **correct lean both ways**; the earlier
+      **entry kick / 1.24 m step was resolved at the ROOT by DR-error publishing** (bounds the
+      extrapolation overshoot at the source — straight-cruise rendered/true speed ratio 0.72, zero
+      sub-70 % events; pass hiccup gone). See `SUMOSHARP-DR-ERROR-PUBLISHING-DESIGN.md`.
+    - **07-keep-right** — determined to be a startup/acceleration artifact (standstill depart, ~65 m
+      bracket gap), NOT a clean lane-change signal; dropped as a bar. Not a defect.
+- [x] **T4** — **heading**: shipped as a **motion-derived tilt** (not the original straddle chord): the
+      heading leans by `atan2` of the vehicle's actual per-frame render motion (SUBTRACTED — navi is
+      clockwise, `atan2` is CCW), capped ±25°, then a τ=0.18 s render-heading low-pass. This leans the
+      car into **both** the outbound and return changes uniformly (the chord approach left the return —
+      rendered via extrapolation, not the straddle — sliding flat). Verified: outbound deg 74→90, return
+      90→106 (symmetric), junction/cruise unaffected; user confirmed orientation correct live. Commits
+      `e01b2d3` (initial always-on heading low-pass) → `a2af94a` (motion-tilt both ways) → `4e4f9ed`
+      (sign fix).
+
+## Evolution (what shipped vs the T1–T4 plan)
+
+The original design (`SUMOSHARP-LANE-CHANGE-SMOOTHING-DESIGN.md`) fixed the lateral SNAP via the
+straddle Cartesian blend (T1/T2). Getting the motion fully smooth then required three more pieces that
+weren't in the initial plan:
+- **Position error-smoothing** (capped, forward-biased correction; gentle ≤50 % slowdown, never
+  freeze/reverse) — commits `7bafbd8` (+ `7e366e2` for the floor & auto-delay OFF default).
+- **Motion-derived heading tilt** (T4 as-shipped, above) — replaced the straddle-only chord heading so
+  the return change leans too.
+- **DR-error-based publishing** — the ROOT fix for the reconciliation snap / entry kick / pass hiccup
+  (publish-on-prediction-error, publish-side, bounds the viewer's overshoot at the source). Its own
+  doc: `SUMOSHARP-DR-ERROR-PUBLISHING-DESIGN.md`. This is what let T3's "entry kick" close.
+Full as-built pipeline: `SUMOSHARP-VIEWER-DR-SMOOTHING.md` §10.
+
+## Out of scope / parked
+
+**Stopped car lane-changes into an occupied space (vehicle overlap)** — a real `Sim.Core` (parity)
+ENGINE bug, NOT a DR/viewer smoothing issue (the overlap is in the authoritative snapshot). Isolated +
+documented separately in `docs/SUMOSHARP-ISSUE-stopped-lane-change-overlap.md`; fix deferred (tolerance-
+bound, wants a minimal repro + SUMO diff first).
