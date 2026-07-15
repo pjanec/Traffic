@@ -88,7 +88,8 @@ public class RungB24PublishSchedulerTests
 
     private static bool Offer(
         PublishScheduler sched, VehicleHandle h, double accel, double t, bool manoeuvring = false) =>
-        sched.ShouldPublish(h, DrModel.LaneArc, speed: 10.0, accel: accel, time: t, laneChangingOrManoeuvring: manoeuvring);
+        sched.ShouldPublish(h, DrModel.LaneArc, pos: 10.0 * t, posLat: 0.0, speed: 10.0, accel: accel,
+            latSpeed: 0.0, laneHandle: 1, time: t, laneChangingOrManoeuvring: manoeuvring);
 }
 
 // SUMOSHARP-DR-ERROR-PUBLISHING-DESIGN.md §8 (Stage A) — DrErrorPublishPolicy.ShouldPublish exercised

@@ -32,11 +32,11 @@ public sealed class DdsPublisher : IDisposable
     // SIM-TIME units (SimulationSnapshot.Time), not wall-clock seconds -- this repo's scenarios step in
     // whole seconds (SUMOSHARP-LIVEVIZ-OUTCOMES.md's demo scaling), so "1" = every step, "3" = at most
     // every third step for a steady/predictable mover.
-    private readonly PublishScheduler _scheduler = new(new DefaultPublishPolicy
+    private readonly PublishScheduler _scheduler = new(new DrErrorPublishPolicy
     {
-        FastInterval = 1,
-        SlowInterval = 3,
-        AccelThreshold = 0.3,
+        PosTol = 0.3,
+        LatTol = 0.2,
+        MaxInterval = 3,
     });
 
     // Lifecycle bookkeeping: the dims we've already told subscribers about, so a spawn is only announced
@@ -151,7 +151,9 @@ public sealed class DdsPublisher : IDisposable
             var speed = snap.SpeedExact[i];
             var accel = snap.Accel[i];
 
-            if (!_scheduler.ShouldPublish(handle, model, speed, accel, snap.Time, manoeuvring))
+            if (!_scheduler.ShouldPublish(
+                    handle, model, snap.Pos[i], snap.PosLat[i], speed, accel,
+                    latSpeed: 0.0, snap.LaneHandle[i], snap.Time, manoeuvring))
             {
                 continue;
             }

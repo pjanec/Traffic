@@ -425,24 +425,5 @@ public sealed class DrClock
     // place. Backward-in-time (dt<=0, oldest-packet underrun) is left raw -- reconstructing an earlier
     // position, where the parabola is monotonic the correct way.
     private static double ExtrapolateArc(double pos, double speed, double accel, double dt)
-    {
-        if (dt > 0.0)
-        {
-            if (speed <= 0.0)
-            {
-                return pos; // already stopped -> stay put (no drift, no reverse)
-            }
-
-            if (accel < 0.0)
-            {
-                var timeToStop = speed / -accel;
-                if (dt > timeToStop)
-                {
-                    dt = timeToStop; // freeze at the stopping point instead of reversing past it
-                }
-            }
-        }
-
-        return pos + speed * dt + 0.5 * accel * dt * dt;
-    }
+        => Sim.Replication.DrExtrapolation.Arc(pos, speed, accel, dt);
 }

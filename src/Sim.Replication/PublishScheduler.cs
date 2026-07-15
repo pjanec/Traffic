@@ -15,9 +15,17 @@ namespace Sim.Replication;
 public sealed class PublishScheduler
 {
     private readonly IPublishPolicy _policy;
-    private readonly Dictionary<VehicleHandle, double> _lastSent = new();
+    private readonly Dictionary<VehicleHandle, Ref> _lastSent = new();
     private readonly HashSet<VehicleHandle> _seen = new();
     private List<VehicleHandle>? _pruneScratch;
+
+    private readonly struct Ref
+    {
+        public Ref(double pos, double posLat, double speed, double accel, double latSpeed, int lane, double time)
+        { Pos = pos; PosLat = posLat; Speed = speed; Accel = accel; LatSpeed = latSpeed; Lane = lane; Time = time; }
+        public double Pos { get; } public double PosLat { get; } public double Speed { get; }
+        public double Accel { get; } public double LatSpeed { get; } public int Lane { get; } public double Time { get; }
+    }
 
     public PublishScheduler(IPublishPolicy policy)
     {
@@ -32,22 +40,43 @@ public sealed class PublishScheduler
     // Movers currently remembered (i.e. published at least once and not yet pruned). Test/telemetry hook.
     public int TrackedCount => _lastSent.Count;
 
-    // Decide for ONE candidate mover at sim time `time`. Marks it seen (so EndStep won't prune it), then asks
-    // the policy using the seconds since this mover was last published (+inf on first sighting -> always
-    // sent). Returns true to publish now; when true, records `time` as its new last-sent. `handle` is the
-    // mover; the rest are the cheap per-step signals the policy reads.
+    // Decide for ONE candidate mover. Computes the receiver's DR prediction from this mover's last-PUBLISHED
+    // state (via the shared DrExtrapolation.Arc, so it matches the viewer exactly) and hands the policy both
+    // the time-since-last (for DefaultPublishPolicy) and the prediction error (for DrErrorPublishPolicy). On
+    // publish, re-bases the stored reference to the current state.
     public bool ShouldPublish(
-        VehicleHandle handle, DrModel model, double speed, double accel, double time, bool laneChangingOrManoeuvring)
+        VehicleHandle handle, DrModel model, double pos, double posLat, double speed, double accel,
+        double latSpeed, int laneHandle, double time, bool laneChangingOrManoeuvring)
     {
         _seen.Add(handle);
-        var since = _lastSent.TryGetValue(handle, out var last) ? time - last : double.PositiveInfinity;
-        var signals = new PublishSignals(handle, model, speed, accel, since, laneChangingOrManoeuvring);
+        double since;
+        double posError = 0.0, latError = 0.0;
+        var laneChanged = false;
+        if (_lastSent.TryGetValue(handle, out var r))
+        {
+            since = time - r.Time;
+            laneChanged = laneHandle != r.Lane;
+            if (!laneChanged) // arc-pos is only comparable within the same lane; a lane change publishes anyway
+            {
+                var predPos = DrExtrapolation.Arc(r.Pos, r.Speed, r.Accel, since);
+                posError = Math.Abs(pos - predPos);
+                var predLat = r.PosLat + r.LatSpeed * since;
+                latError = Math.Abs(posLat - predLat);
+            }
+        }
+        else
+        {
+            since = double.PositiveInfinity; // first sighting -> always publish
+        }
+
+        var signals = new PublishSignals(
+            handle, model, speed, accel, since, laneChangingOrManoeuvring, posError, latError, laneChanged);
         if (!_policy.ShouldPublish(signals))
         {
             return false;
         }
 
-        _lastSent[handle] = time;
+        _lastSent[handle] = new Ref(pos, posLat, speed, accel, latSpeed, laneHandle, time);
         return true;
     }
 

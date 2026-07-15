@@ -161,7 +161,8 @@ public sealed class SimHost : IDisposable
                 // DR regime + mid-manoeuvre bit from the engine's own columns (issue #3/#4 seam): DrModel
                 // picks the extrapolator, Manoeuvring forces full rate during a reactive lateral dodge.
                 if (!_scheduler.ShouldPublish(
-                        snap.Handles[i], (DrModel)snap.DrModels[i], snap.SpeedExact[i], snap.Accel[i], snap.Time,
+                        snap.Handles[i], (DrModel)snap.DrModels[i], snap.Pos[i], snap.PosLat[i],
+                        snap.SpeedExact[i], snap.Accel[i], latSpeed: 0.0, snap.LaneHandle[i], snap.Time,
                         snap.Manoeuvring[i]))
                 {
                     continue; // predictable + recently sent -> let the client keep dead-reckoning it
