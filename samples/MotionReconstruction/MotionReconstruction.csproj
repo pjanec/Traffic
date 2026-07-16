@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    MotionReconstruction: the smallest possible consumer of SumoSharp.Viewer.Motion. Builds a tiny
+    ILaneShapeSource for one straight lane and a hand-built, SPARSE (1 Hz) VehicleSampleHistory, then
+    drives DrClock.Pump/Resolve + PoseResolver.Resolve (+ DrPoseSmoother.Smooth) over a simulated ~10 Hz
+    render loop to show smooth, continuous per-frame poses reconstructed BETWEEN the sparse samples,
+    with no renderer and no wire transport involved. A sample, not a package (IsPackable=false), so it
+    never ships to NuGet and never affects the hermetic offline test loop.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- In a real consumer project this would instead be:
+           dotnet add package SumoSharp.Viewer.Motion
+         We use a ProjectReference here because the packages are not yet published to nuget.org.
+         See this sample's README.md for the equivalent `dotnet add package` step. SumoSharp.Core,
+         SumoSharp.Ingest, and SumoSharp.Replication come along automatically, exactly like a real
+         `dotnet add package SumoSharp.Viewer.Motion` would pull them in. -->
+    <ProjectReference Include="..\..\src\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
+  </ItemGroup>
+
+</Project>
