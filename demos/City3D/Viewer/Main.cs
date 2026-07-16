@@ -71,11 +71,44 @@ public partial class Main : Node3D
     private const float CameraHeightFactor = 1.1f;
     private const float CameraBackFactor = 0.9f;
 
+    // Task T1.6 Part C -- the `--camera=close` framing (design "Traffic lights" desktop check + this
+    // task's Part C: "~40-80m back and ~15-25m up, tilted down, so cars/lights/road-width are actually
+    // visible at real scale"). A FIXED offset (not extent-scaled like the overview camera above) is the
+    // whole point: this is a real-scale close-up, not a whole-network fit.
+    private const float CloseCameraBackMeters = 40f;
+    private const float CloseCameraUpMeters = 15f;
+    // A modest lateral (across-the-road) component blended into the back offset -- purely along the
+    // corridor axis looks straight down a narrow (~3.2m) lane with tall buildings only ~6m off each edge,
+    // which reads as a needle-thin canyon shot; a small sideways component gives a 3/4-angled "corner
+    // camera" framing (closer to a real traffic-cam mount) without reopening the sideways
+    // look-through-the-building-wall problem a full 90deg offset has.
+    private const float CloseCameraLateralMeters = 12f;
+
+    // Task T1.6 -- emissive colours the signal head material is set to each frame, keyed off
+    // CityLib.TrafficLightPlacer.ColorFor's colour bucket (design "Traffic lights": "each frame set the
+    // head's emissive material from that approach's current signal letter -> red/amber/green").
+    private static readonly Color TlRedColor = new(0.95f, 0.12f, 0.10f);
+    private static readonly Color TlYellowColor = new(0.95f, 0.85f, 0.12f);
+    private static readonly Color TlGreenColor = new(0.15f, 0.90f, 0.20f);
+    private static readonly Color TlOffColor = new(0.22f, 0.22f, 0.24f);
+    private static readonly Color TlPoleColor = new(0.15f, 0.15f, 0.16f);
+
     private SimSource? _sim;
     private Reconstructor? _reconstructor;
     private double _accumulator;
     private int _frame;
     private string? _shotPath;
+    private string _cameraMode = "overview";
+    private (Vector3 Min, Vector3 Max) _sceneBbox;
+    private Camera3D? _closeCamera;
+
+    // Task T1.6 Part B -- built LAZILY on the first _Process frame `sim.Source.TlStateByLane` is
+    // non-empty (design: geometry+TL state only exist once the bus has been pumped at least once), then
+    // reused every frame after -- only each head's material colour is rewritten per frame (design
+    // "Traffic lights": "Only the material param updates per frame"), same "build once, mutate per frame"
+    // split RoadMeshBuilder (static) / BuildCarMultiMesh+UpdateCars (per frame) already establish.
+    private readonly List<(int LaneHandle, MeshInstance3D HeadInstance, StandardMaterial3D HeadMaterial)> _signalHeads = new();
+    private bool _signalHeadsBuilt;
 
     // Task T1.5 -- ONE MultiMeshInstance3D for every car, built once in _Ready and reused every frame:
     // only the per-instance transforms/colors are rewritten each _Process; the underlying buffer
@@ -130,11 +163,25 @@ public partial class Main : Node3D
         _reconstructor = new Reconstructor();
         GD.Print($"Main: loaded scenario '{scenarioRel}' from '{scenarioDir}'.");
 
+        _cameraMode = ParseCameraArg();
+
         var roadBbox = BuildRoadMeshes(_sim.Network);
         var buildingBbox = BuildBuildings(_sim.Network);
         var bbox = CombineBbox(roadBbox, buildingBbox);
-        BuildCameraAndLight(bbox);
+        _sceneBbox = bbox;
+        // The overview camera is still always built (env + light + the default whole-network framing
+        // run-smoke.sh relies on) -- `--camera=close` just leaves it non-Current in favour of the close
+        // camera built below, rather than forking the environment/light setup.
+        BuildCameraAndLight(bbox, makeCurrent: _cameraMode != "close");
         _carMultiMesh = BuildCarMultiMesh();
+
+        if (_cameraMode == "close")
+        {
+            _closeCamera = new Camera3D { Name = "CloseCamera", Current = true, Far = 2000f };
+            AddChild(_closeCamera);
+            UpdateCloseCameraFraming(_closeCamera, null);
+            GD.Print("Main: --camera=close active (low angled close-up framing).");
+        }
 
         _shotPath = ParseShotArg();
         if (_shotPath is not null)
@@ -166,6 +213,23 @@ public partial class Main : Node3D
 
         var vehicles = _reconstructor.Reconstruct(_sim.Source, _sim.LocalLanes, PlayoutDelaySeconds);
         UpdateCars(vehicles);
+
+        var tlStateByLane = _sim.Source.TlStateByLane;
+        if (!_signalHeadsBuilt && tlStateByLane.Count > 0)
+        {
+            BuildTrafficLights(_sim.Network, tlStateByLane);
+            _signalHeadsBuilt = true;
+        }
+
+        if (_signalHeadsBuilt)
+        {
+            UpdateTrafficLights(tlStateByLane);
+        }
+
+        if (_closeCamera is not null)
+        {
+            UpdateCloseCameraFraming(_closeCamera, vehicles);
+        }
 
         if (vehicles.Count > 0)
         {
@@ -449,8 +513,12 @@ public partial class Main : Node3D
 
     // docs/DEMO-CITY3D-DESIGN.md "Procedural scene generation -> Roads" desktop check framing: an
     // above-and-back angled bird's-eye view over the whole network's Godot-space XZ bounds, plus a
-    // DirectionalLight3D so the asphalt is actually visible.
-    private void BuildCameraAndLight((Vector3 Min, Vector3 Max) bbox)
+    // DirectionalLight3D so the asphalt is actually visible. Always built (env + light + this whole-network
+    // camera) regardless of `--camera` mode -- task T1.6 Part C's `--camera=close` only leaves this camera
+    // non-Current (in favour of the separate close-up camera built in _Ready) rather than forking the
+    // environment/light setup, so run-smoke.sh's default (`--camera=overview`, `makeCurrent: true`) is
+    // byte-identical to the pre-T1.6 behavior.
+    private void BuildCameraAndLight((Vector3 Min, Vector3 Max) bbox, bool makeCurrent)
     {
         // A soft sky-coloured background + a little ambient fill light (docs/DEMO-CITY3D-DESIGN.md's
         // "Roads" only specifies the asphalt material; a bare gl_compatibility clear colour with pure
@@ -478,7 +546,7 @@ public partial class Main : Node3D
         var camPos = center + new Vector3(0f, extent * CameraHeightFactor, extent * CameraBackFactor);
         camera.Position = camPos;
         camera.LookAt(center, Vector3.Up);
-        camera.Current = true;
+        camera.Current = makeCurrent;
         camera.Far = Mathf.Max(extent * 4f, 500f);
 
         var light = new DirectionalLight3D
@@ -490,6 +558,200 @@ public partial class Main : Node3D
         AddChild(light);
 
         GD.Print($"Main: camera framing bbox min={min} max={max}, positioned at {camPos} looking at {center}.");
+    }
+
+    // docs/DEMO-CITY3D-DESIGN.md "Procedural scene generation -> Traffic lights" / task T1.6 Part B.
+    // Called ONCE (lazily, the first _Process frame `sim.Source.TlStateByLane` is non-empty --
+    // geometry/TL state only exist once the in-process bus has been pumped at least once, see
+    // CityLib.SimSource.Tick). CityLib.TrafficLightPlacer does all the placement math (downstream-end +
+    // right-edge nudge + the SUMO->Godot transform); this method only turns each plain SignalHead struct
+    // into a pole MeshInstance3D + a head MeshInstance3D with its OWN StandardMaterial3D (one per head,
+    // not shared -- each head's emissive colour is rewritten independently every frame in
+    // UpdateTrafficLights, unlike the shared asphalt/building/car materials which never change per-instance).
+    private void BuildTrafficLights(Sim.Ingest.NetworkModel network, IReadOnlyDictionary<int, byte> tlStateByLane)
+    {
+        var heads = TrafficLightPlacer.Place(network, tlStateByLane.Keys);
+        var poleMaterial = new StandardMaterial3D { AlbedoColor = TlPoleColor, Roughness = 0.8f };
+
+        foreach (var head in heads)
+        {
+            var poleHeight = head.HeadY - head.PoleY;
+            if (poleHeight <= 0f)
+            {
+                poleHeight = TrafficLightPlacer.HeadHeightMeters; // defensive floor; never hit in practice
+            }
+
+            var pole = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.25f, poleHeight, 0.25f) },
+                Position = new Vector3(head.PoleX, head.PoleY + poleHeight / 2f, head.PoleZ),
+                Name = $"TlPole_{head.LaneHandle}",
+            };
+            pole.SetSurfaceOverrideMaterial(0, poleMaterial);
+            AddChild(pole);
+
+            // Small box head (design "Traffic lights": "a small box or three stacked spheres") -- its own
+            // material instance so this frame's/every future frame's colour write hits only this head.
+            var headMaterial = new StandardMaterial3D
+            {
+                AlbedoColor = TlOffColor,
+                EmissionEnabled = true,
+                Emission = TlOffColor,
+                EmissionEnergyMultiplier = 2.5f,
+            };
+            var headInstance = new MeshInstance3D
+            {
+                Mesh = new BoxMesh { Size = new Vector3(0.9f, 0.9f, 0.9f) },
+                Position = new Vector3(head.HeadX, head.HeadY, head.HeadZ),
+                Name = $"TlHead_{head.LaneHandle}",
+            };
+            headInstance.SetSurfaceOverrideMaterial(0, headMaterial);
+            AddChild(headInstance);
+
+            _signalHeads.Add((head.LaneHandle, headInstance, headMaterial));
+        }
+
+        GD.Print($"Main: built {_signalHeads.Count} signal head(s).");
+    }
+
+    // Called every _Process frame once the signal heads exist. Design "Traffic lights": "Only the
+    // material param updates per frame" -- geometry (pole+head positions) never changes after
+    // BuildTrafficLights; only each head's emissive/albedo colour is rewritten from the live replicated
+    // signal byte. A lane that (transiently) has no entry in `tlStateByLane` renders Off rather than
+    // stale, though this cannot happen in practice -- TlStateByLane's key set is exactly the lane handles
+    // BuildTrafficLights was built from.
+    private void UpdateTrafficLights(IReadOnlyDictionary<int, byte> tlStateByLane)
+    {
+        foreach (var (laneHandle, _, material) in _signalHeads)
+        {
+            var color = tlStateByLane.TryGetValue(laneHandle, out var signalByte)
+                ? ColorForSignal(TrafficLightPlacer.ColorFor(signalByte))
+                : TlOffColor;
+            material.AlbedoColor = color;
+            material.Emission = color;
+        }
+    }
+
+    private static Color ColorForSignal(SignalColor color) => color switch
+    {
+        SignalColor.Red => TlRedColor,
+        SignalColor.Yellow => TlYellowColor,
+        SignalColor.Green => TlGreenColor,
+        _ => TlOffColor,
+    };
+
+    // Task T1.6 Part C -- the `--camera=close` point of interest, recomputed every frame (cheap: at most a
+    // handful of signal heads / one vehicle) per this task's priority order: "the centroid of the signal
+    // heads if any, else the first vehicle, else network center". Signal heads (once built) are STATIC, so
+    // once any exist they win permanently for this scenario; only a TL-free scenario ever falls through to
+    // the vehicle/network-center branches.
+    private void UpdateCloseCameraFraming(Camera3D camera, IReadOnlyList<CityLib.ReconstructedVehicle>? vehicles)
+    {
+        Vector3 focus;
+        if (_signalHeads.Count > 0)
+        {
+            var sum = Vector3.Zero;
+            foreach (var head in _signalHeads)
+            {
+                sum += head.HeadInstance.Position;
+            }
+
+            focus = sum / _signalHeads.Count;
+        }
+        else if (vehicles is { Count: > 0 })
+        {
+            var v = vehicles[0];
+            focus = new Vector3(v.X, v.Y, v.Z);
+        }
+        else
+        {
+            var (min, max) = _sceneBbox;
+            focus = new Vector3((min.X + max.X) / 2f, (min.Y + max.Y) / 2f, (min.Z + max.Z) / 2f);
+        }
+
+        // Fixed (not extent-scaled) low-angled offset -- design Part C: "~40-80m back and ~15-25m up,
+        // tilted down". Offset ALONG the approach's own back-of-travel direction (not a fixed world axis):
+        // BuildingPlacer lines BOTH sides of every road with boxes almost the corridor's whole length, so a
+        // sideways (across-the-road) offset looks straight through that building wall; sitting back along
+        // the road's own corridor instead keeps the camera IN the street canyon, looking down it at the
+        // light/car -- buildings flank the shot instead of blocking it.
+        var backDir = ComputeCloseCameraBackDirection(vehicles);
+        var lateralDir = new Vector3(-backDir.Z, 0f, backDir.X); // horizontal perpendicular to backDir
+        camera.Position = focus
+            + backDir * CloseCameraBackMeters
+            + lateralDir * CloseCameraLateralMeters
+            + new Vector3(0f, CloseCameraUpMeters, 0f);
+        camera.LookAt(focus, Vector3.Up);
+    }
+
+    // The horizontal unit direction the close camera sits back along, i.e. opposite the approach's own
+    // travel direction. Prefers the first (built, static) signal head's own controlled lane -- its final
+    // segment tangent IS the approach direction by definition -- falling back to the first live vehicle's
+    // reconstructed yaw (same navi-heading -> Godot-forward relationship CoordinateTransform documents:
+    // forward = (-sin(yaw), 0, -cos(yaw))) when no TL exists yet, and finally a fixed default so the very
+    // first (pre-tick) frame still gets a sane (if provisional) camera placement.
+    private Vector3 ComputeCloseCameraBackDirection(IReadOnlyList<CityLib.ReconstructedVehicle>? vehicles)
+    {
+        if (_signalHeads.Count > 0 && _sim is not null)
+        {
+            var laneHandle = _signalHeads[0].LaneHandle;
+            var lanes = _sim.Network.LanesByHandle;
+            if (laneHandle >= 0 && laneHandle < lanes.Count)
+            {
+                var shape = lanes[laneHandle].Shape;
+                if (shape.Count >= 2)
+                {
+                    var (x1, y1) = shape[^2];
+                    var (x2, y2) = shape[^1];
+                    var dx = x2 - x1;
+                    var dy = y2 - y1;
+                    var len = Math.Sqrt(dx * dx + dy * dy);
+                    if (len > 1e-9)
+                    {
+                        // Travel direction in Godot XZ (CoordinateTransform.SumoToGodot: Godot.X = Sumo.X,
+                        // Godot.Z = -Sumo.Y) -- "back" is its negation.
+                        var forwardX = (float)(dx / len);
+                        var forwardZ = (float)(-dy / len);
+                        return new Vector3(-forwardX, 0f, -forwardZ);
+                    }
+                }
+            }
+        }
+
+        if (vehicles is { Count: > 0 })
+        {
+            var yaw = vehicles[0].YawRad;
+            return new Vector3(MathF.Sin(yaw), 0f, MathF.Cos(yaw));
+        }
+
+        return new Vector3(0f, 0f, 1f);
+    }
+
+    // `--camera=<mode>` USER cmdline arg (task T1.6 Part C): "overview" (default, the whole-network
+    // bird's-eye framing -- unchanged run-smoke.sh behavior) or "close" (a low, angled, real-scale
+    // close-up). Same OS.GetCmdlineUserArgs() mechanism as --shot/--scenario; an unrecognized value falls
+    // back to the default rather than failing the run.
+    private static string ParseCameraArg()
+    {
+        const string prefix = "--camera=";
+        foreach (var arg in OS.GetCmdlineUserArgs())
+        {
+            if (arg.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                var v = arg[prefix.Length..].Trim().ToLowerInvariant();
+                if (v == "close")
+                {
+                    return "close";
+                }
+
+                if (v == "overview")
+                {
+                    return "overview";
+                }
+            }
+        }
+
+        return "overview";
     }
 
     // docs/DEMO-CITY3D-DESIGN.md task T1.3 part C -- Xvfb screenshot pipeline. `--shot=<abs path>` is a
