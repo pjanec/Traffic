@@ -1,0 +1,60 @@
+# Deploy the auto-generated interactive-demo gallery (`scripts/gen-demos.sh`) to GitHub Pages.
+# The gallery is a set of self-contained `replay.html`-style pages (vanilla Canvas 2D, no server,
+# no SUMO) rendered from committed scenarios — see docs/DEMOS.md.
+#
+# Runs on workflow_dispatch, or on a push to `main` that touches the scenarios/generator/script
+# inputs. Deliberately restricted to `main` (not "**"): feature branches must never publish to the
+# live Pages site. `actions/configure-pages` derives the Pages base URL at deploy time, so nothing
+# here hardcodes the repository name — a repo rename does not break this workflow.
+name: demos
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "scenarios/**"
+      - "src/Sim.Viz/**"
+      - "src/Sim.Run/**"
+      - "src/Sim.ExtDemo/**"
+      - "scripts/gen-demos.sh"
+      - ".github/workflows/demos.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Generate demo gallery
+        run: bash scripts/gen-demos.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

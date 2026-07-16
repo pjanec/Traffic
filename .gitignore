@@ -2,6 +2,10 @@
 bin/
 obj/
 
+# Generated interactive-demo gallery (scripts/gen-demos.sh / .github/workflows/demos.yml) — always
+# regenerated, never committed. See docs/DEMOS.md.
+/site/
+
 # NuGet
 *.nupkg
 .nuget/

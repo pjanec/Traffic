@@ -443,6 +443,12 @@ The visualizer is **offline and browser-only** — no SUMO, no server needed for
 `replay.html`** (vanilla Canvas 2D: width-accurate lanes, junction fills, SUMO-native signal heads,
 true-size oriented vehicle boxes colored by vClass; play/pause/scrub/speed, zoom & pan).
 
+### Live demos
+
+A curated, auto-generated gallery of these replays is deployed to GitHub Pages — see
+[`docs/DEMOS.md`](docs/DEMOS.md) for the link and the demo list. Generate it locally with
+`scripts/gen-demos.sh`, then open `site/index.html`.
+
 > **Phone caveat:** opening a local `replay.html` from the iOS Files app runs it with **no JavaScript**
 > (black canvas). On a phone, serve it over **https** (e.g. a hosted artifact URL), not `file://`.
 
