@@ -104,6 +104,9 @@ a `Main` C# node.
    lanes: endpoint coords within 1e-3 of the network's).
 3. Toggling the source construction between "co-hosted engine" and "consume `bus.Source`" changes **no**
    reconstruction/render code (proves the local↔remote seam).
+4. The SUMO→Godot coordinate transform and navi-heading→yaw conversion are exercised and asserted once:
+   reconstructed yaw for a tracked vehicle matches the sim heading within 1°, and positions fall inside
+   the net's bounding box in Godot space.
 
 ### T1.3 — Procedural roads
 **Design:** "Procedural city → Roads". **Depends on:** T1.2. **Touches:** `demos/City3D/Viewer/` mesh gen.

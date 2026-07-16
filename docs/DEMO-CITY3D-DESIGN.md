@@ -46,6 +46,12 @@ wires together. Task breakdown + success conditions: `docs/DEMO-CITY3D-TASKS.md`
    (no existing file's behaviour changes) or **render-side** (the DRY rewire). `dotnet test Traffic.sln`
    and the `Sim.Bench` determinism hash stay at their committed baseline on every stage that touches
    `src/`. Demo stages don't touch `src/` at all.
+7. **Never assume you are the only session.** Other parallel sessions may be modifying the engine/`src/`
+   concurrently (bug fixes, etc.), so (a) the standing-gate baseline (`dotnet test` counts + `Sim.Bench`
+   determinism hash) is captured **fresh** at the start of each `src/`-touching task, never hardcoded
+   from this doc; (b) rebase the demo branch onto its base before pushing; (c) all engine-side work here
+   is additive or render-side on the demo's own branch, so a concurrent engine change should merge
+   cleanly.
 
 ---
 
@@ -169,22 +175,92 @@ apply current TL state to signal-head materials
 - **Playout delay**: a stable, small manual delay (default ~0.3–0.5 s), **not** auto-driven (§10.1). DR
   smoothing + DR-error publishing carry the quality.
 
-### Procedural city (generated at load; nothing committed)
-All from the geometry the viewer already has, seeded-deterministically (no `System.Random` without a
-fixed seed — same repo rule):
+### Procedural scene generation
+All geometry is a pure function of the network the viewer already has, seeded-deterministically (no
+`System.Random` without a fixed seed — same repo rule). There are two clocks: static geometry (roads,
+buildings, TL poles) is built **once at load** and never moves; only cars update per frame. The viewer
+never needs the `.net.xml` on disk — it builds from the `GeometryCodec.LaneGeo` polylines the host
+published, which is what makes local and remote identical.
 
-- **Roads**: for each lane, extrude its polyline to a width-accurate ribbon mesh (`SurfaceTool`/
-  `ArrayMesh`), draped to `LaneShapeZ` (flat when null). Junction areas filled from the internal lanes.
-- **Buildings**: walk each non-internal edge; place offset boxes alongside the road at a set-back, with
-  varied heights (tens of metres) and footprints from a seeded hash of the edge id → stable across runs.
-  `MultiMeshInstance3D` for the box instances (thousands cheaply).
-- **Traffic lights**: one pole + a head per controlled approach (from the net's TL-controlled
-  connections). Head emissive colour driven each frame by the replicated signal state
-  (`TlCodec`/`TrafficLightState` letters r/y/g → red/amber/green materials).
-- **Cars**: a single `MultiMeshInstance3D` of unit boxes, per-instance transform = scale(`Length`,
-  `Width`, ~1.4 m height from the vType dims) · rotate(yaw from reconstructed heading, pitch from z-slope)
-  · translate(x,y,z). Believable scale throughout (cars ~4.5×1.8 m, true lane widths, buildings tens of
-  metres).
+#### Coordinate mapping
+SUMO is 2D right-handed with `x`=east, `y`=north, plus navi-heading (0°=North, clockwise); Godot 3D is
+Y-up. So there is a single fixed transform SUMO `(x, y, z)` → Godot `(x, z, -y)` and a heading conversion
+(navi-deg → Godot yaw radians), applied in exactly one place. Getting it wrong mirrors/rotates everything
+together, so it is the first thing the headless self-test pins down (T1.2 checks yaw within 1°).
+
+#### Roads
+Each lane arrives as a polyline (list of `(x,y)`) plus a true `Width`. To turn a centerline into a
+surface:
+
+1. for each segment compute the 2D unit normal (perpendicular to the segment direction);
+2. offset the centerline vertices ±`Width`/2 along the normal to get left/right edges;
+3. at interior vertices use the miter normal (normalized average of the two adjacent segment normals) so
+   consecutive quads meet without a gap or overlap on curves — a length cap on the miter avoids spikes at
+   very sharp bends, fine for a demo;
+4. emit two triangles per segment into an `ArrayMesh`.
+
+Junctions are just the internal (`:`-prefixed) lanes — they carry their own curved polylines, so the same
+ribbon routine fills the junction interior (turning paths) with no special case. Dark asphalt material;
+optional thin lane-edge line ribbons are polish, not core. Ribbon vertices take `z` from `LaneShapeZ`
+(flat nets → constant `z`, `city-organic-L2` → real relief). Sanity check (T1.3): total ribbon area ≈
+Σ(lane length × lane width) within a few percent.
+
+#### Buildings
+Roads give where *not* to build; buildings fill the space beside them. Per non-internal edge:
+
+1. take the edge's lane-group polyline and its total half-width (sum of its lanes' widths / 2);
+2. march along the polyline at a stride (~15–25 m); at each step offset outward by `halfWidth + setback`
+   on both sides;
+3. place a box whose footprint (width along the road, depth away from it) and height come from a seeded
+   hash of `(edgeId, stepIndex, side)` — varied but stable across runs; heights in a believable band
+   (~6–60 m, i.e. 2–20 storeys);
+4. orient the box to the local road tangent so façades face the street;
+5. skip steps near junctions (leave corners open) and skip if a footprint would collide with an
+   already-placed neighbor on that edge.
+
+Building bases sit on the sampled ground `z` under their footprint (from `LaneShapeZ`), so elevation
+follows the terrain. Thousands of buildings go into a `MultiMeshInstance3D` — one unit-cube mesh, one
+per-instance transform, one draw call. Variety without assets = scale + a small palette of seeded
+materials. Determinism check (T1.4): two runs → identical instance counts and transforms.
+
+#### Traffic lights
+The network exposes which connections are TL-controlled and their link indices; the replication stream
+carries the live per-approach signal letter (r/y/g/G via `TlCodec`).
+
+1. For each controlled approach (grouped so we get one head per incoming lane, not one per connection),
+   find the stop-line point — the downstream end of the incoming lane's polyline, offset to the lane
+   edge;
+2. place a simple pole (thin cylinder/box) and a head (small box or three stacked spheres) at the top,
+   facing back down the approach;
+3. each frame set the head's emissive material from that approach's current signal letter → red/amber/
+   green.
+
+Only the material param updates per frame. Verification (T1.6): head colour index == replicated letter
+every frame, and over a `09-traffic-light` run observe red→green and green→(amber→)red transitions (sim
+really drives the lights).
+
+#### Cars
+The only per-frame geometry. All vehicles share a single `MultiMeshInstance3D` of a unit box; each frame
+resize the instance buffer to the live vehicle count and write one transform per car:
+
+- **Scale** = (`Length`, `Width`, height) with `Length`/`Width` the real vType dims (a truck is visibly
+  bigger), height a believable constant (~1.4 m for cars, taller for trucks by vClass);
+- **Position** = reconstructed `(x,y)` from `DrClock`→`PoseResolver`→`DrPoseSmoother`, `z` from
+  `LaneShapeZ`;
+- **Yaw** = reconstructed heading; **pitch** = z-gradient along travel (tilt on ramps); **roll** ≈ 0.
+
+Smoothness is entirely the `Viewer.Motion` story; the `MultiMesh` just draws where reconstruction says.
+One draw call lets `city-mixed-1k` (~1k) and the ladder to 15k render at interactive rates. Believable
+scale throughout (cars ~4.5×1.8 m, true lane widths, buildings tens of metres).
+
+#### Determinism & scale
+No unseeded randomness (repo rule): every "random" footprint/height/material comes from a hash of stable
+ids + a single scene seed — reproducible and independent of thread order. Static geometry is built once,
+cars per-frame; buildings and cars both use `MultiMesh` so vehicle count and city size scale to the perf
+ladder without a draw-call explosion. `LaneShapeZ` is threaded through roads, buildings, and cars alike,
+so the multi-level capability is real, not bolted on. Because generation is a pure function of the
+received geometry, the generator is scenario-agnostic — swap the scenario and the whole city regenerates;
+the perf demo is just "same code, bigger net + more `--spawn`".
 
 ### Scale / scenario switching
 The viewer (local) and `Sim.Host.App` (remote) both take `--scenario <path>` (+ `--spawn N`). Nothing is
