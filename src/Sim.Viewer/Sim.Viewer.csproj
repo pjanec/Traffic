@@ -27,24 +27,16 @@
     <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md §5 (P2-C): DrClock + DrPoseSmoother moved out of Sim.Viewer.Core
          into the portable, packable Sim.Viewer.Motion. Only this exe uses them (Sim.Viewer.Core does not). -->
     <ProjectReference Include="..\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
+    <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md D5/§5 (P3.3): the packable generic raylib rendering + DDS
+         subscriber + render-overlay seam, split out of this exe. Raylib-cs/rlImgui-cs and the bundled
+         DejaVuSans.ttf now come TRANSITIVELY through this reference (the package's own PackageReference/
+         Content items); this exe no longer declares them itself. -->
+    <ProjectReference Include="..\Sim.Viewer.Raylib\Sim.Viewer.Raylib.csproj" />
     <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md D5/D10 (P3.2): the demo tool's own reference to Sim.Evac,
          relocated from Sim.Viewer.Core: this exe is the demo/sample layer, not the packageable
          generic viewer, so it is the right place for a domain feature's dependency to live. Sim.Evac is
          OUT of Traffic.sln, same as this project, so this reference does not touch the parity gate. -->
     <ProjectReference Include="..\Sim.Evac\Sim.Evac.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Raylib-cs" Version="7.0.1" />
-    <PackageReference Include="rlImgui-cs" Version="3.2.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Bundled TTF (permissive DejaVu license) so ImGui text is crisp/identical on Linux and Windows,
-         not reliant on a system font being present (docs/SUMOSHARP-NATIVE-VIEWER.md "UI + font"). -->
-    <Content Include="assets\DejaVuSans.ttf">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
 </Project>

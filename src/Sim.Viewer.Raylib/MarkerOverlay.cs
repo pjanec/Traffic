@@ -1,9 +1,13 @@
 using System.Collections.Generic;
 using System.Numerics;
-using Raylib_cs;
 using Sim.Core;
 
-namespace Sim.Viewer;
+namespace Sim.Viewer.Raylib;
+
+// `using Raylib_cs;` is deliberately placed HERE (namespace-body level) -- see RoadLayerCache.cs's
+// identical comment for why a compilation-unit-level using loses to this namespace's own trailing
+// "Raylib" segment.
+using Raylib_cs;
 
 // docs/SUMOSHARP-PACKAGING-DESIGN.md D10 (P3.1): a trivial, domain-agnostic IRenderOverlay used ONLY to
 // prove the seam works end-to-end (the hidden `--overlay-test` CLI flag) -- a bright magenta filled

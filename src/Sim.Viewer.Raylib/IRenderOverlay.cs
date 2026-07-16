@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Raylib_cs;
 using Sim.Core;
 
-namespace Sim.Viewer;
+namespace Sim.Viewer.Raylib;
 
 // docs/SUMOSHARP-PACKAGING-DESIGN.md D10: the GENERIC render-overlay seam. The packaged viewer (once
 // split out, see D5) must stay domain-agnostic -- it renders any SUMO stream (roads/lanes/TLs/vehicles/

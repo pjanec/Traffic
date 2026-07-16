@@ -65,8 +65,10 @@ jobs:
           # Native transport binding: Sim.Replication.Dds is NOT in Traffic.sln (the hermetic gate
           # never needs CycloneDDS), so build+pack it standalone (restores CycloneDDS.NET on the runner).
           dotnet pack src/Sim.Replication.Dds/Sim.Replication.Dds.csproj -c Release "-p:Version=$VERSION" -o ./nupkgs
-          # NOTE: SumoSharp.Viewer.Raylib (native raylib desktop viewer, P3.3) is added here once it
-          # is split out of the demo exe into a packable component.
+          # Native raylib desktop viewer (P3.3): also NOT in Traffic.sln (pulls raylib), so build+pack it
+          # standalone too (restores Raylib-cs/rlImgui-cs on the runner). Depends on Sim.Viewer.Motion +
+          # Sim.Replication.Dds, both packed above by this same job.
+          dotnet pack src/Sim.Viewer.Raylib/Sim.Viewer.Raylib.csproj -c Release "-p:Version=$VERSION" -o ./nupkgs
           ls -l ./nupkgs
 
       - name: Upload packages as build artifact

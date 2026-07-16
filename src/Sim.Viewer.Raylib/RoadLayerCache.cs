@@ -1,7 +1,16 @@
 using System.Numerics;
-using Raylib_cs;
 
-namespace Sim.Viewer;
+namespace Sim.Viewer.Raylib;
+
+// `using Raylib_cs;` is deliberately placed HERE (namespace-body level), not above the namespace
+// declaration (compilation-unit level): this namespace's own trailing segment is "Raylib", which is a
+// nested-namespace member of Sim.Viewer as seen from this file's compilation unit, and C# simple-name
+// lookup resolves a same-name nested-namespace member of an ENCLOSING namespace before it ever
+// considers a compilation-unit-level using-namespace-directive -- so an unqualified `Raylib.XXX` call
+// resolved to the "Sim.Viewer.Raylib" namespace itself (CS0234) rather than the Raylib_cs static class.
+// A using-directive declared AT THIS namespace's own body level is checked (and matches) before that
+// outer-level lookup is ever reached.
+using Raylib_cs;
 
 // docs/SUMOSHARP-NATIVE-VIEWER-TESTING.md TASK 1 (10k perf pass): the static road layer (background + road
 // casing/surface + dashed centrelines + chevrons) is geometry that only changes when the CAMERA changes

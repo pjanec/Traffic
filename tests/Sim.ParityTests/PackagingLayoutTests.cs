@@ -69,6 +69,38 @@ public class PackagingLayoutTests
     }
 
     [Fact]
+    public void ViewerRaylib_IsNativePackage_AndStaysGeneric()
+    {
+        // Stage P3.3 (D5/§5): the packable raylib rendering leaf split out of the Sim.Viewer demo exe.
+        // Unlike the portable Sim.Replication/Sim.Viewer.Motion packages above, this is a NATIVE GPU
+        // package (Raylib-cs/rlImgui) -- net8.0 only, NOT multi-targeted, so this is a standalone
+        // [Fact], not folded into the portable-package [Theory].
+        var csproj = File.ReadAllText(Path.Combine(RepoRoot(), "src/Sim.Viewer.Raylib/Sim.Viewer.Raylib.csproj"));
+
+        // Single-target net8.0, not multi-targeted like the portable packages above: assert the plural
+        // <TargetFrameworks> element is absent, and that no <TargetFramework> element's VALUE contains
+        // netstandard (checked as a tag match, not a bare substring -- the csproj's own header comment
+        // legitimately says the word "netstandard" when explaining this is net8.0-only).
+        Assert.Contains("<TargetFramework>net8.0</TargetFramework>", csproj);
+        Assert.DoesNotContain("<TargetFrameworks>", csproj);
+        Assert.DoesNotContain("<TargetFramework>netstandard", csproj);
+
+        Assert.Contains("<IsPackable>true</IsPackable>", csproj);
+        Assert.Contains("<PackageId>SumoSharp.Viewer.Raylib</PackageId>", csproj);
+
+        Assert.Contains("Sim.Viewer.Motion.csproj", csproj);
+        Assert.Contains("Sim.Replication.Dds.csproj", csproj);
+
+        // Must stay GENERIC: no demo-tool curated content or domain dependency leaked into the package.
+        Assert.DoesNotContain("Sim.Evac", csproj);
+
+        var packageDir = Path.Combine(RepoRoot(), "src", "Sim.Viewer.Raylib");
+        Assert.False(File.Exists(Path.Combine(packageDir, "DemoCatalog.cs")));
+        Assert.False(File.Exists(Path.Combine(packageDir, "DemoSession.cs")));
+        Assert.False(File.Exists(Path.Combine(packageDir, "EvacOverlay.cs")));
+    }
+
+    [Fact]
     public void ViewerCore_CarriesNoDomainDependency()
     {
         // D5/D10: Sim.Viewer.Core is the GENERIC, packageable viewer brain -- it must never depend on

@@ -1,4 +1,4 @@
-namespace Sim.Viewer;
+namespace Sim.Viewer.Raylib;
 
 // P1 diagnostics panel: a ring buffer of the last ~120 Raylib.GetFrameTime() samples (roughly 2s at
 // 60fps), from which the diagnostics panel derives fps/min/avg/p99 frame time -- SUMOSHARP-NATIVE-

@@ -1,7 +1,7 @@
 using Sim.Core;
 using Sim.Replication;
 
-namespace Sim.Viewer.Core;
+namespace Sim.Viewer.Raylib;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P2b — PoseResolver.ILaneShapeSource backed by the subscriber's DECODED
 // DDS geometry (GeometryCodec.LaneGeo), so PoseResolver can walk the remotely-received lane polylines (not

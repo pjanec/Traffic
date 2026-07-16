@@ -1,6 +1,6 @@
 using CycloneDDS.Runtime.Interop;
 
-namespace Sim.Viewer.Core;
+namespace Sim.Replication.Dds;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P3 ("remote mode + QoS") -- native QoS handles for the two profiles this
 // track uses, built via CycloneDDS.Runtime.Interop.DdsApi (reflected off CycloneDDS.NET 0.3.2's managed
@@ -32,7 +32,10 @@ namespace Sim.Viewer.Core;
 // spec, so the handle could be freed right after construction -- but there are at most 8 of these for the
 // life of a process (4 writers + 4 readers), so the trivial one-time native alloc is left alive for process
 // lifetime rather than adding a use-after-free risk for no measurable benefit.
-internal static class DdsQos
+// Public (not internal): consumers (DdsSubscriber/DdsPublisher/DdsCommandWriter/DdsCommandReader/
+// DdsStatusWriter/DdsStatusReader) live in OTHER assemblies (Sim.Viewer.Core, Sim.Viewer.Raylib) after
+// the P3.3 packaging split -- internal visibility would not cross the assembly boundary.
+public static class DdsQos
 {
     public static IntPtr DurableLatest(int depth = 1)
     {

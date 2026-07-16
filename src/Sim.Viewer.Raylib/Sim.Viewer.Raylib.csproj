@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- docs/SUMOSHARP-PACKAGING-DESIGN.md D5/§5: the GENERIC packable raylib viewer (native GPU leaf).
+       Holds the reusable raylib/ImGui rendering + the DDS subscriber adapter + the render-overlay seam +
+       the shared per-frame draw helpers. NO DemoCatalog / evac / curated scenarios (those stay in the
+       Sim.Viewer demo exe). net8.0 only (native GPU; not netstandard). OUT of Traffic.sln (pulls raylib);
+       never referenced by anything IN Traffic.sln. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>true</IsPackable>
+    <PackageId>SumoSharp.Viewer.Raylib</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>SumoSharp — generic raylib/ImGui desktop rendering for a SumoSharp traffic stream: Renderer + RoadLayerCache + camera + the DDS subscriber adapter + a render-overlay seam, turning an authoritative or dead-reckoned SUMO stream into an on-screen view. Native GPU (Raylib-cs/rlImgui). Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
+    <ProjectReference Include="..\Sim.Replication.Dds\Sim.Replication.Dds.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Raylib-cs" Version="7.0.1" />
+    <PackageReference Include="rlImgui-cs" Version="3.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" Condition="Exists('README.md')" />
+    <!-- Bundled TTF packed as content + copied to consumers' output (crisp ImGui text w/o a system font). -->
+    <Content Include="assets\DejaVuSans.ttf" Pack="true" PackagePath="contentFiles\any\net8.0\assets\;content\assets\">
+      <PackageCopyToOutput>true</PackageCopyToOutput>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

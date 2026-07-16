@@ -1,6 +1,8 @@
 using CycloneDDS.Runtime;
+using Sim.Viewer.Core;
+using Sim.Viewer.Raylib;
 
-namespace Sim.Viewer.Core;
+namespace Sim.Viewer;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P2 ("Done: a headless console DDS+DR harness ... asserts round-trip") --
 // a headless, no-window proof that the DDS data path actually round-trips end to end in this process:

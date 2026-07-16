@@ -4,6 +4,7 @@ using Raylib_cs;
 using Sim.Core;
 using Sim.Evac;
 using Sim.Viewer.Core;
+using Sim.Viewer.Raylib;
 
 namespace Sim.Viewer;
 
@@ -200,7 +201,7 @@ public sealed class EvacOverlay : IRenderOverlay
             return;
         }
 
-        Raylib.BeginMode2D(camera);
+        global::Raylib_cs.Raylib.BeginMode2D(camera);
 
         // 1. Known-world boundary: a dashed rectangle through the hard NavMesh edge.
         var (minX, minY, maxX, maxY) = snap.Boundary;
@@ -220,19 +221,19 @@ public sealed class EvacOverlay : IRenderOverlay
         var center = Renderer.Flip(ix, iy);
         if (snap.Time >= startTime)
         {
-            Raylib.DrawCircleV(center, (float)radius, IncidentFillColor);
-            Raylib.DrawCircleLinesV(center, (float)safeRadius, IncidentRingColor);
+            global::Raylib_cs.Raylib.DrawCircleV(center, (float)radius, IncidentFillColor);
+            global::Raylib_cs.Raylib.DrawCircleLinesV(center, (float)safeRadius, IncidentRingColor);
         }
         else
         {
-            Raylib.DrawCircleLinesV(center, (float)radius, IncidentPendingColor);
+            global::Raylib_cs.Raylib.DrawCircleLinesV(center, (float)radius, IncidentPendingColor);
         }
 
         // 3. Abandoned cars: filled dark-red discs (KindAbandoned). Under vehicles -- a car that has been
         // abandoned sits still on the road, so a moving vehicle drawn on top of it reads correctly.
         foreach (var (x, y, r) in snap.AbandonedCars)
         {
-            Raylib.DrawCircleV(Renderer.Flip(x, y), (float)r, AbandonedColor);
+            global::Raylib_cs.Raylib.DrawCircleV(Renderer.Flip(x, y), (float)r, AbandonedColor);
         }
 
         // 4. Pushers: oriented ~5.0x1.8 m rectangles (KindPushingCar), rotated by HeadingRad. HeadingRad is
@@ -245,7 +246,7 @@ public sealed class EvacOverlay : IRenderOverlay
             DrawOrientedRectWorld(x, y, headingRad, halfLen: 2.5f, halfWid: 0.9f, PusherColor);
         }
 
-        Raylib.EndMode2D();
+        global::Raylib_cs.Raylib.EndMode2D();
     }
 
     // Pedestrians (cyan fleeing -> green escaped) AND the fear overpaint (moved from Renderer.cs's old
@@ -259,12 +260,12 @@ public sealed class EvacOverlay : IRenderOverlay
             return;
         }
 
-        Raylib.BeginMode2D(camera);
+        global::Raylib_cs.Raylib.BeginMode2D(camera);
 
         const float pedRadius = 1.0f;
         foreach (var (x, y, escaped) in snap.Peds)
         {
-            Raylib.DrawCircleV(Renderer.Flip(x, y), pedRadius, escaped ? PedEscapedColor : PedFleeingColor);
+            global::Raylib_cs.Raylib.DrawCircleV(Renderer.Flip(x, y), pedRadius, escaped ? PedEscapedColor : PedFleeingColor);
         }
 
         // Fear overpaint: for every vehicle DrawDynamicWorld already drew (plain speed colour), redraw
@@ -291,10 +292,10 @@ public sealed class EvacOverlay : IRenderOverlay
             var origin = new Vector2(length, width / 2f);
             var baseColor = Renderer.SpeedColor(v.SpeedExact);
             var color = Renderer.LerpColor(baseColor, FearAlarmColor, fear);
-            Raylib.DrawRectanglePro(rec, origin, rotationDeg, color);
+            global::Raylib_cs.Raylib.DrawRectanglePro(rec, origin, rotationDeg, color);
         }
 
-        Raylib.EndMode2D();
+        global::Raylib_cs.Raylib.EndMode2D();
     }
 
     // Rotates a `halfLen`x`halfWid` rectangle centred at world (x,y) by a WORLD-space heading (math
@@ -317,8 +318,8 @@ public sealed class EvacOverlay : IRenderOverlay
             corners[i] = Renderer.Flip(wx, wy);
         }
 
-        Raylib.DrawTriangle(corners[0], corners[1], corners[2], color);
-        Raylib.DrawTriangle(corners[0], corners[2], corners[3], color);
+        global::Raylib_cs.Raylib.DrawTriangle(corners[0], corners[1], corners[2], color);
+        global::Raylib_cs.Raylib.DrawTriangle(corners[0], corners[2], corners[3], color);
     }
 
     // The evac legend + live counters + incident-placement hint -- moved from Renderer.cs's old

@@ -3,7 +3,7 @@ using Sim.Core;
 using Sim.Replication;
 using Sim.Replication.Dds;
 
-namespace Sim.Viewer.Core;
+namespace Sim.Viewer.Raylib;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P2 — the read side of the native viewer's DDS data path. Decodes the four
 // topics DdsPublisher writes into plain in-memory state a renderer (P2b) or this phase's LoopbackSelfTest

@@ -1,14 +1,22 @@
 using System.Numerics;
-using Raylib_cs;
 using rlImGui_cs;
 using ImGuiNET;
 using Sim.Core;
 using Sim.Ingest;
 using Sim.Replication;
-using Sim.Viewer.Core;
 using Sim.Viewer.Motion;
 
-namespace Sim.Viewer;
+namespace Sim.Viewer.Raylib;
+
+// `using Raylib_cs;` is deliberately placed HERE (namespace-body level), not above the namespace
+// declaration (compilation-unit level): this namespace's own trailing segment is "Raylib", which is a
+// nested-namespace member of Sim.Viewer as seen from this file's compilation unit, and C# simple-name
+// lookup resolves a same-name nested-namespace member of an ENCLOSING namespace before it ever
+// considers a compilation-unit-level using-namespace-directive -- so an unqualified `Raylib.XXX` call
+// resolved to the "Sim.Viewer.Raylib" namespace itself (CS0234) rather than the Raylib_cs static class.
+// A using-directive declared AT THIS namespace's own body level is checked (and matches) before that
+// outer-level lookup is ever reached.
+using Raylib_cs;
 
 // docs/SUMOSHARP-NATIVE-VIEWER.md P0: draws the LOCAL-mode world (roads + oriented vehicles from the
 // authoritative SimulationSnapshot -- no dead reckoning, no jitter) plus a minimal ImGui HUD.
@@ -35,10 +43,12 @@ public static class Renderer
     public static Color BackgroundColor => Background;
 
     // HtmlPage.cs draw()'s speedColor(s): 0 = stopped (red) .. free-flow 13.9 m/s (~50 km/h) = green.
-    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10 (P3.2): `internal` (not `private`) so a same-assembly render
-    // overlay (e.g. EvacOverlay's fear overpaint) can reproduce the EXACT plain speed colour it is
-    // blending toward alarm-red, without Renderer knowing why.
-    internal static Color SpeedColor(double speedExact)
+    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10/D5 (P3.2/P3.3): `public` (not `private`) so a render
+    // overlay in a CONSUMING assembly (e.g. the demo exe's EvacOverlay, in Sim.Viewer, fear-overpaint)
+    // can reproduce the EXACT plain speed colour it is blending toward alarm-red, without Renderer
+    // knowing why. Renderer now lives in the separate Sim.Viewer.Raylib package, so `internal` would no
+    // longer be visible to that overlay.
+    public static Color SpeedColor(double speedExact)
     {
         var t = Math.Clamp(speedExact / 13.9, 0.0, 1.0);
         var r = (int)Math.Round(230 * (1 - t) + 40 * t);
@@ -57,9 +67,10 @@ public static class Renderer
     };
 
     // World (x,y, SUMO Y-up) -> the Y-negated space fed to every raylib draw call under BeginMode2D.
-    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10 (P3.2): `internal` so a same-assembly render overlay can
-    // draw in the exact same world<->screen convention as every generic draw call in this file.
-    internal static Vector2 Flip(double x, double y) => new((float)x, (float)-y);
+    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10/D5 (P3.2/P3.3): `public` so a render overlay in a
+    // CONSUMING assembly (e.g. the demo exe's EvacOverlay) can draw in the exact same world<->screen
+    // convention as every generic draw call in this file.
+    public static Vector2 Flip(double x, double y) => new((float)x, (float)-y);
 
     // Fit a Camera2D to the network bounds with a margin, exactly like HtmlPage.cs's `fit(b)`. Target and
     // Offset are expressed in the SAME Y-negated space `Flip` produces, so the Y-flip lives entirely in
@@ -170,8 +181,13 @@ public static class Renderer
     // an already-resolved list (`vehicles`) rather than read straight off the snapshot, so the caller can
     // interpolate 10 Hz sim frames up to the 60 Hz render rate -- Program.cs builds it (raw or render-behind
     // interpolated); TL dots and obstacles still come live from the authoritative snapshot/host.
+    // docs/SUMOSHARP-PACKAGING-DESIGN.md D5/§5 (P3.3): takes `obstaclePoints` (plain world points), not an
+    // `EngineHost` -- the generic packaged renderer must not depend on Sim.Viewer.Core (the demo-side,
+    // non-packable viewer brain; Tier-2 diagram §5 lists this package's deps as Viewer.Motion +
+    // Replication.Dds only). Callers that own an EngineHost pass `host.ObstaclePoints`.
     public static void DrawDynamicWorld(
-        Camera2D camera, NetworkModel network, SimulationSnapshot snapshot, EngineHost host,
+        Camera2D camera, NetworkModel network, SimulationSnapshot snapshot,
+        IReadOnlyList<(double X, double Y)> obstaclePoints,
         IReadOnlyList<DrVehicleDraw> vehicles)
     {
         Raylib.BeginMode2D(camera);
@@ -204,7 +220,7 @@ public static class Renderer
         // "obstacles" section).
         var obstacleHalf = Math.Max(4f / camera.Zoom, 3f);
         var obstacleThick = 2.5f / camera.Zoom;
-        foreach (var (ox, oy) in host.ObstaclePoints)
+        foreach (var (ox, oy) in obstaclePoints)
         {
             var c = Flip(ox, oy);
             Raylib.DrawLineEx(new Vector2(c.X - obstacleHalf, c.Y - obstacleHalf), new Vector2(c.X + obstacleHalf, c.Y + obstacleHalf), obstacleThick, ObstacleColor);
@@ -218,10 +234,10 @@ public static class Renderer
     // `ctx.setLineDash([6,7])` centreline pass. The dash phase resets to "on" at the start of each lane
     // (canvas resets phase per beginPath(), and each lane is stroked as its own path there), so this
     // walks `shape` fresh with a local on/off counter rather than a running counter across lanes.
-    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10 (P3.2): `internal` (not `private`) so a same-assembly render
-    // overlay (e.g. EvacOverlay's dashed boundary rect) can reuse this generic drawing primitive instead
-    // of duplicating it.
-    internal static void DrawDashedPolyline(IReadOnlyList<(double X, double Y)> shape, float dashOn, float dashOff, float thick, Color color)
+    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10/D5 (P3.2/P3.3): `public` (not `private`) so a render
+    // overlay in a CONSUMING assembly (e.g. the demo exe's EvacOverlay dashed boundary rect) can reuse
+    // this generic drawing primitive instead of duplicating it.
+    public static void DrawDashedPolyline(IReadOnlyList<(double X, double Y)> shape, float dashOn, float dashOff, float thick, Color color)
     {
         var onPhase = true;
         var remaining = dashOn;
@@ -295,96 +311,6 @@ public static class Renderer
 
     private static Vector2 Rotate(Vector2 v, float cosA, float sinA) =>
         new(v.X * cosA - v.Y * sinA, v.X * sinA + v.Y * cosA);
-
-    // P1 controls panel (SUMOSHARP-NATIVE-VIEWER.md P1): mode label, restart, clear obstacles, and the
-    // random-traffic toggle. Sized explicitly (SetNextWindowSize) so its text is never clipped -- P0's HUD
-    // was cut off at the default auto-size. Must be called between rlImGui.Begin()/End() (see Program.cs).
-    // `fpsCap` is the render frame-rate cap in fps, with 0 meaning "unlimited"; the radio here mutates it and
-    // pushes the change straight to Raylib.SetTargetFPS so the choice takes effect on the next frame. It's a
-    // ref because Program.cs owns the value (it sets the initial cap before the loop) -- see RunLocal.
-    // docs/SUMOSHARP-PACKAGING-DESIGN.md D10 (P3.2): the "inject random traffic" checkbox is shown only for
-    // a SANDBOX host (`!host.ScenarioMode`) -- a scenario/custom-source host carries its own committed
-    // demand, so there is no random-traffic knob to offer. This replaces the old evac-specific `isEvac`
-    // param: the generic renderer decides purely from EngineHost's own generic `ScenarioMode`, never from
-    // a domain flag. The obstacle-drop hint is unconditional (a domain overlay that wants clicks routes
-    // them away in Program.cs's click handler before InjectObstacleAtWorld is ever called).
-    public static void DrawControlsPanel(EngineHost host, ref int fpsCap, ref bool smooth)
-    {
-        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(360, 390), ImGuiCond.FirstUseEver);
-        ImGui.Begin("SumoSharp - controls");
-        ImGui.Text(host.ScenarioMode ? "mode: SCENARIO" : "mode: SANDBOX");
-        ImGui.Separator();
-        if (ImGui.Button("restart"))
-        {
-            host.Restart();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("clear obstacles"))
-        {
-            host.ClearObstacles();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button(host.IsPaused ? "resume" : "pause"))
-        {
-            host.SetPaused(!host.IsPaused);
-        }
-
-        if (!host.ScenarioMode)
-        {
-            var randomTraffic = host.RandomTraffic;
-            if (ImGui.Checkbox("inject random traffic", ref randomTraffic))
-            {
-                host.SetRandomTraffic(randomTraffic);
-            }
-        }
-
-        ImGui.Separator();
-
-        // Playback speed relative to real time (LIVE, no rebuild): 1x = real speed, 3x = triple, etc. The
-        // engine may not sustain a high factor at a large fleet (CPU-bound, ~3x max at 10k) -- the render
-        // clock paces to the ACTUAL delivered rate (see the diagnostics "actual" line), so the slider is a
-        // target, not a promise.
-        var speed = (float)host.Speed;
-        if (ImGui.SliderFloat("speed", ref speed, 0.25f, 10f, "%.2fx real-time"))
-        {
-            host.SetSpeed(speed);
-        }
-
-        // Sim resolution = 1 / step-length = how finely the engine integrates (SUMO's step-length). Higher Hz
-        // = smoother physics + more snapshots to interpolate + better turns, but proportionally MORE compute,
-        // so a high resolution at a large fleet just lowers the achievable speed. Changing it REBUILDS the sim
-        // from t=0 (step-length is baked into the loaded config), hence discrete buttons, not a live slider.
-        var hz = (int)Math.Round(1.0 / host.StepLength);
-        ImGui.Text("sim resolution (restarts):");
-        if (ImGui.RadioButton("1Hz", hz == 1)) host.SetStepLength(1.0);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("2Hz", hz == 2)) host.SetStepLength(0.5);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("5Hz", hz == 5)) host.SetStepLength(0.2);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("10Hz", hz == 10)) host.SetStepLength(0.1);
-
-        // Render-behind interpolation: blend the two latest authoritative snapshots up to the render rate so
-        // vehicles glide instead of teleporting once per sim step. Costs ~one sim-step of latency; off = draw
-        // the raw newest snapshot (the old jumpy behaviour), useful for an A/B or exact-frame inspection.
-        ImGui.Checkbox("smooth (interpolate)", ref smooth);
-
-        // Render FPS cap: 30 / 60 / unlimited. Rendering at the hundreds of fps the GPU allows for a 10 Hz
-        // sim is wasted work, so default to a real cap; "unlimited" (0) stays available for perf measurement.
-        ImGui.Text("render fps cap:");
-        ImGui.SameLine();
-        if (ImGui.RadioButton("30", fpsCap == 30)) { fpsCap = 30; Raylib.SetTargetFPS(30); }
-        ImGui.SameLine();
-        if (ImGui.RadioButton("60", fpsCap == 60)) { fpsCap = 60; Raylib.SetTargetFPS(60); }
-        ImGui.SameLine();
-        if (ImGui.RadioButton("unlimited", fpsCap == 0)) { fpsCap = 0; Raylib.SetTargetFPS(0); }
-
-        ImGui.TextWrapped("click a road to drop an obstacle - drag to pan - wheel to zoom - 'd' toggles diagnostics");
-        ImGui.End();
-    }
 
     // P1 perf-diagnostics panel (SUMOSHARP-NATIVE-VIEWER.md P1): fps, frame-time min/avg/p99 (from the
     // ~120-sample ring buffer Program.cs maintains), vehicle count, sim time + step. Toggled with 'd',
@@ -552,10 +478,10 @@ public static class Renderer
         }
     }
 
-    // Per-channel colour lerp (t clamped to [0,1]; alpha always opaque). `internal` so a same-assembly
-    // render overlay (e.g. the evac layer's fear overpaint) can blend toward its own tint colour using
-    // this generic primitive instead of duplicating it.
-    internal static Color LerpColor(Color a, Color b, double t)
+    // Per-channel colour lerp (t clamped to [0,1]; alpha always opaque). `public` so a render overlay in
+    // a CONSUMING assembly (e.g. the evac layer's fear overpaint) can blend toward its own tint colour
+    // using this generic primitive instead of duplicating it.
+    public static Color LerpColor(Color a, Color b, double t)
     {
         var clamped = Math.Clamp(t, 0.0, 1.0);
         return new Color(
@@ -632,79 +558,6 @@ public static class Renderer
         Raylib.DrawTriangle(tip, backRight, backLeft, color);
     }
 
-    // P2b controls panel: mode label, restart/clear/random (identical semantics to DrawControlsPanel,
-    // driving the SAME publisher-owned EngineHost), plus the DR delay slider (0 = extrapolate, higher =
-    // interpolate) and the smoothing toggle (extrapolation-only low-pass, HtmlPage.cs's `smooth`).
-    public static void DrawLoopbackControlsPanel(EngineHost host, ref float delaySeconds, ref bool smooth, ref bool alwaysInterpolate)
-    {
-        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(380, 370), ImGuiCond.FirstUseEver);
-        ImGui.Begin("SumoSharp - controls (loopback)");
-        ImGui.Text(host.ScenarioMode ? "mode: SCENARIO" : "mode: SANDBOX");
-        ImGui.Separator();
-        if (ImGui.Button("restart"))
-        {
-            host.Restart();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("clear obstacles"))
-        {
-            host.ClearObstacles();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button(host.IsPaused ? "resume" : "pause"))
-        {
-            host.SetPaused(!host.IsPaused);
-        }
-
-        var randomTraffic = host.RandomTraffic;
-        if (ImGui.Checkbox("inject random traffic", ref randomTraffic))
-        {
-            host.SetRandomTraffic(randomTraffic);
-        }
-
-        // Sim controls (loopback owns the engine, so these apply here, unlike view-only remote). See
-        // DrawControlsPanel for the semantics of speed (x real-time, live) and sim resolution (step-length,
-        // rebuilds).
-        var speed = (float)host.Speed;
-        if (ImGui.SliderFloat("speed", ref speed, 0.25f, 10f, "%.2fx real-time"))
-        {
-            host.SetSpeed(speed);
-        }
-
-        // Sim resolution is a sandbox-only control (scenario mode's step-length is fixed by its .sumocfg).
-        if (host.ScenarioMode)
-        {
-            ImGui.Text($"sim resolution: {1.0 / host.StepLength:F0}Hz (scenario-fixed)");
-        }
-        else
-        {
-            var hz = (int)Math.Round(1.0 / host.StepLength);
-            ImGui.Text("sim resolution (restarts):");
-            if (ImGui.RadioButton("1Hz", hz == 1)) host.SetStepLength(1.0);
-            ImGui.SameLine();
-            if (ImGui.RadioButton("2Hz", hz == 2)) host.SetStepLength(0.5);
-            ImGui.SameLine();
-            if (ImGui.RadioButton("5Hz", hz == 5)) host.SetStepLength(0.2);
-            ImGui.SameLine();
-            if (ImGui.RadioButton("10Hz", hz == 10)) host.SetStepLength(0.1);
-        }
-
-        ImGui.Separator();
-        // "always interpolate" auto-sets the delay slider each frame (Program.cs) to ~1.5x the measured DDS
-        // packet interval, so the render clock always sits behind the newest packet -> Resolve always
-        // interpolates instead of extrapolating. The manual slider is disabled while it's driving the value.
-        ImGui.Checkbox("always interpolate (auto delay)", ref alwaysInterpolate);
-        ImGui.BeginDisabled(alwaysInterpolate);
-        ImGui.SliderFloat("DR delay (s)", ref delaySeconds, 0f, 1.5f, "%.2f");
-        ImGui.EndDisabled();
-        ImGui.Checkbox("smooth (extrap only)", ref smooth);
-        ImGui.TextWrapped("delay 0 = extrapolate (predict ahead, may snap); raise = interpolate between DDS packets (smooth, delayed)");
-        ImGui.End();
-    }
-
     // P2b diagnostics panel: fps/frame-time (same ring buffer as local), plus the DR-clock health readout
     // (renderSim / simRate / back-steps -- should stay 0) and the DDS-path counters.
     public static void DrawDdsDiagnosticsPanel(FrameStats frameStats, DrClock clock, double ddsSamplesPerSecond, int vehicleCount)
@@ -723,93 +576,6 @@ public static class Renderer
         ImGui.Text($"clock back-steps: {clock.BackSteps}   delay: {clock.EffectiveDelay:F2}s");
         ImGui.Text($"vehicles: {vehicleCount}");
         ImGui.Text($"GC gen0/1/2: {GC.CollectionCount(0)} / {GC.CollectionCount(1)} / {GC.CollectionCount(2)}");
-        ImGui.End();
-    }
-
-    // P3 ("remote mode + QoS"): the view-only counterpart to DrawLoopbackControlsPanel -- same DR-delay
-    // slider + smoothing toggle, but no restart/clear-obstacles/random-traffic buttons (a remote viewer has
-    // no EngineHost to command -- docs/SUMOSHARP-NATIVE-VIEWER.md's "Delegation model": remote is
-    // view-only). Adds the two indicators a remote viewer needs that a loopback viewer doesn't: whether the
-    // Vehicles topic currently has a matched (live) writer, and whether the durable geometry topic has
-    // delivered the whole network yet -- both meaningful only when there's no local publisher to fall back on.
-    // `status` is the publisher's live engine state (DdsViewerStatus). It makes the command widgets
-    // AUTHORITATIVE (pause label, speed value, tick rate reflect the real host) instead of optimistic, and
-    // disables what can't act: all commands until a host is present, and the sim-tick-rate radios unless the
-    // host is a sandbox (a scenario's step-length is fixed). `speed`/`random` stay refs -- speed is
-    // draggable and re-synced to the host value when idle; random has no status field yet.
-    public static void DrawRemoteControlsPanel(
-        DdsCommandWriter cmd, ViewerStatus status, ref float speed, ref bool random,
-        ref float delaySeconds, ref bool smooth, ref bool alwaysInterpolate, bool connected, bool geometryComplete)
-    {
-        ImGui.SetNextWindowPos(new Vector2(10, 10), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new Vector2(380, 380), ImGuiCond.FirstUseEver);
-        ImGui.Begin("SumoSharp - controls (remote)");
-        ImGui.Text("mode: REMOTE (drives the publisher via DDS)");
-        ImGui.Separator();
-        ImGui.Text(connected ? "connected: yes" : "connected: NO (waiting for a publisher)");
-        ImGui.Text(geometryComplete ? "geometry: received" : "geometry: waiting...");
-        ImGui.Text(status.Present
-            ? $"host: {(status.Sandbox ? "SANDBOX" : "SCENARIO")}  {(status.Paused ? "PAUSED" : "running")}  sim {status.SimTime:F0}s  veh {status.VehicleCount}"
-            : "host: (no status yet)");
-        ImGui.Separator();
-
-        // Command controls need a live host -> disabled until status arrives (nothing to drive otherwise).
-        ImGui.BeginDisabled(!status.Present);
-
-        if (ImGui.Button("restart")) cmd.Send(ViewerCommandKind.Restart);
-        ImGui.SameLine();
-        if (ImGui.Button("clear obstacles")) cmd.Send(ViewerCommandKind.ClearObstacles);
-        ImGui.SameLine();
-        if (ImGui.Button(status.Paused ? "resume" : "pause")) // label from the HOST's real pause state
-        {
-            cmd.Send(ViewerCommandKind.Pause, flag: !status.Paused);
-        }
-
-        if (ImGui.Checkbox("inject random traffic", ref random))
-        {
-            cmd.Send(ViewerCommandKind.SetRandomTraffic, flag: random);
-        }
-
-        var speedChanged = ImGui.SliderFloat("speed", ref speed, 0.25f, 10f, "%.2fx real-time");
-        var speedActive = ImGui.IsItemActive();
-        if (speedChanged)
-        {
-            cmd.Send(ViewerCommandKind.SetSpeed, value: speed);
-        }
-
-        // Sim tick rate (= 1/step-length): disabled unless the host is a sandbox (scenario step-length is
-        // fixed). Reflects the host's actual step, not an optimistic guess.
-        var hz = status.StepLength > 1e-6 ? (int)Math.Round(1.0 / status.StepLength) : 1;
-        ImGui.BeginDisabled(!status.Sandbox);
-        ImGui.Text("sim tick rate:");
-        if (ImGui.RadioButton("1Hz", hz == 1)) cmd.Send(ViewerCommandKind.SetStepLength, value: 1.0);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("2Hz", hz == 2)) cmd.Send(ViewerCommandKind.SetStepLength, value: 0.5);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("5Hz", hz == 5)) cmd.Send(ViewerCommandKind.SetStepLength, value: 0.2);
-        ImGui.SameLine();
-        if (ImGui.RadioButton("10Hz", hz == 10)) cmd.Send(ViewerCommandKind.SetStepLength, value: 0.1);
-        ImGui.EndDisabled();
-
-        ImGui.EndDisabled(); // command controls
-
-        // Re-sync the speed slider to the host's actual value when the user isn't actively dragging it.
-        if (!speedActive && status.Present)
-        {
-            speed = (float)status.Speed;
-        }
-
-        // --- these are LOCAL to this viewer (client-side dead-reckoning playout, not engine state) ---
-        ImGui.Separator();
-        // "always interpolate" auto-sets the delay slider each frame (Program.cs) to ~1.5x the measured DDS
-        // packet interval, so the render clock always sits behind the newest packet -> Resolve always
-        // interpolates instead of extrapolating. The manual slider is disabled while it's driving the value.
-        ImGui.Checkbox("always interpolate (auto delay)", ref alwaysInterpolate);
-        ImGui.BeginDisabled(alwaysInterpolate);
-        ImGui.SliderFloat("DR delay (s)", ref delaySeconds, 0f, 1.5f, "%.2f");
-        ImGui.EndDisabled();
-        ImGui.Checkbox("smooth (extrap only)", ref smooth);
-        ImGui.TextWrapped("click a road to drop an obstacle (remote). delay 0 = extrapolate; raise = interpolate");
         ImGui.End();
     }
 
