@@ -35,10 +35,24 @@ public partial class Main : Node3D
     // MeshInstance3D reuses it (a single StandardMaterial3D resource, not one per lane).
     private static readonly Color AsphaltColor = new(0.08f, 0.085f, 0.09f);
 
+    // Small seeded grey palette (design "Buildings": "variety without assets = scale + a small palette of
+    // seeded materials") -- picked by instance index, which is itself a deterministic function of
+    // (edge, step, side) via BuildingPlacer, so the palette assignment is reproducible too.
+    private static readonly Color[] BuildingPalette =
+    {
+        new(0.55f, 0.55f, 0.58f),
+        new(0.62f, 0.60f, 0.57f),
+        new(0.47f, 0.49f, 0.52f),
+        new(0.58f, 0.56f, 0.51f),
+    };
+
     // How far above/behind the network's centre (as a multiple of its largest XZ extent) the framing
-    // camera sits -- an "angled bird's-eye" per design "Buildings"/"Roads" desktop-check framing.
-    private const float CameraHeightFactor = 0.75f;
-    private const float CameraBackFactor = 0.75f;
+    // camera sits -- an "angled bird's-eye" per design "Buildings"/"Roads" desktop-check framing. Raised
+    // a bit from the roads-only T1.3 values (task T1.4: "you may raise the camera a bit so buildings are
+    // in frame") since buildings add tens-of-metres of vertical extent the horizontal bbox alone doesn't
+    // capture.
+    private const float CameraHeightFactor = 1.1f;
+    private const float CameraBackFactor = 0.9f;
 
     private SimSource? _sim;
     private Reconstructor? _reconstructor;
@@ -92,7 +106,9 @@ public partial class Main : Node3D
         _reconstructor = new Reconstructor();
         GD.Print($"Main: loaded scenario '{scenarioRel}' from '{scenarioDir}'.");
 
-        var bbox = BuildRoadMeshes(_sim.Network);
+        var roadBbox = BuildRoadMeshes(_sim.Network);
+        var buildingBbox = BuildBuildings(_sim.Network);
+        var bbox = CombineBbox(roadBbox, buildingBbox);
         BuildCameraAndLight(bbox);
 
         _shotPath = ParseShotArg();
@@ -239,6 +255,91 @@ public partial class Main : Node3D
             max = new Vector3(10f, 0f, 10f);
         }
 
+        return (min, max);
+    }
+
+    // docs/DEMO-CITY3D-DESIGN.md "Procedural scene generation -> Buildings" / task T1.4. Static geometry,
+    // built ONCE at load, same as BuildRoadMeshes. CityLib.BuildingPlacer does all the math (marching
+    // each edge's centerline, the deterministic per-(edge,step,side) hash for footprint/height, the
+    // SUMO->Godot transform on each box's center); this method only turns its plain BuildingBox structs
+    // into ONE MultiMeshInstance3D (one unit BoxMesh, one per-instance Transform3D) -- design "Buildings":
+    // "Thousands of buildings go into a MultiMeshInstance3D -- one unit-cube mesh, one per-instance
+    // transform, one draw call". Returns the Godot-space bounding box of every building (a conservative,
+    // yaw-independent radius per box) so the camera can frame roads AND buildings together.
+    private (Vector3 Min, Vector3 Max) BuildBuildings(NetworkModel network)
+    {
+        var boxes = BuildingPlacer.PlaceAll(network);
+
+        var min = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+
+        if (boxes.Count == 0)
+        {
+            GD.Print("Main: built 0 building(s).");
+            return (min, max); // the all-infinite/all-negative-infinite range is the neutral element for CombineBbox.
+        }
+
+        var material = new StandardMaterial3D
+        {
+            VertexColorUseAsAlbedo = true, // per-instance MultiMesh colors (the seeded grey palette) modulate albedo
+            Roughness = 0.9f,
+        };
+
+        var multiMesh = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = true,
+            Mesh = new BoxMesh { Size = Vector3.One }, // unit cube; per-instance transform below scales it to each box's footprint/height
+            InstanceCount = boxes.Count,
+        };
+
+        for (var i = 0; i < boxes.Count; i++)
+        {
+            var box = boxes[i];
+
+            // Scale the unit cube to (SizeX, SizeY, SizeZ) in its own local axes, THEN rotate the whole
+            // scaled box about +Y by YawRad (Basis.Scaled multiplies as R*S, i.e. scale-then-rotate for a
+            // transformed vector) so its SizeX face runs along the local road tangent.
+            var scale = new Vector3(box.SizeX, box.SizeY, box.SizeZ);
+            var basis = new Basis(Vector3.Up, box.YawRad).Scaled(scale);
+            var origin = new Vector3(box.CX, box.CY, box.CZ);
+            multiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+            multiMesh.SetInstanceColor(i, BuildingPalette[i % BuildingPalette.Length]);
+
+            var halfX = box.SizeX / 2f;
+            var halfY = box.SizeY / 2f;
+            var halfZ = box.SizeZ / 2f;
+            // Yaw-independent (conservative) horizontal radius -- the box's XZ diagonal half-extent, so
+            // the bbox is correct regardless of which way it's rotated.
+            var radiusXz = Mathf.Sqrt(halfX * halfX + halfZ * halfZ);
+
+            min.X = Mathf.Min(min.X, box.CX - radiusXz);
+            min.Y = Mathf.Min(min.Y, box.CY - halfY);
+            min.Z = Mathf.Min(min.Z, box.CZ - radiusXz);
+            max.X = Mathf.Max(max.X, box.CX + radiusXz);
+            max.Y = Mathf.Max(max.Y, box.CY + halfY);
+            max.Z = Mathf.Max(max.Z, box.CZ + radiusXz);
+        }
+
+        var instance = new MultiMeshInstance3D
+        {
+            Multimesh = multiMesh,
+            Name = "Buildings",
+            MaterialOverride = material,
+        };
+        AddChild(instance);
+
+        GD.Print($"Main: built {boxes.Count} building(s).");
+        return (min, max);
+    }
+
+    // Merges two Godot-space bounding boxes (component-wise min/max). An all-(+inf,+inf,+inf)/
+    // (-inf,-inf,-inf) box (BuildBuildings' "no buildings" case) is the neutral element -- combining with
+    // it leaves the other box untouched.
+    private static (Vector3 Min, Vector3 Max) CombineBbox((Vector3 Min, Vector3 Max) a, (Vector3 Min, Vector3 Max) b)
+    {
+        var min = new Vector3(Mathf.Min(a.Min.X, b.Min.X), Mathf.Min(a.Min.Y, b.Min.Y), Mathf.Min(a.Min.Z, b.Min.Z));
+        var max = new Vector3(Mathf.Max(a.Max.X, b.Max.X), Mathf.Max(a.Max.Y, b.Max.Y), Mathf.Max(a.Max.Z, b.Max.Z));
         return (min, max);
     }
 
