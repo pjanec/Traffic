@@ -164,11 +164,15 @@ The demo is split so the **logic never touches a Godot type** and can be unit-te
   `ArrayMesh`/`MultiMeshInstance3D`/nodes and applies per-frame transforms + TL materials. Builds with just
   the `Godot.NET.Sdk` NuGet (no engine binary needed to compile); the engine binary is needed only to *run*.
 
-**Environment constraint (recorded):** in this hosted VM the **Godot engine binary cannot be fetched**
-(GitHub's release CDN is egress-blocked by policy — not routed around). So `CityLib` + its tests + the
-`dotnet build` of the `Viewer` assembly are provable here; `godot --headless` runs and every on-screen
-visual are **desktop-only** checks (Godot runs first-class on Linux too, so a Linux desktop suffices).
-This is exactly the headless/desktop split the verification table already anticipated.
+**Environment (resolved):** with the environment's network access set to **Full**, the Godot 4 (.NET)
+engine binary is fetched **ephemerally** by `demos/City3D/fetch-godot.sh` from the project's own mirror
+`downloads.godotengine.org` (a non-GitHub object store — GitHub release downloads 403 because the cloud
+session's repo-scoped GitHub token is auto-injected). The binary (~100 MB) is **never committed**
+(committed-vs-ephemeral rule). Godot **runs headless here** (`--headless`, dummy renderer), so `CityLib`
++ tests, the `dotnet build` of `Viewer`, **and** a `godot --headless` scene smoke are all provable in the
+cloud session; software-rendered screenshots via Xvfb are likely feasible (the repo already does that for
+the raylib viewer). The one thing that remains a human judgment on any machine is whether the city
+*looks* believable.
 
 ### Data path (identical for local and remote)
 Per app frame the viewer runs the §5/§8 recipe against an `IReplicationSource`:
@@ -349,7 +353,7 @@ locally without a round-trip through GitHub.
 | `SumoSharp.Host` unit self-test: publish → consume → reconstruct sane records | The video-wall spanning multiple monitors |
 | `Sim.Host.App` runs, steps a scenario, publishes over DDS/inmem | Interactive camera / believable-scale eyeballing |
 | A **headless** reconstruction self-test: poses advance smoothly, bounded, no back-jumps | |
-| Godot C# assembly builds (via `Godot.NET.Sdk` NuGet — no engine binary needed to compile) | `godot --headless` "N frames → log → quit" smoke (engine binary is **egress-blocked here**, so this runs on the desktop) |
+| Godot C# assembly builds (via `Godot.NET.Sdk` NuGet); `godot --headless` scene smoke ("N frames → log → quit"), binary fetched by `fetch-godot.sh` from the non-GitHub mirror | the actual rendered image / believable-scale look (Xvfb software screenshots may approximate it, but the aesthetic sign-off is human) |
 | host↔subscriber **DDS loopback** smoke on the VM *if* container multicast works — else same-process + in-memory fallback (the implementor reports which actually ran) | |
 | `dotnet test Traffic.sln` green + `Sim.Bench` hash unchanged after the `src/` stages | |
 

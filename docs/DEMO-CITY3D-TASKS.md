@@ -102,8 +102,8 @@ Core/Ingest/Replication/Viewer.Motion/Host from the local feed), `demos/City3D/C
 **Success conditions:**
 1. `dotnet build demos/City3D/Viewer` succeeds (the `Godot.NET.Sdk` restores from nuget.org; `CityLib`
    pulls `SumoSharp.*` from the local feed) — no engine binary required to compile.
-2. **Desktop (user):** `godot --headless` runs the scene with a scripted "advance N frames, log a heartbeat
-   per frame, quit 0". *(Cannot run here — engine binary egress-blocked.)*
+2. `godot --headless` (binary via `fetch-godot.sh`) runs the scene with a scripted "advance N frames, log a
+   heartbeat per frame, quit 0" and exits 0 — **now verifiable here** (network=Full; headless dummy renderer).
 3. No file under `src/` modified.
 
 ### T1.2 — In-process data path (engine → bus → DR reconstruction) — in `CityLib`

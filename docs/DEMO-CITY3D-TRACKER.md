@@ -14,8 +14,9 @@ the first `src/` task and repeat them here as each box is ticked.
 - [x] **T0.3** local feed — Opus-verified first-hand: `build.sh --pack-only` packs 5 pure-C# packages into `local-nuget/`; probe resolves `SumoSharp.Host` **from the local feed**; with feed emptied + global cache purged, restore fails `NU1101 … PackageSourceMapping is enabled, the following source(s) were not considered: nuget.org` (no nuget.org fallback proven); `local-nuget/` git-ignored (after a `.gitignore` inline-comment fix).
 
 ## Stage 1 — Local single-viewport demo (M1, public-facing) — no `src/` changes
-> Structure: logic in `CityLib` (headless-testable), Godot `Viewer` is thin glue. Godot engine binary is
-> egress-blocked here → `godot --headless` runs + visuals are desktop-only checks.
+> Structure: logic in `CityLib` (headless-testable), Godot `Viewer` is thin glue. With network=Full, the
+> Godot 4 (.NET) binary is fetched ephemerally by `fetch-godot.sh` (non-GitHub mirror) and **runs headless
+> here** — so `godot --headless` scene smokes are verifiable in-session; only the aesthetic sign-off is human.
 - [x] **T1.0** `CityLib` + `CityLib.Tests` — Opus-verified: consumes `SumoSharp.*` 0.1.0 from the local feed (NU1101 without it, proven); not in `Traffic.sln`; tests build+run.
 - [ ] **T1.1** Godot `Viewer` skeleton (thin glue over `CityLib`) — `dotnet build` here; `--headless` smoke = desktop
 - [x] **T1.2** data path in `CityLib` — Opus-verified first-hand (CityLib.Tests **11/11**): `SimSource` (Engine+Runner+ReplicationPublisher→InMemoryReplicationBus), `Reconstructor` (DrClock→PoseResolver→DrPoseSmoother→Godot coords), `CoordinateTransform` (SUMO→Godot `(x,z,-y)`, navi→yaw), `ReplicationLaneShapeSource`. Asserts: monotonic X advance / no >0.5 m back-jump / net progress through red-light hold→green; local(Z-aware)↔wire lane-source seam agrees ≤0.05 m; reconstructed yaw matches **engine** heading <1°. *(wire `LaneGeo` is 2-D — elevation over the wire needs a future `GeometryCodec` Z-extension; local uses Z-aware `NetworkLaneSource`.)*

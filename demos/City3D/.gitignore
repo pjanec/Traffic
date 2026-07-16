@@ -16,3 +16,6 @@ obj/
 export/
 
 *.tmp
+
+# ephemeral Godot engine (fetch-godot.sh defaults to /opt/godot, outside the repo)
+.godot-engine/
