@@ -14,8 +14,11 @@ the first `src/` task and repeat them here as each box is ticked.
 - [x] **T0.3** local feed — Opus-verified first-hand: `build.sh --pack-only` packs 5 pure-C# packages into `local-nuget/`; probe resolves `SumoSharp.Host` **from the local feed**; with feed emptied + global cache purged, restore fails `NU1101 … PackageSourceMapping is enabled, the following source(s) were not considered: nuget.org` (no nuget.org fallback proven); `local-nuget/` git-ignored (after a `.gitignore` inline-comment fix).
 
 ## Stage 1 — Local single-viewport demo (M1, public-facing) — no `src/` changes
-- [ ] **T1.1** Godot skeleton consuming packages + `--headless` N-frames smoke
-- [ ] **T1.2** in-proc engine → `InMemoryReplicationBus` → DR reconstruction; `ReplicationLaneShapeSource`; local↔remote seam proven
+> Structure: logic in `CityLib` (headless-testable), Godot `Viewer` is thin glue. Godot engine binary is
+> egress-blocked here → `godot --headless` runs + visuals are desktop-only checks.
+- [ ] **T1.0** `CityLib` classlib + `CityLib.Tests`, consuming `SumoSharp.*` from the local feed
+- [ ] **T1.1** Godot `Viewer` skeleton (thin glue over `CityLib`) — `dotnet build` here; `--headless` smoke = desktop
+- [ ] **T1.2** in-proc engine → `InMemoryReplicationBus` → DR reconstruction (in `CityLib`); `ReplicationLaneShapeSource`; local↔remote seam + coord/yaw transform proven headlessly
 - [ ] **T1.3** procedural roads (width-accurate, `LaneShapeZ`) — *desktop: looks right*
 - [ ] **T1.4** procedural buildings (deterministic, believable heights, set-back) — *desktop: box-city*
 - [ ] **T1.5** cars (MultiMesh, true vType dims, heading yaw, smooth) — *desktop: true-size & smooth*

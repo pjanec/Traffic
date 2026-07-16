@@ -149,6 +149,27 @@ dotnet run --project src/Sim.Host.App -- --scenario scenarios/_bench/city-mixed-
 
 ## The demo (`demos/City3D/`, Godot 4 .NET, C# only)
 
+### Code structure — `CityLib` (engine-agnostic, headless-testable) + `Viewer` (Godot glue)
+The demo is split so the **logic never touches a Godot type** and can be unit-tested with `dotnet` alone:
+
+- **`demos/City3D/CityLib/`** — a plain `net8.0` class library that `<PackageReference>`s the SumoSharp
+  packages from the local feed. It owns everything computable: the single SUMO→Godot coordinate/heading
+  transform, the `SimSource` (hosts `Engine`+`SimulationRunner`+`ReplicationPublisher`→`IReplicationSource`),
+  the DR reconstruction loop (`DrClock`/`PoseResolver`/`DrPoseSmoother` → per-vehicle `(x,y,z,yaw,pitch)`),
+  the `ReplicationLaneShapeSource`, and the procedural-mesh math (ribbon vertices, building placements, TL
+  head positions) returned as **plain arrays/structs, not Godot meshes**. No Godot dependency.
+- **`demos/City3D/CityLib.Tests/`** — xUnit over `CityLib`; the headless success conditions in the tasks
+  doc are asserted here.
+- **`demos/City3D/Viewer/`** — the Godot 4 app. Thin glue: references `CityLib`, turns its arrays into
+  `ArrayMesh`/`MultiMeshInstance3D`/nodes and applies per-frame transforms + TL materials. Builds with just
+  the `Godot.NET.Sdk` NuGet (no engine binary needed to compile); the engine binary is needed only to *run*.
+
+**Environment constraint (recorded):** in this hosted VM the **Godot engine binary cannot be fetched**
+(GitHub's release CDN is egress-blocked by policy — not routed around). So `CityLib` + its tests + the
+`dotnet build` of the `Viewer` assembly are provable here; `godot --headless` runs and every on-screen
+visual are **desktop-only** checks (Godot runs first-class on Linux too, so a Linux desktop suffices).
+This is exactly the headless/desktop split the verification table already anticipated.
+
 ### Data path (identical for local and remote)
 Per app frame the viewer runs the §5/§8 recipe against an `IReplicationSource`:
 
@@ -328,7 +349,7 @@ locally without a round-trip through GitHub.
 | `SumoSharp.Host` unit self-test: publish → consume → reconstruct sane records | The video-wall spanning multiple monitors |
 | `Sim.Host.App` runs, steps a scenario, publishes over DDS/inmem | Interactive camera / believable-scale eyeballing |
 | A **headless** reconstruction self-test: poses advance smoothly, bounded, no back-jumps | |
-| Godot C# assembly builds; `godot --headless` runs a scripted "N frames → log → quit" smoke | |
+| Godot C# assembly builds (via `Godot.NET.Sdk` NuGet — no engine binary needed to compile) | `godot --headless` "N frames → log → quit" smoke (engine binary is **egress-blocked here**, so this runs on the desktop) |
 | host↔subscriber **DDS loopback** smoke on the VM *if* container multicast works — else same-process + in-memory fallback (the implementor reports which actually ran) | |
 | `dotnet test Traffic.sln` green + `Sim.Bench` hash unchanged after the `src/` stages | |
 

@@ -79,24 +79,39 @@ in the design (packageSourceMapping).
 
 ## Stage 1 — Local single-viewport demo (M1, the public-facing demo)
 
-### T1.1 — Godot project skeleton, consuming packages, headless smoke
-**Design:** "The demo … (Godot 4 .NET, C# only)". **Depends on:** T0.3.
-**Touches (new):** `demos/City3D/Viewer/project.godot`, a main scene, `Viewer.csproj`
-(`<PackageReference>` Core/Ingest/Replication/Viewer.Motion/Host from the local feed; `IsPackable=false`),
-a `Main` C# node.
+> **Structure (design "Code structure"):** the logic lives in `demos/City3D/CityLib/` (plain net8.0
+> classlib, no Godot types, headless-testable) with the Godot app `demos/City3D/Viewer/` as thin glue.
+> The Godot **engine binary is egress-blocked in this VM**, so any `godot --headless` run and all visuals
+> are **desktop-only** checks; `CityLib` + its tests + the `dotnet build` of `Viewer` are provable here.
+
+### T1.0 — `CityLib` classlib + test project, consuming packages from the local feed
+**Design:** "Code structure". **Depends on:** T0.3.
+**Touches (new):** `demos/City3D/CityLib/CityLib.csproj` (`net8.0`, `IsPackable=false`, `<PackageReference>`
+Core/Ingest/Replication/Viewer.Motion/Host from the local feed), `demos/City3D/CityLib.Tests/` (xUnit).
 **Success conditions:**
-1. `dotnet build demos/City3D/Viewer` succeeds resolving `SumoSharp.*` from the local feed (verified by
-   emptying `local-nuget/` → build fails).
-2. `godot --headless` runs the scene with a scripted "advance N frames, log a heartbeat line per frame,
-   quit 0" — completes without exception in this environment.
+1. `bash demos/City3D/build.sh --pack-only` then `dotnet build demos/City3D/CityLib` resolves `SumoSharp.*`
+   from the local feed (verified by emptying `local-nuget/` + purging the `sumosharp.*` global cache →
+   build fails `NU1101`).
+2. `dotnet test demos/City3D/CityLib.Tests` runs (green, even if it starts with one trivial assertion).
 3. No file under `src/` modified.
 
-### T1.2 — In-process data path (engine → bus → DR reconstruction)
-**Design:** "Data path" + DR-smoothing §5/§8. **Depends on:** T1.1.
-**Touches:** `demos/City3D/Viewer/` C# (a `SimSource` that hosts `Engine`+`SimulationRunner`+
-`ReplicationPublisher`→`InMemoryReplicationBus`; a `ReplicationLaneShapeSource`; per-frame
-`DrClock`/`PoseResolver`/`DrPoseSmoother`).
-**Success conditions (headless self-test, logged):**
+### T1.1 — Godot `Viewer` project skeleton (thin glue over `CityLib`)
+**Design:** "Code structure". **Depends on:** T1.0.
+**Touches (new):** `demos/City3D/Viewer/project.godot`, a main scene, `Viewer.csproj` (`Godot.NET.Sdk`;
+`ProjectReference` → `CityLib`; `IsPackable=false`), a `Main` C# node that instantiates `CityLib` types.
+**Success conditions:**
+1. `dotnet build demos/City3D/Viewer` succeeds (the `Godot.NET.Sdk` restores from nuget.org; `CityLib`
+   pulls `SumoSharp.*` from the local feed) — no engine binary required to compile.
+2. **Desktop (user):** `godot --headless` runs the scene with a scripted "advance N frames, log a heartbeat
+   per frame, quit 0". *(Cannot run here — engine binary egress-blocked.)*
+3. No file under `src/` modified.
+
+### T1.2 — In-process data path (engine → bus → DR reconstruction) — in `CityLib`
+**Design:** "Data path" + DR-smoothing §5/§8. **Depends on:** T1.0.
+**Touches:** `demos/City3D/CityLib/` C# (a `SimSource` that hosts `Engine`+`SimulationRunner`+
+`ReplicationPublisher`→`InMemoryReplicationBus`; a `ReplicationLaneShapeSource`; a reconstruction pass using
+`DrClock`/`PoseResolver`/`DrPoseSmoother`) + `CityLib.Tests`.
+**Success conditions (headless self-test in `CityLib.Tests`, logged):**
 1. Loading `09-traffic-light`, stepping, and reconstructing yields, for a tracked vehicle, per-frame
    `(x,y)` that advance monotonically along travel with **no back-jump > 0.5 m** between frames on steady
    motion, and stay within the net's bounding box.
