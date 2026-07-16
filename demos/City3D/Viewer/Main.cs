@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using CityLib;
 using Godot;
@@ -46,6 +47,22 @@ public partial class Main : Node3D
         new(0.58f, 0.56f, 0.51f),
     };
 
+    // Small seeded car-body palette (design "Cars" / task T1.5, mirrors BuildingPalette's "variety without
+    // assets" pattern) -- picked deterministically by VehicleHandle.Index (stable across frames for a given
+    // vehicle, no hidden RNG), not by draw order.
+    private static readonly Color[] CarPalette =
+    {
+        new(0.75f, 0.15f, 0.12f),
+        new(0.12f, 0.35f, 0.70f),
+        new(0.85f, 0.80f, 0.20f),
+        new(0.20f, 0.55f, 0.25f),
+        new(0.90f, 0.90f, 0.92f),
+        new(0.25f, 0.25f, 0.28f),
+    };
+
+    // Design "Cars": "height a believable constant (~1.4 m for cars)" -- CityLib.CarTransform.DefaultHeightMeters.
+    private const float CarHeightMeters = CityLib.CarTransform.DefaultHeightMeters;
+
     // How far above/behind the network's centre (as a multiple of its largest XZ extent) the framing
     // camera sits -- an "angled bird's-eye" per design "Buildings"/"Roads" desktop-check framing. Raised
     // a bit from the roads-only T1.3 values (task T1.4: "you may raise the camera a bit so buildings are
@@ -59,6 +76,13 @@ public partial class Main : Node3D
     private double _accumulator;
     private int _frame;
     private string? _shotPath;
+
+    // Task T1.5 -- ONE MultiMeshInstance3D for every car, built once in _Ready and reused every frame:
+    // only the per-instance transforms/colors are rewritten each _Process; the underlying buffer
+    // (MultiMesh.InstanceCount) is only ever grown, never shrunk, so a transient dip in vehicle count
+    // doesn't force a reallocation -- VisibleInstanceCount (cheap to set) is what actually tracks the live
+    // count frame to frame.
+    private MultiMesh? _carMultiMesh;
 
     public override void _Ready()
     {
@@ -110,12 +134,16 @@ public partial class Main : Node3D
         var buildingBbox = BuildBuildings(_sim.Network);
         var bbox = CombineBbox(roadBbox, buildingBbox);
         BuildCameraAndLight(bbox);
+        _carMultiMesh = BuildCarMultiMesh();
 
         _shotPath = ParseShotArg();
         if (_shotPath is not null)
         {
-            GD.Print($"Main: --shot requested, will capture to '{_shotPath}'.");
-            CaptureScreenshotAsync(_shotPath);
+            var shotDelaySeconds = ParseShotDelayArg();
+            GD.Print(
+                $"Main: --shot requested, will capture to '{_shotPath}' " +
+                $"(shot-delay={shotDelaySeconds:F1}s real wall-clock before capture).");
+            CaptureScreenshotAsync(_shotPath, shotDelaySeconds);
         }
     }
 
@@ -137,21 +165,29 @@ public partial class Main : Node3D
         }
 
         var vehicles = _reconstructor.Reconstruct(_sim.Source, _sim.LocalLanes, PlayoutDelaySeconds);
+        UpdateCars(vehicles);
 
         if (vehicles.Count > 0)
         {
             var v = vehicles[0];
             GD.Print(
-                $"Main: frame={_frame} simTime={_sim.Time:F2} vehicles={vehicles.Count} " +
+                $"Main: frame={_frame} simTime={_sim.Time:F2} vehicles={vehicles.Count} cars={vehicles.Count} " +
                 $"v0=(x={v.X:F2}, z={v.Z:F2}, yaw={v.YawRad:F3})");
         }
         else
         {
-            GD.Print($"Main: frame={_frame} simTime={_sim.Time:F2} vehicles=0");
+            GD.Print($"Main: frame={_frame} simTime={_sim.Time:F2} vehicles=0 cars=0");
         }
 
         _frame++;
-        if (_frame >= QuitAfterFrames)
+
+        // Skip the frame-count auto-quit while a screenshot capture is pending: CaptureScreenshotAsync
+        // owns quitting in that case (docs/DEMO-CITY3D-DESIGN.md task T1.5 part C -- a real `--shot-delay`
+        // lets enough WALL-CLOCK time pass for the DrClock-driven sim/render to actually populate the
+        // roads with cars before the shot is taken; without this guard, a delay longer than
+        // QuitAfterFrames' own real-time span at an uncapped frame rate would race the engine into
+        // quitting before the delayed capture ever fires).
+        if (_frame >= QuitAfterFrames && _shotPath is null)
         {
             GD.Print($"Main: reached {QuitAfterFrames} frames, quitting.");
             _sim.Dispose();
@@ -333,6 +369,74 @@ public partial class Main : Node3D
         return (min, max);
     }
 
+    // docs/DEMO-CITY3D-DESIGN.md "Procedural scene generation -> Cars" / task T1.5. The ONLY per-frame
+    // geometry (design: "The only per-frame geometry"). Built once here as an EMPTY MultiMesh (no vehicles
+    // exist yet at load); UpdateCars (below, called from _Process every frame) writes the live transforms.
+    private MultiMesh BuildCarMultiMesh()
+    {
+        var material = new StandardMaterial3D
+        {
+            VertexColorUseAsAlbedo = true, // per-instance MultiMesh colors (the seeded car palette) modulate albedo
+            Roughness = 0.6f,
+            Metallic = 0.2f,
+        };
+
+        var multiMesh = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = true,
+            Mesh = new BoxMesh { Size = Vector3.One }, // unit cube; per-instance transform below scales it to each car's real dims
+            InstanceCount = 0,
+        };
+
+        var instance = new MultiMeshInstance3D
+        {
+            Multimesh = multiMesh,
+            Name = "Cars",
+            MaterialOverride = material,
+        };
+        AddChild(instance);
+
+        GD.Print("Main: built car MultiMesh (0 instances at load).");
+        return multiMesh;
+    }
+
+    // Called once per render frame from _Process, right after Reconstruct. Reuses the SAME MultiMesh
+    // across frames (design "Cars" / task T1.5: "Reuse the MultiMesh across frames"): the underlying
+    // instance buffer (InstanceCount) is only ever grown, never shrunk (growing reallocates, but this
+    // frame is about to rewrite every live transform anyway, so nothing stale is ever visible); the cheap
+    // VisibleInstanceCount is what actually tracks the live vehicle count frame to frame, including
+    // shrinking back down when vehicles despawn. CityLib.CarTransform does all the math (pure, no Godot
+    // type); this method only turns each CarInstance into a Transform3D + a deterministic per-handle color.
+    private void UpdateCars(IReadOnlyList<CityLib.ReconstructedVehicle> vehicles)
+    {
+        if (_carMultiMesh is null)
+        {
+            return;
+        }
+
+        if (vehicles.Count > _carMultiMesh.InstanceCount)
+        {
+            _carMultiMesh.InstanceCount = vehicles.Count;
+        }
+
+        _carMultiMesh.VisibleInstanceCount = vehicles.Count;
+
+        for (var i = 0; i < vehicles.Count; i++)
+        {
+            var v = vehicles[i];
+            var car = CityLib.CarTransform.ForVehicle(v, CarHeightMeters);
+
+            var scale = new Vector3(car.ScaleX, car.ScaleY, car.ScaleZ);
+            var basis = new Basis(Vector3.Up, car.YawRad).Scaled(scale);
+            var origin = new Vector3(car.PosX, car.PosY, car.PosZ);
+            _carMultiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+
+            var paletteIndex = (int)(v.Handle.Index % (uint)CarPalette.Length);
+            _carMultiMesh.SetInstanceColor(i, CarPalette[paletteIndex]);
+        }
+    }
+
     // Merges two Godot-space bounding boxes (component-wise min/max). An all-(+inf,+inf,+inf)/
     // (-inf,-inf,-inf) box (BuildBuildings' "no buildings" case) is the neutral element -- combining with
     // it leaves the other box untouched.
@@ -425,14 +529,43 @@ public partial class Main : Node3D
         return "09-traffic-light";
     }
 
-    // Waits a couple of real rendered frames (so the just-built meshes/camera/light are actually on
-    // screen), then saves the viewport to PNG and quits. Guarded for headless (no rendering driver, e.g.
-    // a plain `--headless` run under run-smoke.sh): GetViewport().GetTexture().GetImage() returns null (or
-    // throws) when there is no real framebuffer, in which case this reports the gap instead of crashing.
-    private async void CaptureScreenshotAsync(string path)
+    // `--shot-delay=<seconds>` USER cmdline arg: extra REAL wall-clock seconds to wait, after the scene is
+    // built, before capturing (task T1.5 part C caveat: DrClock/the sim-cadence accumulator are both
+    // wall-clock-driven, so an instant capture -- the pre-T1.5 default, still what omitting this arg gives
+    // you -- barely advances sim time and cars cluster right at their insertion points; letting real time
+    // pass first gives the sim ticks + reconstruction smoother room to actually spread vehicles across the
+    // network). Defaults to 0 (the original instant-capture behavior screenshot.sh/T1.3 still rely on).
+    private static double ParseShotDelayArg()
+    {
+        const string prefix = "--shot-delay=";
+        foreach (var arg in OS.GetCmdlineUserArgs())
+        {
+            if (arg.StartsWith(prefix, StringComparison.Ordinal)
+                && double.TryParse(arg[prefix.Length..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds)
+                && seconds > 0.0)
+            {
+                return seconds;
+            }
+        }
+
+        return 0.0;
+    }
+
+    // Waits `delaySeconds` of real wall-clock time (a no-op when 0, the default), then a couple more real
+    // rendered frames (so the just-built meshes/camera/light -- and, after the delay, however many cars
+    // have accumulated -- are actually on screen), then saves the viewport to PNG and quits. Guarded for
+    // headless (no rendering driver, e.g. a plain `--headless` run under run-smoke.sh):
+    // GetViewport().GetTexture().GetImage() returns null (or throws) when there is no real framebuffer, in
+    // which case this reports the gap instead of crashing.
+    private async void CaptureScreenshotAsync(string path, double delaySeconds = 0.0)
     {
         try
         {
+            if (delaySeconds > 0.0)
+            {
+                await ToSignal(GetTree().CreateTimer(delaySeconds), SceneTreeTimer.SignalName.Timeout);
+            }
+
             for (var i = 0; i < 3; i++)
             {
                 await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
