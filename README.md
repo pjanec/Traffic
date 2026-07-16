@@ -56,6 +56,8 @@ doesn't have. Highlights below; precise scope after that.
   [`docs/SUMOSHARP-PACKAGING-DESIGN.md`](docs/SUMOSHARP-PACKAGING-DESIGN.md) (packaging) ·
   [`docs/SUMOSHARP-VIEWER-DR-SMOOTHING.md`](docs/SUMOSHARP-VIEWER-DR-SMOOTHING.md) (dead-reckoning &
   smoothing for custom/3D viewers).
+- **🔧 Build & run it from a fresh clone** (build, tests, the demo viewer, the live browser viewer):
+  see [Install → *See it run*](#install).
 
 ## Scope
 
@@ -90,10 +92,30 @@ winget install Microsoft.DotNet.SDK.8
 
 Then build and run the offline parity suite (no SUMO, no network):
 ```bash
-git clone <this-repo> && cd Traffic
+git clone https://github.com/pjanec/SumoSharp && cd SumoSharp
 dotnet build -c Release
-dotnet test                     # 440 passed, 3 skipped
+dotnet test                     # 465 passed, 3 skipped  (offline; no SUMO, no network)
 ```
+
+### See it run (from a fresh checkout)
+
+```bash
+# 1) Interactive gallery — ~38 self-contained replays, one per feature. Any machine, no GPU.
+scripts/gen-demos.sh            # builds Sim.Viz/Sim.Run/Sim.ExtDemo, writes site/index.html
+#   then open site/index.html in a browser  (or just visit https://pjanec.github.io/SumoSharp/)
+
+# 2) The native desktop demo viewer — raylib + Dear ImGui, in-window scenario picker.
+#    Needs a desktop/GPU; it builds on first run (pulls the raylib native package). It is out of
+#    Traffic.sln, so run the project directly (this builds it):
+dotnet run -c Release --project src/Sim.Viewer -- --mode local --demo "Roundabout"
+#   switch demos live from the in-window "Demos" panel · drag = pan · wheel = zoom · click a road = drop an obstacle
+
+# 3) The zero-install live browser viewer — streams a running engine over WebSocket:
+dotnet run -c Release --project src/Sim.LiveHost -- scenarios/_bench/city-organic-L2   # open the printed http URL
+```
+
+More viewer modes (loopback / DDS publish+remote), controls, and a headless screenshot mode are in
+[**Live & native viewers**](#live--native-viewers) below.
 
 ---
 
