@@ -365,4 +365,23 @@ internal sealed class VehicleRuntime
     // it is only ever WRITTEN under LanelessRvo && _sublane -- left false for every parity scenario, so a
     // plain lane vehicle is always LaneArc. Recomputed fresh each real plan pass.
     public bool LateralManoeuvre;
+
+    // P1E-4 (HIGH-DENSITY-P1E-DESIGN.md §1A, §9): device.rerouting equip + periodic-reroute
+    // schedule -- DISTINCT from the obstacle-triggered BlockedByObstacleSeconds/AvoidedEdges
+    // above (that is UpdateReroutes' own one-shot detour mechanism; this is MSDevice_Routing's
+    // periodic congestion-reactive device). RerouteEquipped is drawn ONCE at creation
+    // (Engine.BuildRuntime) from a salted per-entity RNG against ScenarioConfig.RerouteProbability
+    // -- false (and NextRerouteTime left at +infinity, so it can never become due) for every
+    // vehicle whenever ScenarioConfig.ReroutePeriod<=0 (every pre-P1E-4 scenario), which is
+    // exactly the inert-when-absent guard. NextRerouteTime is the next sim-time this vehicle's
+    // periodic reroute pass (Engine.UpdatePeriodicReroutes) is due; it re-arms by
+    // `+= ReroutePeriod` each time the vehicle is actually considered (whether or not the
+    // candidate route was installed -- §1B). LastRoutingTime is the sim-time of this vehicle's
+    // own last periodic routing attempt (MSDevice_Routing's `myLastRouting`), read by the
+    // skip-if-stale-weights guard (§1A: skip iff LastRoutingTime >= the last edge-weight
+    // adaptation time) -- NegativeInfinity so a vehicle that has never routed is never
+    // spuriously treated as "weights unchanged since I last routed".
+    public bool RerouteEquipped;
+    public double NextRerouteTime = double.PositiveInfinity;
+    public double LastRoutingTime = double.NegativeInfinity;
 }

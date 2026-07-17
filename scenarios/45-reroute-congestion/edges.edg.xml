@@ -1,7 +1,7 @@
 <edges>
-    <edge id="e_src"   from="O" to="J" numLanes="2" speed="13.89"/>
+    <edge id="e_src"   from="O" to="J" numLanes="1" speed="13.89"/>
     <edge id="e_short" from="J" to="M" numLanes="1" speed="5.00"/>
-    <edge id="e_det1"  from="J" to="K" numLanes="2" speed="13.89"/>
-    <edge id="e_det2"  from="K" to="M" numLanes="2" speed="13.89"/>
-    <edge id="e_dest"  from="M" to="S" numLanes="2" speed="13.89"/>
+    <edge id="e_det1"  from="J" to="K" numLanes="1" speed="13.89"/>
+    <edge id="e_det2"  from="K" to="M" numLanes="1" speed="13.89"/>
+    <edge id="e_dest"  from="M" to="S" numLanes="1" speed="13.89"/>
 </edges>

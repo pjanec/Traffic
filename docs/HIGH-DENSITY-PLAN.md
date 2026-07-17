@@ -242,8 +242,8 @@ when I first need to regenerate a golden. OK to do that as part of landing the f
   - [x] P1E-1 config keys (+gated jitter flag) ✅
   - [x] P1E-2 edge-weight aggregation (ring-buffer moving average, isDelayed latch) ✅
   - [x] P1E-3 A* router + effort fn (== Dijkstra on fixed weights) ✅ (533 green)
-  - [ ] P1E-4 periodic reroute trigger + parallel batch + route-slot recycling + jitter + integration
-  - [ ] P1E-5 scenarios/NN-reroute-congestion (faithful anchor) + behavioural test
+  - [x] P1E-4 periodic reroute trigger + parallel batch + route-slot recycling + jitter + integration
+  - [x] P1E-5 scenarios/45-reroute-congestion faithful anchor (EXACT parity, all-single-lane) + jitter/recycling tests (539 green)
 - [ ] P1-F teleport valve  ·  `scenarios/NN-teleport-jam`  ·  parity green
 - [ ] P2-G/H verify-then-fix (after P0, real dense config)
 - [ ] X1 attention-aware popping (functional/statistical tests, no parity)

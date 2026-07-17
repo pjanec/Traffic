@@ -95,6 +95,50 @@ public sealed partial class Engine : IEngine
         _effectiveRouteIdByEntity[v.EntityIndex] = newId;
     }
 
+    // P1E-4 (§0.5.3 route-slot recycling): the periodic congestion-reactive device conceptually
+    // re-installs a route every ReroutePeriod seconds per equipped vehicle (no improvement gate,
+    // §1B) -- minting a FRESH id every time (RegisterRerouted's own `_reroute{idx}_{counter++}`
+    // pattern) would grow `_routesById` unboundedly over a long run at scale. Instead this uses a
+    // STABLE, entity-index-only id (no counter) that every periodic reroute of THIS vehicle simply
+    // OVERWRITES in place -- `_routesById` gains at most ONE extra entry per equipped vehicle for
+    // its entire lifetime, never one per reroute (see RungHDp1e4RerouteDeviceTests' recycling
+    // test). Safe across slot recycling too: the id is a pure function of EntityIndex, so a reused
+    // slot's next periodic reroute simply overwrites the same key again with the new occupant's
+    // edges -- never a second, orphaned entry.
+    private void RegisterPeriodicReroute(VehicleRuntime v, IReadOnlyList<string> fullEdges)
+    {
+        var routeId = $"__periodicReroute{v.EntityIndex}";
+        _routesById[routeId] = new Route(routeId, new List<string>(fullEdges));
+        _effectiveRouteIdByEntity[v.EntityIndex] = routeId;
+    }
+
+    // P1E-4 (§1B): the vehicle's remaining route as a distinct, in-order edge list -- currentEdge
+    // followed by every FUTURE normal edge still left in its lane-sequence pool slice, deduplicated
+    // and excluding internal/junction lanes' edges. Factored out of UpdateReroutes' own inline
+    // logic (left untouched there) so the periodic device's identical-edge-list short-circuit
+    // (§1B "no improvement gate, but short-circuit on an identical edge list") compares against
+    // the exact same notion of "current remaining route" the obstacle-based reroute already uses.
+    private List<string> CurrentRemainingRouteEdges(VehicleRuntime v, string currentEdge)
+    {
+        var result = new List<string> { currentEdge };
+        var seen = new HashSet<string>(StringComparer.Ordinal) { currentEdge };
+        for (var i = v.LaneSeqIndex + 1; i < v.LaneSeqLen; i++)
+        {
+            var seqLane = _network!.LanesByHandle[_laneSeqPool[v.LaneSeqStart + i]];
+            if (seqLane.Id.StartsWith(':'))
+            {
+                continue;
+            }
+
+            if (seen.Add(seqLane.EdgeId))
+            {
+                result.Add(seqLane.EdgeId);
+            }
+        }
+
+        return result;
+    }
+
     // R4 (rail signal): for each lane whose outgoing connection is controlled by a rail_signal
     // junction, the set of "conflict lane" HANDLES that must be clear for the signal to show green --
     // ported from MSRailSignal::DriveWay::conflictLaneOccupied (the driveway's forward block's bidi
@@ -278,8 +322,40 @@ public sealed partial class Engine : IEngine
 
     // B2 router, built once lazily from the loaded (immutable) network and cached -- cheap to
     // construct, but there is no reason to rebuild it every step. Null until first needed (either
-    // LoadScenario has not run yet, or UpdateReroutes never actually reroutes anything).
+    // LoadScenario has not run yet, or UpdateReroutes never actually reroutes anything). P1E-4's
+    // periodic reroute device reuses this SAME lazily-built instance (NetworkRouter.Route/
+    // RouteAStar allocate only per-call local search state -- no shared mutable fields -- so it is
+    // safe to call concurrently from UpdatePeriodicReroutes' Parallel.For).
     private NetworkRouter? _router;
+
+    // P1E-4 (HIGH-DENSITY-P1E-DESIGN.md §1C/§2/§3, seam #2): the live per-edge smoothed-speed
+    // table (Sim.Ingest.RerouteEdgeWeights), constructed ONCE at LoadScenario iff
+    // ScenarioConfig.ReroutePeriod>0, else left null -- the inert-when-absent guard: every
+    // pre-P1E-4 scenario (and any scenario that simply omits <processing><device.rerouting.*>)
+    // never allocates this table and never enters either of the two new step-loop passes below.
+    private RerouteEdgeWeights? _edgeWeights;
+
+    // P1E-4 (§3): "getLastAdaptation()" analog -- the sim-time UpdateRerouteEdgeWeights last wrote
+    // the weight table. Seeded to ScenarioConfig.Begin at LoadScenario (before any update has run)
+    // so a vehicle's LastRoutingTime==NegativeInfinity always compares as stale (< this), and the
+    // periodic reroute pass's own skip-if-stale-weights guard reads it every step.
+    private double _lastAdaptationTime;
+
+    // P1E-4 salts (see VehicleRng.SeedFor's 3-arg overload / SpeedFactorRngSalt's own comment for
+    // the independence argument): two INDEPENDENT once-at-creation draws, neither ever shared with
+    // RngState/SpeedFactorRngSalt/VTypeDistRngSalt/ProbFlowRngSalt. "RerEquip"/"RerJitte" packed
+    // big-endian ASCII, purely mnemonic -- not itself load-bearing.
+    private const ulong RerouteEquipRngSalt = 0x5265724571756970UL;
+    private const ulong RerouteJitterRngSalt = 0x5265724A69747465UL;
+
+    // P1E-4 scratch (D4 zero-steady-state-alloc discipline): reused across steps by
+    // UpdatePeriodicReroutes (a serial collection pass followed by a Parallel.For, matching
+    // _insertCandidates' own reuse pattern) and UpdateRerouteEdgeWeights. Cleared/resized at the
+    // start of each use; never read stale across calls.
+    private readonly List<VehicleRuntime> _rerouteBatchScratch = new();
+    private IReadOnlyList<string>?[] _rerouteCandidateScratch = Array.Empty<IReadOnlyList<string>?>();
+    private readonly Dictionary<string, double> _rerouteEdgeSpeedSumScratch = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _rerouteEdgeSpeedCountScratch = new(StringComparer.Ordinal);
 
     // D4 (FDP zero-alloc `OnUpdate` rule): ONE reusable LaneNeighborQuery, (re)built only when
     // LoadScenario changes the network (its bucket count is sized off `LanesByHandle.Count`).
@@ -1057,6 +1133,15 @@ public sealed partial class Engine : IEngine
         // actually needed (never eagerly, since most scenarios never reroute at all).
         _router = null;
 
+        // P1E-4: (re)build the periodic edge-weight table for the NEW network iff this scenario's
+        // device.rerouting is actually enabled (ReroutePeriod>0) -- null otherwise, so
+        // UpdatePeriodicReroutes/UpdateRerouteEdgeWeights both short-circuit to nothing for every
+        // pre-P1E-4 scenario. _lastAdaptationTime seeds to Begin (see its own field comment).
+        _edgeWeights = _config.ReroutePeriod > 0.0
+            ? new RerouteEdgeWeights(_network, _config.RerouteAdaptationSteps)
+            : null;
+        _lastAdaptationTime = _config.Begin;
+
         // D4: (re)build the reusable neighbor-query buckets for the newly loaded network's dense
         // handle space -- cold path (once per LoadScenario call), never per step.
         _neighborQuery = new LaneNeighborQuery(_network.LanesByHandle.Count);
@@ -1287,6 +1372,37 @@ public sealed partial class Engine : IEngine
         var speedFactor = NormcDistribution.ComputeChosenSpeedDeviation(
             mean: vType.SpeedFactor, dev: _config!.SpeedDev, min: 0.2, max: 2.0, rng: ref speedFactorRng);
 
+        // P1E-4 (§1A, §0.5.1): device.rerouting equip + first periodic-reroute schedule, drawn
+        // ONCE here exactly like speedFactor above. Entirely inert (equipped stays false,
+        // nextRerouteTime stays +infinity) whenever ScenarioConfig.ReroutePeriod<=0 -- i.e. every
+        // pre-P1E-4 scenario -- so this block never even draws from the RNG stream for them,
+        // keeping every existing golden/hash byte-identical.
+        var rerouteEquipped = false;
+        var nextRerouteTime = double.PositiveInfinity;
+        if (_config.ReroutePeriod > 0.0)
+        {
+            var equipRng = VehicleRng.SeedFor(Seed, entityIndex, RerouteEquipRngSalt);
+            rerouteEquipped = equipRng.NextDouble() < _config.RerouteProbability;
+            if (rerouteEquipped)
+            {
+                if (_config.RerouteJitter)
+                {
+                    // §0.5.1 gated production improvement: per-vehicle phase offset uniform in
+                    // [0, period) instead of SUMO's lockstep depart+period -- OWN salted stream,
+                    // never shared with the equip draw above.
+                    var jitterRng = VehicleRng.SeedFor(Seed, entityIndex, RerouteJitterRngSalt);
+                    var phase = jitterRng.NextDouble() * _config.ReroutePeriod;
+                    nextRerouteTime = def.Depart + phase;
+                }
+                else
+                {
+                    // SUMO-faithful schedule (MSDevice_Routing.cpp:223-237): first periodic
+                    // reroute fires at depart+period, no RNG phase.
+                    nextRerouteTime = def.Depart + _config.ReroutePeriod;
+                }
+            }
+        }
+
         var runtime = new VehicleRuntime
         {
             Def = def,
@@ -1302,6 +1418,11 @@ public sealed partial class Engine : IEngine
             // C8-ii: sentinel so a vehicle's FIRST plan is always an action step (it re-plans
             // on insertion), regardless of its depart time -- see VehicleRuntime.LastActionTime.
             LastActionTime = double.NegativeInfinity,
+            // P1E-4: see VehicleRuntime.RerouteEquipped/NextRerouteTime/LastRoutingTime's own
+            // comments. LastRoutingTime is left at its NegativeInfinity field default (never set
+            // here) so it is always "stale" relative to any finite _lastAdaptationTime.
+            RerouteEquipped = rerouteEquipped,
+            NextRerouteTime = nextRerouteTime,
         };
 
         // Rung 5 (D3: side table): seed this vehicle's own stop queue (StopRuntime) from its
@@ -2190,6 +2311,15 @@ public sealed partial class Engine : IEngine
             // Simulation-phase concern).
             UpdateReroutes(time, dt);
 
+            // [SystemPhase.Input] P1E-4 (HIGH-DENSITY-P1E-DESIGN.md §3): the periodic congestion-
+            // reactive reroute device (device.rerouting), DISTINCT from the obstacle-triggered
+            // UpdateReroutes just above -- runs beside it, still strictly BEFORE PlanMovements, so
+            // a vehicle that reroutes this step plans against its new route this SAME step. Reads
+            // the edge-weight snapshot UpdateRerouteEdgeWeights settled at the END of the PREVIOUS
+            // step (never a same-step write -- §8 risk 1); entirely inert (returns immediately)
+            // whenever ScenarioConfig.ReroutePeriod<=0, the default for every pre-P1E-4 scenario.
+            UpdatePeriodicReroutes(time, dt);
+
             // [SystemPhase.Input] B5-i: dead-reckon MOVING external obstacles (Speed != 0) by
             // Speed*dt. Runs BEFORE the neighbor-query Refill/PlanMovements below so the Plan
             // phase's ObstacleConstraint reads a FROZEN, already-advanced obstacle position for
@@ -2290,6 +2420,16 @@ public sealed partial class Engine : IEngine
             var pGain = PhaseStart();
             DecideSpeedGainChanges(time, dt);
             PhaseEnd("speedGain", pGain);
+
+            // [SystemPhase.PostSimulation] P1E-4 (§1C/§3): end-of-step edge-weight smoothing
+            // update for the periodic reroute device -- runs LAST, after ExecuteMoves/
+            // DecideSpeedGainChanges have fully settled this step's positions/speeds, so the NEXT
+            // step's UpdatePeriodicReroutes (which runs near the TOP of the next AdvanceOneStep
+            // call, before PlanMovements) always reads a fully-settled PREVIOUS-step snapshot,
+            // never a mid-write one -- the temporal analog of SUMO's waitForAll barrier (§8 risk
+            // 1: this relative order is a correctness requirement). Entirely inert (returns
+            // immediately) whenever ScenarioConfig.ReroutePeriod<=0.
+            UpdateRerouteEdgeWeights(time, dt);
         }
     }
 
@@ -3409,6 +3549,166 @@ public sealed partial class Engine : IEngine
         // the SAME point v.LaneSeqStart/Len/Index took effect at before this rung, still strictly
         // before PlanMovements (called next, in Run()) reads them.
         _commandBuffer.Flush();
+    }
+
+    // P1E-4 (HIGH-DENSITY-P1E-DESIGN.md §1A/§1B/§3/§4, seam #4): the periodic congestion-reactive
+    // reroute device (MSDevice_Routing). Inert-when-disabled: returns immediately whenever
+    // ScenarioConfig.ReroutePeriod<=0 (the default) or _edgeWeights is null (only ever null in
+    // that same case -- see InitializeLoaded), so this costs nothing and changes nothing for any
+    // scenario that does not explicitly opt in.
+    private void UpdatePeriodicReroutes(double time, double dt)
+    {
+        if (_config!.ReroutePeriod <= 0.0 || _edgeWeights is null)
+        {
+            return;
+        }
+
+        _router ??= new NetworkRouter(_network!);
+        var network = _network!;
+        var router = _router;
+        var edgeWeights = _edgeWeights;
+
+        // Collect this step's due batch: equipped, active ("inserted, not arrived" via
+        // ActiveVehicles(), same D6 query UpdateReroutes/PlanMovements use), NOT mid-junction
+        // (an internal-lane vehicle is committed to the connection it is traversing -- nowhere
+        // sensible to reroute from until it lands on its next normal lane, exactly like
+        // UpdateReroutes' own guard), due (time >= NextRerouteTime), and NOT skip-stale (§1A:
+        // the weights must have changed since this vehicle's OWN last routing attempt).
+        var batch = _rerouteBatchScratch;
+        batch.Clear();
+        foreach (var v in ActiveVehicles())
+        {
+            if (!v.RerouteEquipped || v.LaneId.StartsWith(':') || time < v.NextRerouteTime
+                || v.LastRoutingTime >= _lastAdaptationTime)
+            {
+                continue;
+            }
+
+            batch.Add(v);
+        }
+
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        // PARALLEL fan-out (§4): each vehicle's router call is a PURE read of the FROZEN
+        // edge-weight snapshot (Update never runs during this pass -- only at end of step, see
+        // UpdateRerouteEdgeWeights) into its OWN scratch slot; no shared writes, so the result is
+        // independent of thread scheduling/order -- parallel is bit-identical to serial.
+        EnsureRerouteCandidateCapacity(batch.Count);
+        var candidates = _rerouteCandidateScratch;
+        var useAStar = string.Equals(_config.RoutingAlgorithm, "astar", StringComparison.Ordinal);
+        System.Threading.Tasks.Parallel.For(0, batch.Count, _parallelOptions, i =>
+        {
+            var v = batch[i];
+            var currentEdge = network.LanesByHandle[v.LaneHandle].EdgeId;
+            var destEdge = network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + v.LaneSeqLen - 1]].EdgeId;
+            var vehicleMaxSpeed = v.VType.MaxSpeed * v.SpeedFactor;
+            double EdgeEffort(string edgeId) => edgeWeights.Effort(edgeId, vehicleMaxSpeed);
+
+            candidates[i] = useAStar
+                ? router.RouteAStar(currentEdge, destEdge, EdgeEffort)
+                : router.Route(currentEdge, destEdge, EdgeEffort);
+        });
+
+        // SERIAL apply (§4, matching ChangeLane's/ReplaceRoute's own record discipline): every due
+        // vehicle re-arms its schedule regardless of outcome (§1B: NO improvement gate -- the
+        // candidate always replaces the current route, unless it is empty/missing or IDENTICAL to
+        // the current remaining route, in which case only the identical-list short-circuit skips
+        // the install, never the schedule advance).
+        for (var i = 0; i < batch.Count; i++)
+        {
+            var v = batch[i];
+            v.NextRerouteTime += _config.ReroutePeriod;
+            v.LastRoutingTime = time;
+
+            var candidate = candidates[i];
+            if (candidate is null || candidate.Count == 0)
+            {
+                // Structural failure (unreachable destination) -- leave the vehicle on its
+                // current route, exactly like UpdateReroutes' own "no alternate route exists" arm.
+                continue;
+            }
+
+            var currentEdge = network.LanesByHandle[v.LaneHandle].EdgeId;
+            var currentRemainingEdges = CurrentRemainingRouteEdges(v, currentEdge);
+            if (candidate.SequenceEqual(currentRemainingEdges))
+            {
+                continue; // §1B: identical edge list -- short-circuit, no new route object
+            }
+
+            // P1E-4's own route-slot recycling (§0.5.3) -- distinct from RegisterRerouted, which
+            // the obstacle-based UpdateReroutes/RerouteActive above keep using unchanged.
+            RegisterPeriodicReroute(v, candidate);
+
+            var laneIndex = network.LanesByHandle[v.LaneHandle].Index;
+            var (newPoolSeq, newArrivalSeq) = network.ResolveLaneSequenceHandlesWithArrival(candidate, laneIndex);
+            var newLaneSeqStart = _laneSeqPool.Count;
+            _laneSeqPool.AddRange(newPoolSeq);
+            _laneSeqArrival.AddRange(newArrivalSeq);
+            _commandBuffer.ReplaceRoute(v, newLaneSeqStart, newPoolSeq.Length);
+        }
+
+        // Flushed BEFORE PlanMovements (called later this same AdvanceOneStep), matching
+        // UpdateReroutes' own end-of-method flush timing exactly.
+        _commandBuffer.Flush();
+    }
+
+    private void EnsureRerouteCandidateCapacity(int n)
+    {
+        if (_rerouteCandidateScratch.Length < n)
+        {
+            _rerouteCandidateScratch = new IReadOnlyList<string>?[n];
+        }
+    }
+
+    // P1E-4 (§1C/§3, seam #2): end-of-step edge-weight smoothing update. MUST run strictly AFTER
+    // ExecuteMoves/DecideSpeedGainChanges settle this step's positions (see AdvanceOneStep's own
+    // placement comment) -- this is the temporal analog of SUMO's waitForAll barrier (§8 risk 1):
+    // a reroute always reads the PREVIOUS step's fully-settled weights, never a mid-write
+    // snapshot. Inert-when-disabled exactly like UpdatePeriodicReroutes above.
+    private void UpdateRerouteEdgeWeights(double time, double dt)
+    {
+        if (_config!.ReroutePeriod <= 0.0 || _edgeWeights is null)
+        {
+            return;
+        }
+
+        var nextTime = time + dt;
+        if (nextTime < _lastAdaptationTime + _config.RerouteAdaptationInterval - 1e-9)
+        {
+            return; // not due this step yet
+        }
+
+        var edgeWeights = _edgeWeights;
+        var network = _network!;
+
+        // Latch trigger (§8 risk 2 -- "a vehicle being on the edge THIS step", never reset): mark
+        // every edge currently carrying an active vehicle as delayed (MarkDelayed is itself an
+        // idempotent no-op once latched). In the SAME fixed-order pass (ActiveVehicles() walks
+        // `_vehicles` in EntityIndex order -- §4 "deterministic, fixed per-edge order"), accumulate
+        // each such edge's occupant speeds for the mean-speed sample below.
+        var sums = _rerouteEdgeSpeedSumScratch;
+        var counts = _rerouteEdgeSpeedCountScratch;
+        sums.Clear();
+        counts.Clear();
+        foreach (var v in ActiveVehicles())
+        {
+            var edgeId = network.LanesByHandle[v.LaneHandle].EdgeId;
+            edgeWeights.MarkDelayed(edgeId);
+            sums[edgeId] = sums.TryGetValue(edgeId, out var s) ? s + v.Kinematics.Speed : v.Kinematics.Speed;
+            counts[edgeId] = counts.TryGetValue(edgeId, out var c) ? c + 1 : 1;
+        }
+
+        // MSEdge::getMeanSpeed(): mean of occupants' speeds, or the edge's free-flow (speed-limit)
+        // seed when empty -- sampled once per delayed edge inside RerouteEdgeWeights.Update's own
+        // fixed _edgeOrder walk.
+        edgeWeights.Update(edgeId => counts.TryGetValue(edgeId, out var c) && c > 0
+            ? sums[edgeId] / c
+            : edgeWeights.FreeFlowSpeed(edgeId));
+
+        _lastAdaptationTime = nextTime;
     }
 
     // Plan phase (seam 1, parallel-safe): reads start-of-step world state (including the frozen
