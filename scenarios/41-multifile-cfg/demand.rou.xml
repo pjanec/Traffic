@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P0-A multi-file <route-files>: the route + vehicles live in a SECOND route-file that
+     references vTypes declared in vtypes.rou.xml. Both files are named in the cfg's
+     <route-files> comma-list; DemandParser merges them into one DemandModel. All depart
+     attributes are explicit NUMERIC values (departPos/departSpeed/departLane); symbolic
+     "max"/"best"/"stop" are deliberately NOT used here (that is P0-C), so this scenario isolates
+     the multi-file-loading feature only. -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <route id="r0" edges="e0"/>
+    <vehicle id="veh0" type="leader"   route="r0" depart="0" departPos="100" departSpeed="0" departLane="0"/>
+    <vehicle id="veh1" type="follower" route="r0" depart="0" departPos="0"   departSpeed="0" departLane="0"/>
+</routes>

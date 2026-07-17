@@ -11,6 +11,23 @@
 - **Q1 → (b) RNG-insensitive parity model.** Do not port SUMO's PRNG draw order; make parity
   scenarios deterministic/RNG-insensitive, and validate sampling itself statistically.
 - **Q2 (P1-E parity bar) → deferred**; owner wants more info when we reach P1-E. Not blocking P0.
+  (Info provided; recommendation = two-tier: exact unit/parity on the router + edge-time
+  aggregation machinery, statistical/robust-exact on the end-to-end congestion scenario.)
+- **P1-E performance constraint (owner).** Rerouting must be **fast** — it must not materially slow
+  the step loop. Production machines have many cores; **parallelize the reroute pass** where
+  possible. Design implication: the periodic reroute is a read-mostly A* over a double-buffered
+  edge-weight snapshot → fan out per-vehicle A* across cores (`Parallel.For`) reading an immutable
+  per-interval weight snapshot, write route changes through the CommandBuffer at step end. This
+  also feeds the "faster-but-different, gated" option (cheaper cadence/approx weights) for the
+  non-parity production path.
+- **P1-E scale (owner).** Assume ~10k concurrent vehicles; because `device.rerouting.period` is
+  fixed, many vehicles fall due on the same (or nearby) tick — a reroute *thundering herd*. Design:
+  **collect the due-this-tick vehicles into a batch, then run their A* searches in parallel**
+  (`Parallel.For` over the batch, each reading the shared immutable edge-weight snapshot; A* is
+  read-only over the graph so it is embarrassingly parallel), and apply the resulting route swaps
+  through the CommandBuffer at step end. A per-vehicle phase offset (SUMO does this) spreads
+  vehicles across ticks to flatten the herd; batching + parallel A* absorbs whatever remains.
+  Router state must be per-thread/thread-local (no shared mutable open/closed sets).
 - **Q3 → P2 empirical check after P0.** ✓
 - **Q4 → start P0-A → P0-C → P0-B → P0-D.** ✓
 - **Q5 → OK to `pip install eclipse-sumo==1.20.0` for golden regen.** ✓

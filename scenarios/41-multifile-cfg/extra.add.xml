@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P0-A <additional-files>: an idle parkingArea, defined-but-unused. Its only job here is to
+     exercise the additional-files loader (the cfg references it; SUMO and SumoSharp must both
+     LOAD it without error). No vehicle stops here, so it does not affect the trajectory; the
+     golden is behaviourally identical to scenarios/02. parkingArea *behaviour* (departPos="stop")
+     is a P0-C concern, not this task's. -->
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <parkingArea id="pa0" lane="e0_0" startPos="900.00" endPos="950.00" roadsideCapacity="5"/>
+</additional>

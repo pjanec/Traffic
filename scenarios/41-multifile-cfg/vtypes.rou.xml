@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P0-A multi-file <route-files>: the vTypes live in their OWN route-file, separate from the
+     demand (mirroring the SumoData config, whose route-files list is
+     vType.config.xml,vType_pedestrians.xml,vTypeDist.config.xml,box.rou.xml). Same two vTypes as
+     scenarios/02-two-vehicle-following so the merged demand is behaviourally identical to rung 4;
+     this scenario's ONLY new surface is that they arrive via a multi-file cfg <input>. -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="leader"   vClass="passenger" sigma="0" maxSpeed="5.00"/>
+    <vType id="follower" vClass="passenger" sigma="0"/>
+</routes>

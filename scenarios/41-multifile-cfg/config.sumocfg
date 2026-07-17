@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- P0-A acceptance scenario: a .sumocfg whose <input> names MULTIPLE route-files (a comma-list)
+     plus an additional-file. Determinism settings match the phase-1 ladder (sigma=0 in the
+     vTypes, Euler, teleport off, fixed depart, action-step=1) so parity is exact. Behaviourally
+     identical to scenarios/02-two-vehicle-following; the only thing under test is that the engine
+     loads net + 2 route-files + 1 additional-file from the cfg's <input> and reproduces golden. -->
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="vtypes.rou.xml,demand.rou.xml"/>
+        <additional-files value="extra.add.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <end value="120"/>
+        <step-length value="1"/>
+    </time>
+    <processing>
+        <step-method.ballistic value="false"/>
+        <time-to-teleport value="-1"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+        <collision.action value="none"/>
+    </processing>
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+</configuration>
