@@ -251,3 +251,33 @@ wrongLane= />` — all 0 until P1-F.
 - [ ] P0-C2 parkingArea subsystem (parkingArea-stop departPos) — parse + getLastFreePos + scenario NN
 - [x] P0-B vTypeDistribution — parse (attribute vTypes=/probabilities=, colon shorthand, nested <vType probability=>) + per-entity salted-RNG resolution at BuildRuntime + scenario 43 ✅ (507 passed + 3 pre-existing skips, 510 total)
 - [x] P0-D summary/statistic writers + harness parsers + comparator + scenario 44 ✅ (521 passed + 3 pre-existing skips, 524 total)
+
+### P0-C2 — grounded design (verified against SUMO 1.20.0 source + empirical run)
+
+**Scope confirmed SMALL** (no off-road/parked state needed for the single-car parked-origin case):
+a `departPos="stop"` car into a parkingArea starts AT the lot position ON-lane, parks for the stop
+duration, then drives off — mechanically identical to a lane `<stop>` (P0-C1), only the position is
+resolved from the parkingArea. Off-road/lateral state matters only for a FOLLOWER past a parked car
+and the `y` coord (not compared) — deferred to a later rung.
+
+**Lot-0 position (empty area, straight lane)** = `startPos + (endPos - startPos) / roadsideCapacity`
+(`MSParkingArea.cpp:72,106` + `getLastFreePos:196-204`). Verified: `195 + (210-195)/5 = 198.0`
+(scenarios/48 golden: parked at 198.0 from t=0..duration, then Krauss accel). Constraints:
+`roadsideCapacity >= 1` (capacity 0 hits the `begPos - minGap` branch), straight/unscaled lane
+(so `interpolateLanePosToGeometryPos` is identity), `gModelParkingManoeuver` off (default).
+
+**Minimal pieces:** (1) parse `<parkingArea id lane startPos endPos roadsideCapacity>` from
+additional-files (defaults per `NLTriggerBuilder.cpp:566-569`) into a registry, at the
+`Engine.LoadScenario(cfg)` additional-file hook (`Engine.cs:~1099`, currently loads-and-discards);
+(2) allow `<stop parkingArea="..."/>` with no `lane=` in `DemandParser` (`:215-220`); resolve it —
+given the parkingArea registry — to `StopDef{ LaneId = pa.lane, StartPos = pa.startPos, EndPos =
+lot0Pos, Duration }`; (3) `departPos="stop"` (`Engine.cs:2820-2827`) then works UNCHANGED (reads
+`Stops[0].EndPos`); (4) `ProcessNextStop` reused unchanged (stop reached at insertion since
+`pa.startPos <= insertPos`). Wiring: `LoadScenario(cfg)` parses parkingAreas before/with demand and
+resolves parkingArea-stops (registry available to the resolution).
+
+**Acceptance:** `scenarios/48-parking-depart` (built): straight net + `pa0` (cap 5) + one
+`departPos="stop"` car with `<stop parkingArea="pa0" duration="10">`. Golden from SUMO 1.20.0
+(parked at 198.0 t0..10, drives off). SumoSharp reproduces `(lane,pos,speed)` within tolerance.
+Unit test: parse a `<parkingArea>` + resolve lot-0 position formula.
+

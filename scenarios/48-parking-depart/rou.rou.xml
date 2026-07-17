@@ -1,0 +1,7 @@
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="veh0" type="car" route="r0" depart="0" departPos="stop" departSpeed="0" departLane="0">
+        <stop parkingArea="pa0" duration="10"/>
+    </vehicle>
+</routes>
