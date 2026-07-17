@@ -249,5 +249,16 @@ when I first need to regenerate a golden. OK to do that as part of landing the f
   - [x] P1F-1 config (time-to-teleport.remove) + WaitingTime !isStopped guard ✅
   - [x] P1F-2 jam detection + transfer queue/virtual-proceed + jam counter ✅
   - [x] P1F-3 scenarios/47-teleport-jam BIT-EXACT parity (follower teleports eA->eB @t=200, teleports=1); 549 green
-- [ ] P2-G/H verify-then-fix (after P0, real dense config)
+- [ ] P2-G multi-lane lane-change parity (design: docs/HIGH-DENSITY-P2G-DESIGN.md)
+  - [x] P2G-0 empirical localisation: gap is the LANE-CHANGE model (not car-following, not junction
+    RoW -- willPass pre-pass already flows a dense -L2 grid at 0 stuck). Isolated to a spurious
+    keep-right (pinned-lane control: engine keep-rights v1 SUMO keeps in lane; 82 m divergence). ✅
+  - [x] P2G-1 keep-right target-lane LEADER safety veto + scenarios/49-multilane-keepright BIT-EXACT
+    anchor (82.28 m -> 2.37 m on the control); 558 green, byte-identical, saturation still 0 stuck ✅
+  - [ ] P2G-2 (FOLLOW-UP, evidence-gated) follower-block + cooperative LC (LCA_COOPERATIVE /
+    informBlocker) -- proven binding: it is scenario 46's residual 7 m facet AND the reason the
+    follower half can't be applied alone (regressed willpass-saturation 0->30 stuck). Owner-driven.
+  - [ ] P2G-3 (FOLLOW-UP) general best-lanes continuation distance for keep-right (multi-edge lane
+    continuity) -- the other candidate facet of scenario 46's junction-continuation lane choice.
+- [ ] P2-H max-depart-delay / insertion backlog (confirmed gap; small)
 - [ ] X1 attention-aware popping (functional/statistical tests, no parity)
