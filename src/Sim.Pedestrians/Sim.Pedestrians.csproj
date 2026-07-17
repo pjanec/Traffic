@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Pedestrians are a SEPARATE engine from the lane-parity core (docs/PEDESTRIAN-DESIGN.md
+         §0 Principle 6). This project owns ped-network ingest and (later) the ORCA-backed crowd
+         solver; it must never reference Sim.Ingest or any parity source. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reuse Sim.Core's Vec2 (Sim.Core.Orca.Vec2) for all geometry so downstream navmesh/ORCA
+         code shares one point type. Do not define a new point struct here. -->
+    <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+  </ItemGroup>
+
+</Project>
