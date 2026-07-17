@@ -92,6 +92,11 @@ public sealed partial class Engine
             // written on EVERY flow record (inserted, queued, or arrived) so LoadSnapshot can
             // reconstruct it at the SAME EntityIndex (which keeps future flow arrivals' seeding, and
             // thus determinism, identical to a single continuous run). Empty for demand vehicles.
+            // P0-C1: departPos/departSpeed/departLane are now (Kind, Literal) specs -- serialize
+            // BOTH, not just Literal, so a still-QUEUED flow vehicle (Max/Best/Stop) re-resolves
+            // through the SAME symbolic path on the continued run instead of freezing a stale/
+            // meaningless literal. Every pre-P0-C1 scenario is Given, so Literal alone already
+            // carried full information; Kind is additive.
             XAttribute[] FlowMeta() => isFlow
                 ? new[]
                 {
@@ -100,9 +105,12 @@ public sealed partial class Engine
                     new XAttribute("typeId", v.Def.TypeId),
                     new XAttribute("routeId", v.Def.RouteId),
                     new XAttribute("depart", v.Def.Depart.ToString("R", CultureInfo.InvariantCulture)),
-                    new XAttribute("departPos", v.Def.DepartPos.ToString("R", CultureInfo.InvariantCulture)),
-                    new XAttribute("departSpeed", v.Def.DepartSpeed.ToString("R", CultureInfo.InvariantCulture)),
-                    new XAttribute("departLane", v.Def.DepartLaneIndex.ToString(CultureInfo.InvariantCulture)),
+                    new XAttribute("departPosKind", v.Def.DepartPos.Kind.ToString()),
+                    new XAttribute("departPos", v.Def.DepartPos.Literal.ToString("R", CultureInfo.InvariantCulture)),
+                    new XAttribute("departSpeedKind", v.Def.DepartSpeed.Kind.ToString()),
+                    new XAttribute("departSpeed", v.Def.DepartSpeed.Literal.ToString("R", CultureInfo.InvariantCulture)),
+                    new XAttribute("departLaneKind", v.Def.DepartLaneIndex.Kind.ToString()),
+                    new XAttribute("departLane", v.Def.DepartLaneIndex.Literal.ToString(CultureInfo.InvariantCulture)),
                 }
                 : Array.Empty<XAttribute>();
 
@@ -126,6 +134,21 @@ public sealed partial class Engine
                     new XAttribute("arrived", "true"),
                     FlowMeta()));
                 continue;
+            }
+
+            // P0-C1 loud guard: departLane="best" resolves its CONCRETE starting lane index at
+            // insertion time (a runtime-occupancy-dependent quantity, Engine.ResolveBestDepartLane)
+            // that is NOT itself captured anywhere in this record -- restoring an already-active
+            // best-departed vehicle would need it to rebuild the lane sequence
+            // (RestoreActiveVehicle -> ResolveLaneSequenceHandlesWithArrival). Not yet captured
+            // (rather than silently re-resolving "best" against different runtime occupancy and
+            // possibly landing on the wrong lane sequence, or resolving to lane 0). A still-QUEUED
+            // Best vehicle is unaffected (FlowMeta/re-queue above carries the Kind through so it
+            // resolves normally on the continued run's own insertion attempt).
+            if (v.Def.DepartLaneIndex.Kind == DepartLaneSpec.Best)
+            {
+                throw new NotSupportedException(
+                    $"SaveSnapshot: vehicle '{v.Def.Id}' departed via departLane=\"best\"; restoring an already-active best-departed vehicle is not yet supported.");
             }
 
             // Loud guard: state W2 does not yet capture (rather than silently mis-restore).
@@ -234,9 +257,9 @@ public sealed partial class Engine
                 TypeId: RequireAttr(fv, "typeId"),
                 RouteId: RequireAttr(fv, "routeId"),
                 Depart: ParseR(fv, "depart"),
-                DepartPos: ParseR(fv, "departPos"),
-                DepartSpeed: ParseR(fv, "departSpeed"),
-                DepartLaneIndex: int.Parse(RequireAttr(fv, "departLane"), CultureInfo.InvariantCulture)));
+                DepartPos: ParseDepartPosValue(fv),
+                DepartSpeed: ParseDepartSpeedValue(fv),
+                DepartLaneIndex: ParseDepartLaneValue(fv)));
         }
 
         var byId = new Dictionary<string, VehicleRuntime>(_vehicles.Count, StringComparer.Ordinal);
@@ -279,9 +302,11 @@ public sealed partial class Engine
         // Re-resolve the vehicle's full lane sequence from its route (identical to insertion), then
         // point LaneSeqIndex at the saved progress. LaneId/Handle derive from the sequence entry, so
         // a mid-route vehicle lands on the correct lane. (Reroute would diverge here -- guarded out
-        // at save time.)
+        // at save time.) P0-C1: .Literal is the resolved lane index for Given -- byte-identical to
+        // the old plain-int field; SaveSnapshot's Best guard above rules out reaching this method
+        // with a Best-kind Def (whose Literal would otherwise be a meaningless 0).
         var route = _demand!.RoutesById[v.Def.RouteId];
-        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
+        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex.Literal);
 
         var laneSeqIndex = int.Parse(RequireAttr(ve, "laneSeqIndex"), CultureInfo.InvariantCulture);
         if (laneSeqIndex < 0 || laneSeqIndex >= poolSeq.Length)
@@ -333,4 +358,21 @@ public sealed partial class Engine
     private static string RequireAttr(XElement el, string name) =>
         el.Attribute(name)?.Value
         ?? throw new InvalidDataException($"snapshot <{el.Name.LocalName}> missing attribute '{name}'.");
+
+    // P0-C1: reconstruct a flow-generated vehicle's (Kind, Literal) depart specs from the
+    // discriminant + literal FlowMeta wrote (see SaveSnapshot's FlowMeta()).
+    private static DepartPosValue ParseDepartPosValue(XElement fv) =>
+        Enum.Parse<DepartPosSpec>(RequireAttr(fv, "departPosKind")) == DepartPosSpec.Stop
+            ? DepartPosValue.Stop
+            : DepartPosValue.Given(ParseR(fv, "departPos"));
+
+    private static DepartSpeedValue ParseDepartSpeedValue(XElement fv) =>
+        Enum.Parse<DepartSpeedSpec>(RequireAttr(fv, "departSpeedKind")) == DepartSpeedSpec.Max
+            ? DepartSpeedValue.Max
+            : DepartSpeedValue.Given(ParseR(fv, "departSpeed"));
+
+    private static DepartLaneValue ParseDepartLaneValue(XElement fv) =>
+        Enum.Parse<DepartLaneSpec>(RequireAttr(fv, "departLaneKind")) == DepartLaneSpec.Best
+            ? DepartLaneValue.Best
+            : DepartLaneValue.Given(int.Parse(RequireAttr(fv, "departLane"), CultureInfo.InvariantCulture));
 }

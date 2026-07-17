@@ -89,9 +89,13 @@ public sealed record VehicleDef(
     string TypeId,
     string RouteId,
     double Depart,
-    double DepartPos,
-    double DepartSpeed,
-    int DepartLaneIndex,
+    // P0-C1: (Kind, Literal) specs -- see DepartValue.cs. Every pre-P0-C1 caller wraps its numeric
+    // literal in DepartPosValue.Given/DepartSpeedValue.Given/DepartLaneValue.Given, so the resolved
+    // value is unchanged; only DemandParser's "max"/"best"/"stop" and a symbolic-departLane=Best/
+    // departSpeed=Max/departPos=Stop insertion path (Engine.cs) take the new Kind.
+    DepartPosValue DepartPos,
+    DepartSpeedValue DepartSpeed,
+    DepartLaneValue DepartLaneIndex,
     IReadOnlyList<StopDef>? Stops = null,
     // Phase 2 (sublane, P2.2): SUMO's departPosLat -- the initial lateral position on the depart
     // lane. "center" (default) | "left" | "right" | a numeric offset (m, +left). null (absent)
@@ -120,9 +124,10 @@ public sealed record ProbabilisticFlow(
     double Begin,
     double End,
     double Probability,
-    double DepartPos,
-    double DepartSpeed,
-    int DepartLaneIndex);
+    // P0-C1: same (Kind, Literal) specs as VehicleDef -- see DepartValue.cs.
+    DepartPosValue DepartPos,
+    DepartSpeedValue DepartSpeed,
+    DepartLaneValue DepartLaneIndex);
 
 public sealed record DemandModel(
     IReadOnlyList<VType> VTypes,

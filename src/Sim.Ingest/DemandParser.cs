@@ -4,10 +4,14 @@ using System.Xml.Linq;
 namespace Sim.Ingest;
 
 // Parses the rung-1 subset of .rou.xml: <vType>, <route>, <vehicle>. Missing optional
-// attributes fall back to documented SUMO defaults where the value is purely numeric/simple;
-// symbolic values (departPos="base"/"random", departSpeed="max", departLane="free"/"best",
-// etc.) are NOT resolved here -- that placement/defaulting logic is a Task 3+ concern. This
-// parser only has to be correct for rung 1's fully-numeric attributes.
+// attributes fall back to documented SUMO defaults where the value is purely numeric/simple.
+// P0-C1: departSpeed="max", departLane="best", and departPos="stop" (lane <stop> only) are now
+// resolved to their DepartValue.cs spec Kind here (ParseDepartSpeed/ParseDepartLane/
+// ParseDepartPos); their concrete placement/value is still resolved later, at insertion
+// (Engine.cs). Every OTHER symbolic keyword (e.g. departPos="random"/"free"/"base"/"last"/
+// "random_free"/"speedLimit", departLane="free"/"random"/"allowed"/"first", departSpeed="desired"/
+// "random"/"avg") throws a clear InvalidDataException naming the attribute+value -- not silently
+// mishandled, not a raw FormatException.
 public static class DemandParser
 {
     // C2-iv: SUMO's built-in default vType id (SUMOVTypeParameter's DEFAULT_VEHTYPE) -- the type a
@@ -193,9 +197,9 @@ public static class DemandParser
                 TypeId: typeId,
                 RouteId: routeId,
                 Depart: ParseNullableDouble(vehicleEl, "depart") ?? 0.0,
-                DepartPos: ParseNullableDouble(vehicleEl, "departPos") ?? 0.0,
-                DepartSpeed: ParseNullableDouble(vehicleEl, "departSpeed") ?? 0.0,
-                DepartLaneIndex: ParseNullableInt(vehicleEl, "departLane") ?? 0,
+                DepartPos: ParseDepartPos(vehicleEl, $"<vehicle id='{vehId}'>"),
+                DepartSpeed: ParseDepartSpeed(vehicleEl, $"<vehicle id='{vehId}'>"),
+                DepartLaneIndex: ParseDepartLane(vehicleEl, $"<vehicle id='{vehId}'>"),
                 Stops: stops,
                 // Phase 2 (sublane): SUMO's departPosLat vehicle attribute. Absent -> centre.
                 DepartPosLat: vehicleEl.Attribute("departPosLat")?.Value));
@@ -234,9 +238,9 @@ public static class DemandParser
                 return t;
             }
 
-            var departPos = ParseNullableDouble(flowEl, "departPos") ?? 0.0;
-            var departSpeed = ParseNullableDouble(flowEl, "departSpeed") ?? 0.0;
-            var departLane = ParseNullableInt(flowEl, "departLane") ?? 0;
+            var departPos = ParseDepartPos(flowEl, $"<flow id='{flowId}'>");
+            var departSpeed = ParseDepartSpeed(flowEl, $"<flow id='{flowId}'>");
+            var departLane = ParseDepartLane(flowEl, $"<flow id='{flowId}'>");
 
             // F2 (probabilistic flow): `probability=` is a per-second Bernoulli insertion, decided at
             // runtime by the engine from a per-flow seeded RNG -- NOT expanded here. It is mutually
@@ -384,6 +388,84 @@ public static class DemandParser
     {
         var value = element.Attribute(name)?.Value;
         return value is null ? null : int.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    // P0-C1: SUMO's parseDepartSpeed (SUMOVehicleParameter-parsing helpers) -- a numeric literal
+    // parses as Given (identical to the old ParseNullableDouble ?? 0.0 path -- see DepartValue.cs'
+    // header comment), "max" resolves to Max (SUMOVehicleParameter.h's DepartSpeedDefinition::MAX),
+    // and any OTHER symbolic keyword (e.g. "desired"/"random"/"avg") is loudly rejected -- named
+    // consumers are not yet in scope, not silently mishandled as 0 or crashed as a raw
+    // FormatException.
+    private static DepartSpeedValue ParseDepartSpeed(XElement element, string ownerDesc)
+    {
+        var value = element.Attribute("departSpeed")?.Value;
+        if (value is null)
+        {
+            return DepartSpeedValue.Given(0.0);
+        }
+
+        if (double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var literal))
+        {
+            return DepartSpeedValue.Given(literal);
+        }
+
+        if (value == "max")
+        {
+            return DepartSpeedValue.Max;
+        }
+
+        throw new InvalidDataException(
+            $"{ownerDesc} has unsupported departSpeed=\"{value}\" (only a numeric literal or \"max\" is supported).");
+    }
+
+    // P0-C1: SUMO's parseDepartLane -- a numeric literal parses as Given, "best" resolves to Best
+    // (DepartLaneDefinition::BEST_FREE), any other symbolic keyword (e.g. "free"/"random"/
+    // "allowed"/"first") is loudly rejected.
+    private static DepartLaneValue ParseDepartLane(XElement element, string ownerDesc)
+    {
+        var value = element.Attribute("departLane")?.Value;
+        if (value is null)
+        {
+            return DepartLaneValue.Given(0);
+        }
+
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var literal))
+        {
+            return DepartLaneValue.Given(literal);
+        }
+
+        if (value == "best")
+        {
+            return DepartLaneValue.Best;
+        }
+
+        throw new InvalidDataException(
+            $"{ownerDesc} has unsupported departLane=\"{value}\" (only a numeric index or \"best\" is supported).");
+    }
+
+    // P0-C1: SUMO's parseDepartPos -- a numeric literal parses as Given, "stop" resolves to Stop
+    // (DepartPosDefinition::STOP, lane <stop> only -- see DepartValue.cs), any other symbolic
+    // keyword (e.g. "random"/"free"/"base"/"last"/"random_free"/"speedLimit") is loudly rejected.
+    private static DepartPosValue ParseDepartPos(XElement element, string ownerDesc)
+    {
+        var value = element.Attribute("departPos")?.Value;
+        if (value is null)
+        {
+            return DepartPosValue.Given(0.0);
+        }
+
+        if (double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var literal))
+        {
+            return DepartPosValue.Given(literal);
+        }
+
+        if (value == "stop")
+        {
+            return DepartPosValue.Stop;
+        }
+
+        throw new InvalidDataException(
+            $"{ownerDesc} has unsupported departPos=\"{value}\" (only a numeric literal or \"stop\" is supported).");
     }
 
     private static string RequireAttribute(XElement element, string name) =>

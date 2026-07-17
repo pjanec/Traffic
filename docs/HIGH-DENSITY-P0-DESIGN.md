@@ -214,7 +214,7 @@ meanSpeed= meanSpeedRelative= .../>`; `--statistic-output` writes a `<statistics
 
 ## Tracker (P0)
 - [x] P0-A multi-file cfg — parser + DemandParser merge + LoadScenario(cfg) + Sim.Run + scenario 41 ✅ (474 green)
-- [ ] P0-C1 symbolic departs (max/best, lane-stop) — specs + gated insertion resolution + scenario 42
+- [x] P0-C1 symbolic departs (max/best, lane-stop) — specs + gated insertion resolution + scenario 42 ✅ (497 green)
 - [ ] P0-C2 parkingArea subsystem (parkingArea-stop departPos) — parse + getLastFreePos + scenario NN
 - [ ] P0-B vTypeDistribution — parse + deterministic parity 43 + statistical sampling test
 - [ ] P0-D summary/statistic writers + harness parsers + comparator + scenario 44

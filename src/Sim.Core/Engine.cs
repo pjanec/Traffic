@@ -1760,9 +1760,12 @@ public sealed partial class Engine : IEngine
             TypeId: _vTypeIds[type.Index],
             RouteId: routeId,
             Depart: CurrentTime,
-            DepartPos: departPos,
-            DepartSpeed: departSpeed,
-            DepartLaneIndex: departLane);
+            // P0-C1: this runtime-spawn API only ever takes numeric literals (no symbolic string
+            // surface), so every call is Given -- byte-identical to before the (Kind, Literal) spec
+            // types existed.
+            DepartPos: DepartPosValue.Given(departPos),
+            DepartSpeed: DepartSpeedValue.Given(departSpeed),
+            DepartLaneIndex: DepartLaneValue.Given(departLane));
 
         // §9: reuse a freed slot when available, else append. Capacity for the (possibly new) slot is
         // ensured afterwards; a recycled slot's generation is already the post-Despawn bumped value.
@@ -2290,7 +2293,16 @@ public sealed partial class Engine : IEngine
         var keyList = new List<(string RouteId, int DepartLane)>();
         foreach (var def in _demand!.Vehicles)
         {
-            var k = (def.RouteId, def.DepartLaneIndex);
+            // P0-C1: departLane="best" depends on RUNTIME occupancy, so it cannot be prewarmed by a
+            // static (RouteId, DepartLaneIndex) key at load time -- it is resolved (and its
+            // lane-sequence cached lazily) inside TryInsertOnLane instead. Given (every pre-P0-C1
+            // vehicle) is unaffected.
+            if (def.DepartLaneIndex.Kind != DepartLaneSpec.Given)
+            {
+                continue;
+            }
+
+            var k = (def.RouteId, def.DepartLaneIndex.Literal);
             if (seen.Add(k))
             {
                 keyList.Add(k);
@@ -2308,6 +2320,76 @@ public sealed partial class Engine : IEngine
         {
             _insertRouteSeqCache[keyList[i]] = results[i];
         }
+    }
+
+    // P0-C1: departLane="best" (SUMO's DepartLaneDefinition::BEST_FREE, MSEdge::getDepartLane's
+    // BEST_FREE arm, sumo/src/microsim/MSEdge.cpp:628-654). Ranks the depart edge's lanes by
+    // route-continuation Length (NetworkModel.ComputeBestLanes -- a pure topology fn, callable
+    // before any placement decision). The qualifying threshold is `Min(maxLength,
+    // BEST_LANE_LOOKAHEAD=3000)`: normally (maxLength <= 3000) that is exactly maxLength, so ONLY
+    // the true best-continuation lane(s) qualify; once maxLength exceeds 3000, the threshold is
+    // capped at 3000 instead of maxLength itself, widening the tied-for-best set to every lane
+    // whose continuation is at least 3000m (SUMO: "beyond a certain length, all lanes are
+    // suitable" -- ignores the small getDepartPosBound offset MSEdge.cpp folds into both sides of
+    // the comparison, inert here since every P0-C1 scenario departs at/near pos 0). Ties are then
+    // broken by LEAST occupancy -- the unnormalized Sum(VType.Length + VType.MinGap) over every
+    // ActiveVehicles() currently on that candidate lane (MSEdge::getFreeLane's getBruttoOccupancy
+    // ranking, MSLane.cpp:441; getBruttoOccupancy itself normalizes by lane length, but every lane
+    // on one edge shares the SAME length here, so the unnormalized sum ranks identically without
+    // needing the per-lane length normalization).
+    private const double BestLaneLookahead = 3000.0;
+
+    private int ResolveBestDepartLane(Route route, Edge edge)
+    {
+        var laneQs = _network!.ComputeBestLanes(route.Edges, route.Edges[0]);
+
+        var maxLength = double.NegativeInfinity;
+        foreach (var q in laneQs)
+        {
+            if (q.Length > maxLength)
+            {
+                maxLength = q.Length;
+            }
+        }
+
+        var threshold = Math.Min(maxLength, BestLaneLookahead);
+
+        var bestIndex = -1;
+        var bestOccupancy = double.PositiveInfinity;
+        foreach (var q in laneQs)
+        {
+            if (q.Length < threshold)
+            {
+                continue;
+            }
+
+            var laneHandle = -1;
+            foreach (var l in edge.Lanes)
+            {
+                if (l.Index == q.LaneIndex)
+                {
+                    laneHandle = l.Handle;
+                    break;
+                }
+            }
+
+            var occupancy = 0.0;
+            foreach (var other in ActiveVehicles())
+            {
+                if (other.LaneHandle == laneHandle)
+                {
+                    occupancy += other.VType.Length + other.VType.MinGap;
+                }
+            }
+
+            if (occupancy < bestOccupancy)
+            {
+                bestOccupancy = occupancy;
+                bestIndex = q.LaneIndex;
+            }
+        }
+
+        return bestIndex;
     }
 
     private void InsertDepartingVehicles(double time)
@@ -2353,13 +2435,21 @@ public sealed partial class Engine : IEngine
             var route = _routesById[v.Def.RouteId];
             var edge = _network!.EdgesById[route.Edges[0]];
 
+            // P0-C1: departLane="best" resolves its CONCRETE lane index HERE, before the by-index
+            // scan below -- it depends on RUNTIME occupancy (ActiveVehicles()), so it cannot be a
+            // load-time constant the way a Given index is. Given takes its Literal unchanged (same
+            // value the old plain-int field held).
+            var departLaneIndex = v.Def.DepartLaneIndex.Kind == DepartLaneSpec.Best
+                ? ResolveBestDepartLane(route, edge)
+                : v.Def.DepartLaneIndex.Literal;
+
             // L0d: manual lane-by-index scan instead of `edge.Lanes.First(l => l.Index == ...)`, whose
             // predicate captured `v` into a fresh closure per candidate. Same first-match result.
             string laneId = null!;
             var laneHandle = -1;
             for (var li = 0; li < edge.Lanes.Count; li++)
             {
-                if (edge.Lanes[li].Index == v.Def.DepartLaneIndex)
+                if (edge.Lanes[li].Index == departLaneIndex)
                 {
                     laneId = edge.Lanes[li].Id;
                     laneHandle = edge.Lanes[li].Handle;
@@ -2374,7 +2464,7 @@ public sealed partial class Engine : IEngine
                 continue;
             }
 
-            if (!TryInsertOnLane(v, laneHandle))
+            if (!TryInsertOnLane(v, laneHandle, departLaneIndex))
             {
                 blockedLanes.Add(laneId);
             }
@@ -2384,8 +2474,11 @@ public sealed partial class Engine : IEngine
     // MSLane::isInsertionSuccess's leader-gap check only (see InsertDepartingVehicles' header
     // comment for the full derivation/scope). Returns true and performs the insertion iff
     // there is no leader on the lane or gap >= 0; otherwise leaves `v` untouched and returns
-    // false (queued for a later step).
-    private bool TryInsertOnLane(VehicleRuntime v, int laneHandle)
+    // false (queued for a later step). `departLaneIndex` is the CALLER-resolved concrete lane
+    // index (Given's literal, or Best's runtime-resolved index -- see InsertDepartingVehicles);
+    // used everywhere the old plain-int DepartLaneIndex field used to be read directly, so Given
+    // is byte-identical.
+    private bool TryInsertOnLane(VehicleRuntime v, int laneHandle, int departLaneIndex)
     {
         // R3 (rail bidi): MSLane::isInsertionSuccess (MSLane.cpp:843-846 for the departure lane,
         // :999-1002 for each forward route lane up to the first rail signal) refuses to insert a
@@ -2395,12 +2488,31 @@ public sealed partial class Engine : IEngine
         // train has cleared it. R3 has no rail signals, so the whole forward route is checked.
         // Inert for road vehicles (rail-only) and non-bidi lanes (TryGetBidiLaneId returns null),
         // so every road scenario's insertion is byte-identical.
-        if (RailBidiTrackOccupied(v))
+        if (RailBidiTrackOccupied(v, departLaneIndex))
         {
             return false;
         }
 
-        var insertPos = v.Def.DepartPos;
+        // The departure lane is `laneHandle` (resolved by the caller as the edge's lane whose Index
+        // == departLaneIndex). LanesByHandle[laneHandle] is that exact lane (dense array index, no
+        // per-candidate `edge.Lanes.First(...)` predicate-closure alloc), byte-identical to the old
+        // resolution: same edge (route.Edges[0]), same first-matching lane index. (Resolved here,
+        // rather than further down where it used to be, purely so departSpeed=Max below can read
+        // lane.Speed -- a pure lookup, no behavior change for the Given path.)
+        var lane = _network!.LanesByHandle[laneHandle];
+
+        // P0-C1: departPos="stop" -- Lane <stop> only (MSLane::insertVehicle, MSLane.cpp:692-698):
+        // if the vehicle's FIRST scheduled stop is on THIS insertion lane, pos = MAX2(0,
+        // stop.endPos); otherwise (including every Given scenario, which never has Kind==Stop)
+        // silently falls back to BASE (0). Given keeps today's exact literal.
+        double insertPos = v.Def.DepartPos.Kind switch
+        {
+            DepartPosSpec.Given => v.Def.DepartPos.Literal,
+            DepartPosSpec.Stop => v.Def.Stops.Count > 0 && v.Def.Stops[0].LaneId == lane.Id
+                ? Math.Max(0.0, v.Def.Stops[0].EndPos)
+                : 0.0,
+            _ => throw new InvalidDataException($"unsupported DepartPosSpec '{v.Def.DepartPos.Kind}'."),
+        };
 
         // MSLane::getLastVehicleInformation / getLeader (same-lane branch): nearest already-
         // inserted, not-arrived vehicle with Pos >= insertPos on this lane -- includes any
@@ -2420,6 +2532,17 @@ public sealed partial class Engine : IEngine
             }
         }
 
+        // P0-C1: departSpeed="max" (MSLane::getDepartSpeed, MSLane.cpp:588-590) requests
+        // MIN2(vType.maxSpeed, laneSpeed x speedFactor) with patchSpeed=true -- an unreachable
+        // requested speed is CLAMPED by the leader-safety checks below rather than failing
+        // insertion (MSLane.cpp:780-808's checkFailure `speed = MIN2(nspeed, speed)` branch); only
+        // a real gap<0 overlap still fails. Given (patchSpeed=false) keeps today's exact literal,
+        // gap-checked but never adjusted.
+        var isMaxSpeed = v.Def.DepartSpeed.Kind == DepartSpeedSpec.Max;
+        var resolvedSpeed = isMaxSpeed
+            ? KraussModel.LaneVehicleMaxSpeed(lane.Speed, v.SpeedFactor, v.VType)
+            : v.Def.DepartSpeed.Literal;
+
         if (leader is not null)
         {
             // MSLane.cpp:1097 safeInsertionSpeed(veh, seen=-pos, leaders, speed): gap =
@@ -2433,14 +2556,16 @@ public sealed partial class Engine : IEngine
                 // yet -- do not insert this step.
                 return false;
             }
+
+            if (isMaxSpeed)
+            {
+                resolvedSpeed = Math.Min(resolvedSpeed, KraussModel.MaximumSafeFollowSpeed(
+                    gap, resolvedSpeed, leader.Kinematics.Speed, leader.VType.Decel,
+                    v.VType, _config!.StepLength, onInsertion: true));
+            }
         }
 
         var route = _routesById[v.Def.RouteId];
-        // The departure lane is `laneHandle` (resolved by the caller as the edge's lane whose Index
-        // == DepartLaneIndex). LanesByHandle[laneHandle] is that exact lane (dense array index, no
-        // per-candidate `edge.Lanes.First(...)` predicate-closure alloc), byte-identical to the old
-        // resolution: same edge (route.Edges[0]), same first-matching lane index.
-        var lane = _network!.LanesByHandle[laneHandle];
 
         v.LaneId = lane.Id;
         // D2: keep LaneHandle in lockstep with LaneId at every write site -- the lane just
@@ -2452,9 +2577,10 @@ public sealed partial class Engine : IEngine
             // patchSpeed=false (departSpeed explicitly given): the vehicle is inserted at its
             // requested departPos/departSpeed unchanged -- `nspeed` (the safe-insertion-speed
             // computation) is only used for the checkFailure gate above, never applied as the
-            // actual insertion speed in this branch.
-            Pos = v.Def.DepartPos,
-            Speed = v.Def.DepartSpeed,
+            // actual insertion speed in this branch. (patchSpeed=true / Max: resolvedSpeed is
+            // already the same-lane-leader-clamped cap computed above.)
+            Pos = insertPos,
+            Speed = resolvedSpeed,
             // Phase 2 (P2.2): departPosLat initial lateral placement -- 0 for every phase-1 vehicle
             // (lane-centred, gated on _sublane), so byte-identical.
             LatOffset = InitialLatOffset(v, lane),
@@ -2469,10 +2595,12 @@ public sealed partial class Engine : IEngine
         // C2-v: resolve the Exit (routing pool) AND Arrival sequences together (see
         // _laneSeqArrival's own comment). Both slices share LaneSeqStart/Len; they differ only where
         // the route requires an intra-edge lane change.
-        var routeKey = (v.Def.RouteId, v.Def.DepartLaneIndex);
+        // P0-C1: keyed by the RESOLVED departLaneIndex, so a Best vehicle's lane sequence is
+        // resolved on the fly and cached lazily here (PrewarmInsertRouteCache only prewarms Given).
+        var routeKey = (v.Def.RouteId, departLaneIndex);
         if (!_insertRouteSeqCache.TryGetValue(routeKey, out var seq))
         {
-            seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
+            seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, departLaneIndex);
             _insertRouteSeqCache[routeKey] = seq;
         }
 
@@ -2492,13 +2620,23 @@ public sealed partial class Engine : IEngine
         var downstreamAtInsert = poolSeq.Length > 1 ? poolSeq.AsSpan(1) : ReadOnlySpan<int>.Empty;
         if (downstreamAtInsert.Length > 0
             && TryFindCrossJunctionLeader(
-                v.Def.DepartSpeed, v.VType, v, lane.Handle, v.Def.DepartPos, downstreamAtInsert,
+                resolvedSpeed, v.VType, v, lane.Handle, insertPos, downstreamAtInsert,
                 new ActiveRearmost(this), _config!.StepLength, out var insLeader, out var insGap))
         {
             var insSpeed = KraussModel.MaximumSafeFollowSpeed(
-                insGap, v.Def.DepartSpeed, insLeader.Kinematics.Speed, insLeader.VType.Decel,
+                insGap, resolvedSpeed, insLeader.Kinematics.Speed, insLeader.VType.Decel,
                 v.VType, _config.StepLength, onInsertion: true);
-            if (insSpeed < v.Def.DepartSpeed)
+            if (isMaxSpeed)
+            {
+                // patchSpeed=true: clamp down instead of failing (only a real gap<0 -- already
+                // ruled out above -- fails insertion outright).
+                if (insSpeed < resolvedSpeed)
+                {
+                    resolvedSpeed = insSpeed;
+                    v.Kinematics.Speed = resolvedSpeed;
+                }
+            }
+            else if (insSpeed < resolvedSpeed)
             {
                 // Not enough room to enter at departSpeed behind the downstream leader -- retry next
                 // step (do NOT append to the pools; v stays un-Inserted).
@@ -2525,7 +2663,7 @@ public sealed partial class Engine : IEngine
     // by the committed single-shared-edge rail meet and is left for a scenario that exercises it.
     // Returns false immediately for road vehicles and for a route with no bidi lane, so every road
     // scenario's insertion path is byte-identical.
-    private bool RailBidiTrackOccupied(VehicleRuntime v)
+    private bool RailBidiTrackOccupied(VehicleRuntime v, int departLaneIndex)
     {
         if (!VTypeDefaults.IsRailway(v.VType))
         {
@@ -2533,7 +2671,7 @@ public sealed partial class Engine : IEngine
         }
 
         var route = _routesById[v.Def.RouteId];
-        var (poolSeq, _) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, v.Def.DepartLaneIndex);
+        var (poolSeq, _) = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, departLaneIndex);
         foreach (var handle in poolSeq)
         {
             var bidiLaneId = _network.TryGetBidiLaneId(_network.LanesByHandle[handle].Id);
