@@ -312,8 +312,13 @@ external discs (a walking external entity); static walls + oriented boxes (§3a)
 across a sidewalk. Full occlusion of a portal triggers a strategic reroute.
 
 **Crosswalk gates (Req 3, 5) — NEW, rule-based (decision D5).** Peds hold at the crossing portal until the
-walk phase, reading `Engine.TlStates` / `Engine.TlLaneHandles` (already exposed for rendering,
-`docs/SUMOSHARP-DEADRECKONING.md` §5.2). On the walk phase the gate opens and the accumulated group
+walk phase, then release. *(POC-2 finding: `Engine.TlStates`/`TlLaneHandles` does **not** expose
+pedestrian crossings — `Engine.BuildTlControlledLanes` only considers non-internal road lanes, but a
+crossing is gated on an internal walkingArea→crossing connection, so no crossing link ever appears in that
+projection. POC-2 therefore sources the walk signal from the net's real `<tlLogic>`/`<connection>` phase
+timing directly, which matches what the live Engine computes; binding the gate to a live Engine crossing
+signal would need a new Engine TLS-projection seam — a Core change deferred to avoid perturbing the parity
+core and the parallel TLS/rerouting work.)* On the walk phase the gate opens and the accumulated group
 releases; cars stop at the stop line via the existing constraint. The **accumulate-then-surge** crowd of
 Req 5 is *emergent* from the gate plus ORCA bottleneck dynamics — no crowd-choreography needed. The **same
 portal-gate abstraction** models a mall entrance/exit as a capacity-limited portal (Req 5): a throughput
