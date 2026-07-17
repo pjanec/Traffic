@@ -270,4 +270,7 @@ when I first need to regenerate a golden. OK to do that as part of landing the f
     DiscardedDepartureCount) + scenarios/50-max-depart-delay BIT-EXACT anchor (blocker stops the
     insertion zone; SUMO drops 9 of 13 followers past the 5 s delay, inserts 4 -- incl. v10/v12 on
     their exact eviction step, proving attempt-before-evict order); 561 green, byte-identical ✅
-- [ ] X1 attention-aware popping (functional/statistical tests, no parity)
+- [ ] X1 attention-aware popping (functional/statistical tests, no parity) -- DESIGNED
+  (docs/HIGH-DENSITY-X1-DESIGN.md): RealismMask (immutable snapshot + volatile swap) gating the
+  teleport action (CheckJamTeleports) + on-lane spawn (InsertDepartingVehicles); inert-by-default.
+  Awaiting owner sign-off on scope before implementation.
