@@ -1,6 +1,6 @@
 # HIGH-DENSITY-PLAN.md — verified gap findings + proposed plan
 
-**Status:** STEP 4 — owner steered; implementing P0 (design in `docs/HIGH-DENSITY-P0-DESIGN.md`).
+**Status:** CHECKPOINT (merged to main @baa0a73, 556 green). P0 (A/B/C1/C2/D) + P1-E + P1-F DONE. Remaining: P2-G multi-lane car-following gap, P2-H max-depart-delay, X1 attention-aware popping. Continuation handoff: `docs/HIGH-DENSITY-HANDOFF.md`.
 
 ### Owner steer (received)
 - **Standing architectural principle — performance may beat exact SUMO parity in production.**
