@@ -76,7 +76,7 @@ internal static class Program
         var fastGate = false;
         var spatial = false;
         var region = false;
-        var coordinatedLc = false; // P2G-2: coordinated dense LC is OPT-IN (--coordinated-lc); default off until organic-net robustness is hardened
+        var coordinatedLc = true; // P2G-2: coordinated dense LC is the PRODUCT DEFAULT (robustness hardened); --parity opts out
         var regionGrid = 4;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;

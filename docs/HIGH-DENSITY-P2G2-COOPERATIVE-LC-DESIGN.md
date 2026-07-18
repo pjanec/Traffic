@@ -153,13 +153,25 @@ mode runs clean. Two distinct failures:
    changes** — NOT hit on clean grids (the functional tests + the saturated grid run coordinated clean).
    **NOT yet fixed** — needs the lane-seq convergence path hardened against aggressive LC.
 
-**Decision:** coordinated stays **OPT-IN** (`Engine.CoordinatedLaneChange`, `--coordinated-lc`), default
-OFF — it must not be the default while it can crash on organic nets. It is validated + perf-neutral on
-grids; the ORGANIC-NET robustness (failure 2) is the gate to making it the default. Next step: reproduce
-the lane-seq desync minimally, harden `TryReResolveFromActualLane` / the pool-index advance against an
-LC-induced off-pool-lane state, THEN flip the default.
+**Both FIXED (session 3) — coordinated is now the PRODUCT DEFAULT.** Failure 2 was a **thread-safety
+race, not a lane-seq logic bug**: `TryReResolveFromActualLane` appends to the shared `_laneSeqPool`/
+`_laneSeqArrival`, and it is reached from the REGION-PARALLEL `ExecuteMoves`. Under parity the re-resolve
+is rare; under the coordinated model's aggressive lane-changing many workers hit it at once, so the
+unsynchronised `Count`-read + `AddRange` overlapped slices and corrupted the list size → `IndexOutOfRange`.
+Fixed by a `_laneSeqPoolLock` around the (rare) append (reads of an already-committed slice are safe
+without it — List resize is copy-based and `_size` only grows). The lock is uncontended on the serial path
+(all committed goldens run serial via `dotnet test`), so byte-identical. Verified: coordinated `--region`
+runs clean across the whole committed ladder (city-300/3000, organic-L2, saturated grid, scn 46/47),
+serial vs `--region` byte-identical, and `RungHDp2g2CoordinatedLaneChangeTests` adds an organic-net
+region-parallel no-crash regression guard.
+
+**Coordinated is now the DEFAULT in the runtime hosts** (`Sim.Run`, `SimHost`, `Sim.BenchCity` — all
+default ON, `--parity` opts out). The `Engine.CoordinatedLaneChange` LIBRARY property stays default
+`false` = the deterministic SUMO-parity anchor the golden `dotnet test` suite runs on (flipping the library
+default would churn 190 test sites for no benefit); a direct library/game embed sets
+`CoordinatedLaneChange = true` (one line) for the product behaviour.
 
 ## 4. Tracked as
-`docs/HIGH-DENSITY-PLAN.md` P2G-2 (config-gated). Foundation + spike + perf LANDED; coordinated is a
-believable, perf-neutral **opt-in** (validated on grids). Blocker to making it the default: the organic-net
-lane-seq desync crash (§3.7). Bit-exact gate-ON de-prioritised per the owner steer.
+`docs/HIGH-DENSITY-PLAN.md` P2G-2. Foundation + spike + perf + **robustness hardening + default flip
+LANDED**; coordinated is the believable, perf-neutral, robust **product default** (`--parity` for the
+deterministic anchor). Bit-exact gate-ON de-prioritised per the owner steer (believable + fast > bit-exact).

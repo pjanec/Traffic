@@ -30,6 +30,16 @@ public sealed partial class Engine : IEngine
     // compact if that ever matters).
     private readonly List<int> _laneSeqPool = new();
 
+    // P2G-2 robustness: TryReResolveFromActualLane APPENDS to _laneSeqPool/_laneSeqArrival, and it is
+    // reached from the REGION-PARALLEL ExecuteMoves phase (a vehicle that hits a lane boundary on a
+    // non-pool lane -- rare under parity, FREQUENT under the coordinated model's aggressive lane-changing).
+    // The append (Count-read + AddRange) must be atomic across worker threads, or concurrent re-resolves
+    // overlap slices and corrupt the List's size -> IndexOutOfRange in ExecuteMoveVehicle's pool reads.
+    // This lock serialises ONLY the (rare) append; reads of an already-committed slice are safe without it
+    // (List resize is copy-based and _size only grows, so a valid index never faults). Uncontended (~free)
+    // on the serial path, so every committed golden (all run serial via dotnet test) is byte-identical.
+    private readonly object _laneSeqPoolLock = new();
+
     // L0d (PERF-ROADMAP.md): reused across steps by InsertDepartingVehicles (a serial, single-threaded
     // Input-phase call) instead of a fresh List+HashSet every step. Cleared at the start of each use.
     private readonly List<VehicleRuntime> _insertCandidates = new();
@@ -8456,9 +8466,18 @@ public sealed partial class Engine : IEngine
             return false;
         }
 
-        var start = _laneSeqPool.Count;
-        _laneSeqPool.AddRange(pool);
-        _laneSeqArrival.AddRange(arrival);
+        // P2G-2 robustness: atomic Count-read + append -- ExecuteMoves is region-parallel, and the
+        // coordinated model reaches this re-resolve concurrently from many workers. Without the lock the
+        // Count reads race and slices overlap, corrupting _laneSeqPool's size (IndexOutOfRange downstream).
+        // The offset chosen depends on lock order, but it is internal bookkeeping -- the slice CONTENT is
+        // the vehicle's own, so the trajectory stays deterministic (serial vs --region byte-identical).
+        int start;
+        lock (_laneSeqPoolLock)
+        {
+            start = _laneSeqPool.Count;
+            _laneSeqPool.AddRange(pool);
+            _laneSeqArrival.AddRange(arrival);
+        }
         v.LaneSeqStart = start;
         v.LaneSeqLen = pool.Length;
         v.LaneSeqIndex = 0;

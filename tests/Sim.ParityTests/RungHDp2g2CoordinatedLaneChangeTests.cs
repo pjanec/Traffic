@@ -68,6 +68,25 @@ public class RungHDp2g2CoordinatedLaneChangeTests
         Assert.True(f1OnFastLane, "coordinated-LC: f.1 should speed-gain onto the faster lane e_det1_1 (like SUMO).");
     }
 
+    // ROBUSTNESS regression guard (docs/HIGH-DENSITY-P2G2-COOPERATIVE-LC-DESIGN.md §3.7): coordinated
+    // mode + REGION-PARALLEL execute on a large ORGANIC multi-lane net must NOT crash. Before the
+    // _laneSeqPoolLock fix, the aggressive coordinated lane-changing triggered frequent concurrent
+    // TryReResolveFromActualLane appends to the shared _laneSeqPool during the parallel ExecuteMoves,
+    // corrupting the list's size -> IndexOutOfRange. This runs the exact scenario+mode that crashed and
+    // asserts it completes and vehicles arrive.
+    [Fact]
+    public void CoordinatedLaneChange_On_OrganicNet_RegionParallel_DoesNotCrash()
+    {
+        var dir = Path.Combine(RepoRoot(), "scenarios", "_bench", "city-organic-L2");
+        var engine = new Engine { CoordinatedLaneChange = true, RegionPlan = true };
+        engine.LoadScenario(
+            Path.Combine(dir, "net.net.xml"), Path.Combine(dir, "rou.rou.xml"), Path.Combine(dir, "config.sumocfg"));
+
+        var traj = engine.Run(400); // must not throw (region-parallel append race is fixed)
+
+        Assert.NotEmpty(traj.VehicleIds); // sanity: the run actually simulated vehicles
+    }
+
     // Control: the DEFAULT path (gate OFF) keeps f.1 on e_det1_0 -- the residual the coordinated mode
     // fixes. Confirms the two behaviours genuinely differ (the gate is load-bearing) and that gate-OFF is
     // the unchanged default.

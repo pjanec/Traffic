@@ -54,11 +54,10 @@ internal static class Program
         var warmupSteps = 0;
         string? summaryOut = null;
         string? statisticOut = null;
-        // P2G-2: the coordinated dense lane-change model is OPT-IN (`--coordinated-lc`) -- believable
-        // multi-lane overtaking/merging, perf-neutral, but NOT yet robust on organic/rerouted nets (a
-        // lane-sequence desync crash, see HIGH-DENSITY-P2G2-COOPERATIVE-LC-DESIGN.md), so it is not the
-        // default until that is hardened. `--parity` is the explicit deterministic SUMO-anchor mode.
-        var coordinatedLc = false;
+        // P2G-2: the coordinated dense lane-change model is the PRODUCT DEFAULT (believable multi-lane
+        // overtaking/merging, perf-neutral, robust). `--parity` selects the deterministic SUMO-anchor mode
+        // (byte-identical to the committed goldens) -- the mode the offline `dotnet test` suite runs.
+        var coordinatedLc = true;
         for (var i = 1; i < args.Length; i++)
         {
             switch (args[i])

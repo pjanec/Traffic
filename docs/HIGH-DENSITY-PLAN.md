@@ -264,13 +264,15 @@ when I first need to regenerate a golden. OK to do that as part of landing the f
     overtaking/merging fidelity + merge capacity; LOSE = LC-phase perf (the gate) + deep-core risk.
     PERF MEASURED: perf-neutral (dense: ~= or faster than parity; light: within noise) -- Sim.BenchCity
     --coordinated-lc / --parity. Deterministic under parallel (serial vs --region byte-identical).
-    ROBUSTNESS BLOCKER to making it the DEFAULT (docs/HIGH-DENSITY-P2G2-COOPERATIVE-LC-DESIGN.md §3.7):
-    coordinated mode CRASHES on large organic multi-lane nets (city-organic-L2) -- a lane-sequence
-    desync (IndexOutOfRange in ExecuteMoveVehicle) the aggressive LC exposes; the off-route-edge crash
-    was fixed (TryBestLanesForEdge). So coordinated stays OPT-IN (--coordinated-lc, default OFF); harden
-    the lane-seq convergence path, THEN flip the default. Benchmarks + Windows instructions:
-    docs/BENCHMARK-INSTRUCTIONS.md + scripts/bench-coordinated.ps1 (+ existing scripts/bench-scaling.ps1).
-    Bit-exact gate-ON de-prioritised (owner: believable+fast > bit-exact).
+    ROBUSTNESS HARDENED + DEFAULT FLIPPED (§3.7): the organic-net crash was a THREAD-SAFETY race --
+    TryReResolveFromActualLane appends to the shared _laneSeqPool from the region-parallel ExecuteMoves;
+    coordinated's aggressive LC hits it concurrently -> corrupted list size -> IndexOutOfRange. Fixed by
+    _laneSeqPoolLock (byte-identical on the serial golden path). Plus TryBestLanesForEdge (off-route-edge
+    guard). Coordinated now runs clean region-parallel across the whole committed ladder + a no-crash
+    regression test. Coordinated is now the PRODUCT DEFAULT in the hosts (Sim.Run/SimHost/Sim.BenchCity;
+    --parity opts to the deterministic anchor); Engine library default stays false (the golden-suite
+    anchor). Benchmarks + Windows instructions: docs/BENCHMARK-INSTRUCTIONS.md + scripts/bench-coordinated.ps1
+    (+ scripts/bench-scaling.ps1). DONE. Bit-exact de-prioritised (owner: believable+fast > bit-exact).
   - [~] P2G-3 scenario-46 speedGain residual -- DIAGNOSED (docs/HIGH-DENSITY-P2G3-DESIGN.md). Root
     cause is NOT the neighDist gate (proven: continuation distance implemented + instrumented, gate
     passes at 82.5 but the speedGain still never fires) and NOT cooperative LC (SUMO log: reason

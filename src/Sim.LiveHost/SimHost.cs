@@ -88,9 +88,9 @@ public sealed class SimHost : IDisposable
             var old = _runner;
 
             // P2G-2: the interactive/live host runs the coordinated dense lane-change model by default
-            // (believable multi-lane overtaking/merging, perf-neutral) -- the product default. The
-            // deterministic SUMO-anchor mode is CoordinatedLaneChange=false (the committed goldens' mode).
-            var engine = new Engine(); // P2G-2 coordinated LC is opt-in until organic-net robustness is hardened (see design doc)
+            // (believable multi-lane overtaking/merging, perf-neutral, robustness-hardened) -- the product
+            // default. The deterministic SUMO-anchor mode is CoordinatedLaneChange=false (the goldens' mode).
+            var engine = new Engine { CoordinatedLaneChange = true };
             if (_scenarioMode)
             {
                 engine.LoadScenario(_netPath, _rouPath!, _cfgPath!); // drives the scenario's OWN demand

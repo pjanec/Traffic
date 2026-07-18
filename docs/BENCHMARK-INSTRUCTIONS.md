@@ -38,9 +38,15 @@ convenience wrappers.
 
 Steps default to the scenario's config end; pass `--steps N` to fix the horizon for a fair timing.
 
+> **Lane-change mode.** The runtime tools (`Sim.BenchCity`, `Sim.Run`, the live host) now default to the
+> **coordinated dense lane-change model** — believable multi-lane overtaking/merging, perf-neutral,
+> robustness-hardened (runs clean region-parallel on every committed scenario). Pass **`--parity`** to run
+> the deterministic SUMO-anchor mode instead (the mode the golden `dotnet test` suite uses). Both are
+> deterministic and thread-independent (serial vs `--region` byte-identical).
+
 ## 3. Benchmark A — engine throughput & core scaling (the primary numbers)
-This uses the **default (parity) lane-change mode**, which is robust on every scenario. This is what to
-report for "how fast is the engine on the target hardware."
+This is what to report for "how fast is the engine on the target hardware." Runs in the default
+(coordinated) mode; add `--parity` if you also want the anchor-mode number.
 
 **Single run, medium + large rungs (record wall time / RTF / steps-sec / peak RSS):**
 ```powershell
@@ -65,26 +71,23 @@ foreach ($t in 1,2,4,8,16) {
 Note: the trajectory is thread-count-independent (byte-identical serial vs parallel — verified), so only
 wall time changes across the sweep.
 
-## 4. Benchmark B — coordinated lane-change mode vs parity (multi-lane believability cost)
-The **coordinated dense lane-change model** (`--coordinated-lc`) adds believable multi-lane
-overtaking/merging. It is **OPT-IN** today (default = parity). Measured cost on dense grids: **perf-neutral
-to slightly faster** (better flow offsets the extra LC work). A/B it on the saturated multi-lane grid:
+## 4. Benchmark B — coordinated (default) vs parity lane-change cost
+The coordinated dense lane-change model adds believable multi-lane overtaking/merging. Measured cost:
+**perf-neutral to slightly faster** on dense traffic (better flow offsets the extra LC work). A/B any
+scenario (the multi-lane ones show the difference; single-lane grids are identical since coordinated LC
+only acts on multi-lane):
 
 ```powershell
-# parity (default) vs coordinated -- same scenario, 3 runs each, take the best wall time
+# coordinated (default) vs parity -- same scenario, 3 runs each, take the best wall time
+1..3 | % { dotnet run -c Release --project src/Sim.BenchCity -- scenarios/_diag/willpass-saturation --steps 700 --region --no-fcd }
 1..3 | % { dotnet run -c Release --project src/Sim.BenchCity -- scenarios/_diag/willpass-saturation --steps 700 --region --no-fcd --parity }
-1..3 | % { dotnet run -c Release --project src/Sim.BenchCity -- scenarios/_diag/willpass-saturation --steps 700 --region --no-fcd --coordinated-lc }
 ```
-Or the convenience wrapper (does both, prints a comparison):
+Good multi-lane scenarios for this A/B: `scenarios/_diag/willpass-saturation` (saturated grid) and
+`scenarios/_bench/city-organic-L2` (organic). Or the convenience wrapper (does both, prints a comparison):
 ```powershell
 pwsh scripts/bench-coordinated.ps1 -Scenario scenarios/_diag/willpass-saturation -Steps 700 -Repeats 3
+pwsh scripts/bench-coordinated.ps1 -Scenario scenarios/_bench/city-organic-L2   -Steps 600 -Repeats 3
 ```
-
-### IMPORTANT caveat for coordinated mode
-`--coordinated-lc` is validated on **grid** nets (the saturated grid, city grids). It is **NOT yet
-robust on large ORGANIC nets** — it currently crashes on `city-organic-L2` (a lane-sequence desync being
-hardened; see `docs/HIGH-DENSITY-P2G2-COOPERATIVE-LC-DESIGN.md` §3.7). So for Benchmark B use the
-**grid** scenario (`willpass-saturation`), and run `city-organic-L2` in **parity mode only** for now.
 
 ## 5. What to record (per run)
 - `wall time` (s) and `RTF (sim/wall)` — the headline throughput.
