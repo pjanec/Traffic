@@ -16,6 +16,10 @@
     <!-- Reuse Sim.Core's Vec2 (Sim.Core.Orca.Vec2) for all geometry so downstream navmesh/ORCA
          code shares one point type. Do not define a new point struct here. -->
     <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <!-- P3-1 (docs/PEDESTRIAN-TASKS.md): the pedestrian wire-record bridge (PedReplicationPublisher /
+         PedReplicationReceiver) needs Sim.Replication's transport-neutral IPedReplicationSink/Source +
+         FrameCodec. Sim.Replication itself stays free of a reverse reference to Sim.Pedestrians. -->
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
   </ItemGroup>
 
 </Project>

@@ -89,7 +89,12 @@ Graduation into production (making the *routed ambient crowd* lively):
 
 ## Stage P3 — Networking (DDS multicast, end-to-end)
 
-- [ ] **P3-1** Crowd + PathArc DDS topics + regime lifecycle events (multicast loopback round-trip)
+- [x] **P3-1** Pedestrian wire codec + transport-neutral replication surface (hermetic) *(`ActivityTimelineWire`
+      Encode/Decode; `IPedReplicationSink`/`Source` + `InMemoryPedReplicationBus` — a TRUE byte loopback, not
+      a struct hand-off; `PedReplicationPublisher`/`Receiver` bridge reusing `HeadlessIg`; `Sim.Pedestrians`→
+      `Sim.Replication` one-way, `Sim.Replication` stays ped-free; round-trip test: server==IG over serialized
+      bytes — EXACT for PathArc + ActivityTimeline (801 samples), ≤0.02 m for quantized FreeKinematic (meas.
+      2.7e-7 m), receiver `ModelOf` flips on promote; 590 parity + 111 ped green, no DDS)*
 - [ ] **P3-2** Publisher + global bandwidth governor (single-stream < 500 Mbit/s under spike)
 - [ ] **P3-3** IG-side reconstruction (FreeKinematic extrapolator + PathArc follower; server==IG over DDS)
 
