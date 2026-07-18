@@ -1,0 +1,6 @@
+<nodes>
+    <node id="A" x="0" y="0" type="dead_end"/>
+    <node id="J" x="60" y="0" type="priority"/>
+    <node id="K" x="90" y="0" type="dead_end"/>
+    <node id="P" x="60" y="30" type="dead_end"/>
+</nodes>

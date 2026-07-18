@@ -8543,18 +8543,22 @@ public sealed partial class Engine : IEngine
         var arrivalLane = _network!.LanesByHandle[v.LaneHandle];
         var arrivalPos = arrivalLane.Length;
 
-        // routeLength = (sum of full lengths of every route edge BEFORE the arrival edge) -
-        // departPos + arrivalPos (see VehicleRuntime.DepartPosResolved's own comment for the SUMO
-        // citation). The arrival edge is always route.Edges[^1] here (arrival only ever fires on the
-        // vehicle's LAST route edge).
-        var route = _routesById[EffectiveRouteId(v)];
-        var lengthBeforeArrivalEdge = 0.0;
-        for (var i = 0; i < route.Edges.Count - 1; i++)
+        // routeLength = -departPos + (sum of the lengths of every lane the vehicle fully LEFT) +
+        // arrivalPos. SUMO's MSDevice_Tripinfo accumulates `lane.getLength()` on each
+        // NOTIFICATION_JUNCTION leave (MSVehicle.cpp), so its sum spans the INTERNAL junction lanes
+        // between edges, not just the named route edges. We therefore sum the vehicle's resolved lane
+        // SEQUENCE (`_laneSeqPool`, which includes those internal/junction lanes) up to -- but not
+        // including -- the arrival lane (`v.LaneSeqIndex`, the last pool index at arrival). For a
+        // single-edge route the sum is empty (LaneSeqIndex == 0), so this is byte-identical to the
+        // prior edge-only form (scenario 66); on a multi-junction route it now adds the internal
+        // lane lengths SUMO counts (fixes the ~11.77 m/junction shortfall vs golden -- scenario 72).
+        var lengthBeforeArrival = 0.0;
+        for (var i = 0; i < v.LaneSeqIndex; i++)
         {
-            lengthBeforeArrivalEdge += _network.EdgesById[route.Edges[i]].Lanes[0].Length;
+            lengthBeforeArrival += _network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + i]].Length;
         }
 
-        var routeLength = lengthBeforeArrivalEdge - v.DepartPosResolved + arrivalPos;
+        var routeLength = lengthBeforeArrival - v.DepartPosResolved + arrivalPos;
 
         return new CompletedTripInfo(
             Id: v.Def.Id,

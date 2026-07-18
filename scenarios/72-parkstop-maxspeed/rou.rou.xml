@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Issue-2 zombie-stop regression (docs/SERVE-PATH-PLAN.md "Issue 2 (junction teleports)", fix
+         commit c130fdc, Engine.cs TryInsertOnLane's `isStopDepart` branch). A departPos="stop" origin
+         with departSpeed="max", the exact profile that, pre-fix, inserted the vehicle MOVING (at
+         lane max speed) instead of stopped, so it could lane-change off its stop lane before
+         ProcessNextStop (which requires speed<=haltingSpeed ON the stop lane) ever marked the stop
+         Reached, leaving a permanent unreached "zombie" stop that later froze the vehicle at its
+         arrival lane end instead of letting it arrive (see Engine.cs:3244-3264's own citation).
+         Geometry forces the mechanism: e0 is a 2-lane approach (e0_0 continues on to e1; e0_1 is a
+         LEFT-TURN-ONLY lane to a dead-end spur "da", see connections.con.xml), with parkingArea pa0
+         on the "wrong" lane e0_1. The route is "e0 e1" (never uses da), so once the vehicle's short
+         duration=8 stop elapses it MUST lane-change from e0_1 onto e0_0 to continue, exactly the
+         same kind of route-continuation lane-change that, pre-fix, could equally fire WHILE still
+         "moving-not-yet-reached", stranding the stop on the wrong lane forever. Verified against
+         vanilla SUMO 1.20.0: origin departs parked (speed 0, despite departSpeed="max") at pos=40 on
+         e0_1, holds through t=8, resumes+lane-changes onto e0_0 at t=9, crosses the junction, and
+         ARRIVES on e1 at t=15 (golden.tripinfo.xml: arrivalLane="e1_0" arrivalSpeed=10). -->
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0 e1"/>
+    <vehicle id="origin" type="car" route="r0" depart="0" departPos="stop" departSpeed="max" departLane="1">
+        <stop parkingArea="pa0" duration="8"/>
+    </vehicle>
+</routes>
