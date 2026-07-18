@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-18 17:26:42 by Eclipse SUMO sumo Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/net.net.xml"/>
+        <route-files value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/rou.rou.xml"/>
+        <additional-files value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/extra.add.xml"/>
+    </input>
+
+    <output>
+        <precision value="6"/>
+        <fcd-output value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.fcd.xml"/>
+        <fcd-output.acceleration value="true"/>
+        <tripinfo-output value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.tripinfo.xml"/>
+        <save-state.times value="1"/>
+        <save-state.files value="/home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.state.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="20"/>
+        <step-length value="1"/>
+    </time>
+
+    <processing>
+        <step-method.ballistic value="false"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+
+</configuration>
+-->
+
+<snapshot xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/state_file.xsd" version="1.20.0" time="1.000" type="micro">
+    <route id="r0" state="1" edges="e0 e1"/>
+    <delay number="1" begin="1" end="0" depart="0.00" time="0.00"/>
+    <vType id="car" maxSpeed="10.00" vClass="passenger" sigma="0"/>
+    <vehicle id="sink0" type="car" depart="0.000" departLane="1" departPos="0.000000" departSpeed="max" route="r0" distance="0 0" speedFactor="1.0000" state="2078 0 0 0.000000 0 0.000000 1000 0 0" pos="0.00 -5.00 10.00" speed="10.00 10.00" angle="90.00" posLat="0.00" waitingTime="100000 0">
+        <stop parkingArea="pa1" duration="100000.000"/>
+        <device id="tripinfo_sink0" state="e0_1 0 10 -0 0 0 0 0 -1"/>
+    </vehicle>
+    <lane id="e0_1">
+        <vehicles value="sink0"/>
+    </lane>
+</snapshot>

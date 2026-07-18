@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="rou.rou.xml"/>
+        <additional-files value="extra.add.xml"/>
+    </input>
+    <time>
+        <begin value="0"/>
+        <end value="20"/>
+        <step-length value="1"/>
+    </time>
+    <processing>
+        <step-method.ballistic value="false"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+    </processing>
+    <report>
+        <no-step-log value="true"/>
+    </report>
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+</configuration>

@@ -264,10 +264,40 @@ first-hand: full suite 608 parity (+4) / 3 skipped; junction 08/11/26/27/34/38/3
 48/66/67/68/69 + determinism byte-identical; only `scenarios/70-*` new. Independently re-ran the synthetic
 grid through `sumosharp`: jam-teleports 21 → 0 (vanilla 0), mean rel-speed now 0.73 (was 0.41).**
 
-*Still open — Issue 1 residency tail:* completed-tripinfo on the grid is now *more* visible (1334→1351)
-because the deadlock no longer masks it — the sinks that overshoot the parking lane (they never
-strategically lane-change onto it) still wrongly complete. That is the **cross-edge strategic-LC** pass
-(next), separate from this off-lane fix.
+## Post-acceptance: Issue 1 residency tail (cross-edge strategic LC) — FIXED → definitive grid parity
+
+The off-lane fix exposed the last gap: on the free-flow grid the sinks reach the short parking edge too
+fast to lane-change, so they overshoot and wrongly complete (111/120). SUMO pre-positions them onto the
+connecting lane on the *approach* edge via `updateBestLanes` propagating the stop-lane requirement
+backward. **Fix (Opus-reviewed hard):** `NetworkModel.BuildTerminalLaneQ` folds a park-and-stay stop's
+lane into the base case of the best-lanes backward pass (truncating every other last-edge lane to the
+stop position, keeping the stop's lane full length — a port of `MSVehicle::updateBestLanes`
+`MSVehicle.cpp:5913-5933`); the existing `BackwardPassEdge` recursion then steers every earlier route
+edge's pool lane toward the connecting lane, so the *existing* pool-driven strategic LC pre-positions the
+car across edges. `ComputeBestLanes`/`ResolveLaneSequence` gained an optional `stopOverride` (null-default
+→ every prior call byte-identical). Caching hazard handled: a qualifying vehicle (`ParkStopFinalEdgeOverride`
+— parking stop on its route's final edge) **bypasses** the route-keyed pool/bestLanes caches and resolves
+per-vehicle, so a same-route non-parking vehicle is unaffected. Two additional bugs found + fixed (both
+gated, byte-identical for non-parked): a parked vehicle now skips periodic reroute (`isStopped` guard,
+`MSDevice_Routing.cpp:279`) and skips the keep-right/strategic/speed-gain LC decision (`IsParked` guard —
+without it, a spurious speed-gain lane swap off the parkingArea lane un-held the stop and let the car
+resume/arrive).
+
+Acceptance: `scenarios/71-parkandstay-crossedge` (2-edge route through a junction, parkingArea near the
+start of the 2nd edge so the car MUST pre-position on the approach edge), golden from **SUMO 1.20.0**,
+empty tripinfo. **Verified first-hand — the definitive grid parity (Geneva's own done-condition):**
+
+| synthetic grid `--end 1000` | vanilla | before | after |
+|---|--:|--:|--:|
+| tripinfo total | 1240 | 1351 | **1240** |
+| sinks wrongly completed (of 120) | 0 | 111 | **0** |
+| `ids(ss.ti) − ids(van.ti)` | — | 111 | **0** |
+| jam-teleports | 0 | 21→0 | **0** |
+| no-cheating audit | — | — | **PASS** |
+
+Full suite 613 parity (+5) / 3 skipped; only `scenarios/71-*` new — every existing golden byte-identical
+(LC 07/12/18/41/45/46/49, routing 15, junctions 08/11/26/38/39/40, parking 48/66/67/68/69/70, Issue-1
+69, determinism D1/D8 all green). **Issue 1 and Issue 2 are both fully closed and match vanilla.**
 
 ## All three gaps landed — definitive acceptance status
 

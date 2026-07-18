@@ -1,0 +1,9 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-18T17:26:42Z
+command=sumo -c /home/user/SumoSharp/scenarios/71-parkandstay-crossedge/config.sumocfg --fcd-output /home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files /home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.state.xml --no-step-log true --tripinfo-output /home/user/SumoSharp/scenarios/71-parkandstay-crossedge/golden.tripinfo.xml
+state_time=1
+# input file hashes (sha256):
+input=net.net.xml sha256=517123fb8c7162094ab9c3fb7103df4d33ccf2e3f17fa7ed4ad2777f52aedb43
+input=rou.rou.xml sha256=edc67774fa6645f09b5b95d92b46536991b0175699dd34a43875953e282e9872
+input=config.sumocfg sha256=cea9569d81bfce9f476b4a09381f5f1f520ea436a5bd1351b3eac1a52b4ae94a

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Issue 1 CROSS-EDGE repro (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md par 7, follow-up to
+         scenarios/69-parkandstay-lc's SAME-edge case). A park-and-stay "sink" vehicle departs on the
+         WRONG (index 1) lane of a 2-lane APPROACH edge (e0, 57m) whose route continues onto a SHORT
+         2-lane PARKING edge (e1, 30m) through a plain priority junction (both lanes connect straight
+         through: e0_0 to e1_0, e0_1 to e1_1). The parkingArea pa1 sits on e1 lane 0 very close to
+         e1's start (startPos=2, endPos=16). e0's 57m length is deliberately NOT a multiple of the
+         10 m/s (departSpeed="max" on an empty lane) per-second step distance, so the vehicle crosses
+         onto e1 already partway into the parkingArea's window (pos~2.9) rather than exactly at its
+         start; but that crossing happens at FULL cruise speed with zero prior deceleration (see
+         golden.fcd.xml t=0..5: constant speed=10 the whole approach), so a vehicle that reaches e1
+         STILL on the wrong lane (e1_1, the straight continuation of the wrong departure lane) has no
+         same-edge lane-change opportunity before StopLineConstraint would need to already be braking
+         for a stop on a DIFFERENT lane; it simply cannot reach lane 0's stop from lane 1 in time
+         and drives off the end of e1 instead. The vehicle must instead PRE-POSITION onto e0_0 (the
+         lane that connects onward to the parkingArea's lane) well before the junction: verified
+         against vanilla SUMO 1.20.0, the real engine changes lane from e0_1 to e0_0 at t=1 (56m
+         before the junction), then crosses onto e1_0 ALREADY on the correct lane at t=6 (pos=2.9) and
+         brakes (via the ordinary SAME-lane stop-approach mechanism; the crossing lands with ample
+         room before endPos=16, so no cross-edge braking lookahead is needed once pre-positioned),
+         settling at pos~16 by t=8. duration="100000" far outlasts any committed sim end, matching the
+         no-cheating sink semantics: the vehicle stays parked and resident (never in tripinfo) for the
+         rest of the run. -->
+    <vType id="car" vClass="passenger" sigma="0" maxSpeed="10.00"/>
+    <route id="r0" edges="e0 e1"/>
+    <vehicle id="sink0" type="car" route="r0" depart="0" departPos="0" departSpeed="max" departLane="1">
+        <stop parkingArea="pa1" duration="100000"/>
+    </vehicle>
+</routes>

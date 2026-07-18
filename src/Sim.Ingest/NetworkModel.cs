@@ -343,7 +343,12 @@ public sealed record NetworkModel(
     // gate). Pinning exit == arrival makes the re-resolved pool start ON the vehicle's actual lane so
     // the crossing advances via that lane's own connection. Only ever passed true for that one
     // boundary case; the default (false) is byte-identical to every existing caller.
-    private List<(string Exit, string Arrival)> ResolveSequenceCore(IReadOnlyList<string> routeEdges, int departLaneIndex, bool forceFirstExitToArrival = false)
+    //
+    // Issue 1 cross-edge fix (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §7): `stopOverride` is a per-VEHICLE
+    // (LaneId, Pos) naming an unreached `<stop parkingArea>` on `routeEdges`'s FINAL edge -- see
+    // ComputeAllBestLanes/BuildTerminalLaneQ for what it does to the backward pass. null (the default)
+    // is byte-identical to every pre-existing caller (no route without such a stop is ever affected).
+    private List<(string Exit, string Arrival)> ResolveSequenceCore(IReadOnlyList<string> routeEdges, int departLaneIndex, bool forceFirstExitToArrival = false, (string StopLaneId, double StopPos)? stopOverride = null)
     {
         var result = new List<(string Exit, string Arrival)>();
         // The lane the vehicle physically occupies on the current edge (depart lane on edge 0, then
@@ -354,7 +359,7 @@ public sealed record NetworkModel(
         // rather than re-running the whole backward pass inside the loop for each edge and each hop
         // (the former O(N^2) ComputeBestLanes calls, each allocating per-edge collections). Lookups
         // below are byte-identical to ComputeBestLanes(routeEdges, edgeId) -- see ComputeAllBestLanes.
-        var bestByEdge = ComputeAllBestLanes(routeEdges);
+        var bestByEdge = ComputeAllBestLanes(routeEdges, stopOverride);
 
         for (var i = 0; i < routeEdges.Count; i++)
         {
@@ -538,9 +543,12 @@ public sealed record NetworkModel(
     // actual lane to Arrival[k] on entering a slot and the strategic lane change converges it onto
     // Pool[k] -- so for every route with no intra-edge change (Arrival == Pool everywhere) this is
     // byte-identical to ResolveLaneSequenceHandles.
-    public (int[] Pool, int[] Arrival) ResolveLaneSequenceHandlesWithArrival(IReadOnlyList<string> routeEdges, int departLaneIndex, bool forceFirstExitToArrival = false)
+    //
+    // Issue 1 cross-edge fix: `stopOverride`, threaded straight through to ResolveSequenceCore -- see
+    // that method's own header comment. null (default) for every caller that predates this fix.
+    public (int[] Pool, int[] Arrival) ResolveLaneSequenceHandlesWithArrival(IReadOnlyList<string> routeEdges, int departLaneIndex, bool forceFirstExitToArrival = false, (string StopLaneId, double StopPos)? stopOverride = null)
     {
-        var sequence = ResolveSequenceCore(routeEdges, departLaneIndex, forceFirstExitToArrival);
+        var sequence = ResolveSequenceCore(routeEdges, departLaneIndex, forceFirstExitToArrival, stopOverride);
         var pool = new int[sequence.Count];
         var arrival = new int[sequence.Count];
         for (var i = 0; i < sequence.Count; i++)
@@ -582,7 +590,11 @@ public sealed record NetworkModel(
     // Throws if the route is genuinely unreachable from `currentEdgeId` (no lane on it has a
     // <connection> to the next route edge at all) -- not exercised by any committed scenario
     // (scenario 18's E1 always has E1_1 continuing to E2).
-    public IReadOnlyList<LaneContinuation> ComputeBestLanes(IReadOnlyList<string> routeEdges, string currentEdgeId)
+    //
+    // Issue 1 cross-edge fix (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §7): `stopOverride`, threaded
+    // straight into the terminal LaneQ -- see BuildTerminalLaneQ's own header comment. null (default)
+    // for every caller that predates this fix, giving the exact prior lane-agnostic terminal LaneQ.
+    public IReadOnlyList<LaneContinuation> ComputeBestLanes(IReadOnlyList<string> routeEdges, string currentEdgeId, (string StopLaneId, double StopPos)? stopOverride = null)
     {
         var edgeIndex = -1;
         for (var i = 0; i < routeEdges.Count; i++)
@@ -606,16 +618,8 @@ public sealed record NetworkModel(
         // reachable downstream continuation, and BestLaneOffset steers -- across multiple junctions
         // -- toward a lane that stays connected to the END of the route (so a route whose insertion
         // lane is dictated by a connection two+ hops out resolves instead of dead-ending).
-        //
-        // Base of the recursion -- the last route edge (MSVehicle.cpp:5951-5989): every lane
-        // trivially continues, Length = its own length, offset 0. (SIMPLIFICATION: SUMO's terminal
-        // edge can assign nonzero offsets when its lanes differ in length; every committed anchor's
-        // terminal lanes are equal-length, so offset 0 is exact here.)
         var lastIndex = routeEdges.Count - 1;
-        var nextQ = EdgesById[routeEdges[lastIndex]].Lanes
-            .OrderBy(l => l.Index)
-            .Select(l => new LaneContinuation(l.Index, AllowsContinuation: true, BestLaneOffset: 0, l.Length))
-            .ToList();
+        var nextQ = BuildTerminalLaneQ(routeEdges[lastIndex], stopOverride);
 
         for (var e = lastIndex - 1; e >= edgeIndex; e--)
         {
@@ -624,6 +628,54 @@ public sealed record NetworkModel(
 
         return nextQ;
     }
+
+    // Issue 1 cross-edge fix (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §7): the base-of-recursion LaneQ
+    // for a route's LAST edge -- ported from MSVehicle::updateBestLanes' forward build
+    // (MSVehicle.cpp:5896-5933). Lane-agnostic (every lane continues, offset 0, full edge length) --
+    // the OLD, byte-identical behavior -- UNLESS `stopOverride` names a lane on THIS edge (a vehicle's
+    // unreached `<stop parkingArea>` on its route's final edge): then, exactly like SUMO's
+    // `nextStopEdge == ce` truncation, every OTHER lane's length is clamped to the stop position and
+    // marked non-continuing while the stop's own lane keeps the full edge length. That asymmetry is
+    // what steers BackwardPassEdge's offset computation on every EARLIER route edge toward the lane
+    // that connects onward to the stop's lane -- pre-positioning a vehicle across a junction before it
+    // ever reaches this edge, with no change to any other lane's resolution.
+    //
+    // SIMPLIFICATION (documented, scoped to the cross-edge fix): SUMO also computes an explicit
+    // BestLaneOffset for the lanes of this SAME terminal edge ("examining the last lane explicitly",
+    // MSVehicle.cpp:5949-5989) -- not ported here (every lane's own BestLaneOffset stays 0, matching
+    // the pre-fix lane-agnostic case). That offset is only consulted by a vehicle ALREADY on this
+    // terminal edge, wanting a lane on ITS OWN edge -- a case Engine.TryStrategicLaneChange's existing
+    // (pre-cross-edge-fix) SAME-EDGE stop override already resolves directly, independent of this
+    // method. Deferring it keeps this change scoped to exactly the backward-propagation this fix needs.
+    private List<LaneContinuation> BuildTerminalLaneQ(string edgeId, (string StopLaneId, double StopPos)? stopOverride)
+    {
+        var lanes = EdgesById[edgeId].Lanes.OrderBy(l => l.Index).ToList();
+
+        if (stopOverride is { } so
+            && LanesById.TryGetValue(so.StopLaneId, out var stopLane)
+            && stopLane.EdgeId == edgeId)
+        {
+            // MSVehicle.cpp:5918-5919 nextStopPos clamp: MAX2(POSITION_EPS, MIN2(startPos, laneLength
+            // - 2*POSITION_EPS)).
+            var clampedStopPos = Math.Max(PositionEps, Math.Min(so.StopPos, stopLane.Length - 2 * PositionEps));
+            var result = new List<LaneContinuation>(lanes.Count);
+            foreach (var l in lanes)
+            {
+                result.Add(l.Index == stopLane.Index
+                    ? new LaneContinuation(l.Index, AllowsContinuation: true, BestLaneOffset: 0, l.Length)
+                    : new LaneContinuation(l.Index, AllowsContinuation: false, BestLaneOffset: 0, clampedStopPos));
+            }
+
+            return result;
+        }
+
+        return lanes
+            .Select(l => new LaneContinuation(l.Index, AllowsContinuation: true, BestLaneOffset: 0, l.Length))
+            .ToList();
+    }
+
+    // sumo/src/config.h.cmake:214 POSITION_EPS.
+    private const double PositionEps = 0.1;
 
     // L0c (PERF-ROADMAP.md): the route-wide form of ComputeBestLanes -- ONE backward pass from the
     // last route edge down to the first, CAPTURING every edge's LaneQ instead of discarding the
@@ -640,7 +692,9 @@ public sealed record NetworkModel(
     // BackwardPassEdge calls in the same order, so `all[firstIndexOf(e)]` equals what
     // ComputeBestLanes(routeEdges, e) returns. The dictionary keeps the FIRST occurrence per id,
     // preserving ComputeBestLanes' first-match `edgeIndex` semantics for a route that repeats an edge.
-    private Dictionary<string, IReadOnlyList<LaneContinuation>> ComputeAllBestLanes(IReadOnlyList<string> routeEdges)
+    // Issue 1 cross-edge fix: `stopOverride`, threaded into the terminal LaneQ only (see
+    // BuildTerminalLaneQ) -- null (default) for every pre-existing caller.
+    private Dictionary<string, IReadOnlyList<LaneContinuation>> ComputeAllBestLanes(IReadOnlyList<string> routeEdges, (string StopLaneId, double StopPos)? stopOverride = null)
     {
         // An empty route has no edges to resolve; return an empty map so ResolveSequenceCore's loop
         // simply doesn't run (byte-identical to the pre-L0c behavior, which never entered the loop).
@@ -654,10 +708,7 @@ public sealed record NetworkModel(
         var lastIndex = routeEdges.Count - 1;
         var all = new IReadOnlyList<LaneContinuation>[routeEdges.Count];
 
-        var nextQ = EdgesById[routeEdges[lastIndex]].Lanes
-            .OrderBy(l => l.Index)
-            .Select(l => new LaneContinuation(l.Index, AllowsContinuation: true, BestLaneOffset: 0, l.Length))
-            .ToList();
+        var nextQ = BuildTerminalLaneQ(routeEdges[lastIndex], stopOverride);
         all[lastIndex] = nextQ;
 
         for (var e = lastIndex - 1; e >= 0; e--)

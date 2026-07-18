@@ -2496,7 +2496,11 @@ public sealed partial class Engine : IEngine
         RegisterRerouted(v, newEdges);   // keep _routesById/BestLanes reads (see field header) in sync
 
         var laneIndex = _network!.LanesByHandle[v.LaneHandle].Index;
-        var (newPoolSeq, newArrivalSeq) = _network.ResolveLaneSequenceHandlesWithArrival(newEdges, laneIndex);
+        // Issue 1 cross-edge fix: keep the reroute consistent with insertion -- if the NEW remaining
+        // route still ends at a qualifying park-and-stay stop, the re-resolved pool must still target
+        // its lane (see ParkStopFinalEdgeOverride). null (the common case) is byte-identical to before.
+        var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, newEdges);
+        var (newPoolSeq, newArrivalSeq) = _network.ResolveLaneSequenceHandlesWithArrival(newEdges, laneIndex, stopOverride: stopOverride);
         var newLaneSeqStart = _laneSeqPool.Count;
         _laneSeqPool.AddRange(newPoolSeq);
         _laneSeqArrival.AddRange(newArrivalSeq);
@@ -2855,6 +2859,41 @@ public sealed partial class Engine : IEngine
     // junction-foe and stop-line insertion checks, follower-gap/pedestrian/shadow-lane
     // checks, rail bidi handling, and the departPos<0 "measured from lane end" convention
     // (we use departPos directly since it is always >=0 here).
+    // Issue 1 cross-edge fix (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §7): the per-VEHICLE stop-lane
+    // override consumed by NetworkModel's route-wide best-lanes pass (ComputeBestLanes/
+    // ResolveLaneSequenceHandlesWithArrival's `stopOverride` param) -- non-null ONLY when `stops`
+    // (VehicleDef.Stops, NOT the route) carries an unreached `<stop parkingArea>`
+    // (StopDef.ParkingAreaId != null) whose resolved lane sits on `routeEdges`'s FINAL edge. A stop is
+    // per-vehicle -- two vehicles CAN share a route id with different (or no) stops -- so this must be
+    // recomputed per vehicle, never baked into any ROUTE-keyed cache (_bestLanesCache/
+    // _insertRouteSeqCache are both keyed by RouteId alone). Returns null for every vehicle without
+    // such a stop -- the overwhelmingly common case, including every plain lane <stop> (03/13/44) and
+    // every non-final-edge parkingArea stop (67's departPos="stop" pull-outs, duration=5) -- so every
+    // caller's existing (possibly cached) path is completely unaffected for them.
+    private (string StopLaneId, double StopPos)? ParkStopFinalEdgeOverride(IReadOnlyList<StopDef> stops, IReadOnlyList<string> routeEdges)
+    {
+        if (stops.Count == 0 || routeEdges.Count == 0)
+        {
+            return null;
+        }
+
+        var lastEdgeId = routeEdges[routeEdges.Count - 1];
+        foreach (var s in stops)
+        {
+            if (s.ParkingAreaId is null)
+            {
+                continue;
+            }
+
+            if (_network!.LanesById.TryGetValue(s.LaneId, out var lane) && lane.EdgeId == lastEdgeId)
+            {
+                return (s.LaneId, s.StartPos);
+            }
+        }
+
+        return null;
+    }
+
     // Perf (insert): resolve every distinct (route, departLane) insertion lane-sequence up front, in
     // parallel, into _insertRouteSeqCache. Pure function of the immutable network, so byte-identical to
     // lazy resolution -- see the cache field's header and the LoadScenario call site.
@@ -2869,6 +2908,15 @@ public sealed partial class Engine : IEngine
             // lane-sequence cached lazily) inside TryInsertOnLane instead. Given (every pre-P0-C1
             // vehicle) is unaffected.
             if (def.DepartLaneIndex.Kind != DepartLaneSpec.Given)
+            {
+                continue;
+            }
+
+            // Issue 1 cross-edge fix: a vehicle whose route's FINAL edge carries a <stop parkingArea>
+            // resolves a per-VEHICLE stop-lane-targeted pool (see ParkStopFinalEdgeOverride) that must
+            // NOT be written into this ROUTE-keyed cache -- skip it here, exactly like the
+            // departLane=Best skip above; TryInsertOnLane resolves it directly (uncached) instead.
+            if (ParkStopFinalEdgeOverride(def.Stops, _routesById[def.RouteId].Edges) is not null)
             {
                 continue;
             }
@@ -2910,9 +2958,15 @@ public sealed partial class Engine : IEngine
     // needing the per-lane length normalization).
     private const double BestLaneLookahead = 3000.0;
 
-    private int ResolveBestDepartLane(Route route, Edge edge)
+    // Issue 1 cross-edge fix: `stopOverride` (see ParkStopFinalEdgeOverride) folds a qualifying
+    // park-and-stay stop into the ranking -- SUMO's own getDepartLane calls the SAME stop-aware
+    // updateBestLanes (MSVehicle.cpp:1070/1121 "getDepartLane may call updateBestLanes"), so a sink
+    // car departing with departLane="best" (the synthetic grid's own shape) must rank the lane that
+    // connects onward to the stop, not just the longest raw continuation. null for every vehicle
+    // without such a stop, giving the exact prior (lane-agnostic-terminal) ranking.
+    private int ResolveBestDepartLane(Route route, Edge edge, (string StopLaneId, double StopPos)? stopOverride)
     {
-        var laneQs = _network!.ComputeBestLanes(route.Edges, route.Edges[0]);
+        var laneQs = _network!.ComputeBestLanes(route.Edges, route.Edges[0], stopOverride);
 
         var maxLength = double.NegativeInfinity;
         foreach (var q in laneQs)
@@ -3026,7 +3080,7 @@ public sealed partial class Engine : IEngine
             // load-time constant the way a Given index is. Given takes its Literal unchanged (same
             // value the old plain-int field held).
             var departLaneIndex = v.Def.DepartLaneIndex.Kind == DepartLaneSpec.Best
-                ? ResolveBestDepartLane(route, edge)
+                ? ResolveBestDepartLane(route, edge, ParkStopFinalEdgeOverride(v.Def.Stops, route.Edges))
                 : v.Def.DepartLaneIndex.Literal;
 
             // L0d: manual lane-by-index scan instead of `edge.Lanes.First(l => l.Index == ...)`, whose
@@ -3241,11 +3295,25 @@ public sealed partial class Engine : IEngine
         // P1E-6: keyed by EffectiveRouteId, not v.Def.RouteId -- a pre-insertion-rerouted vehicle
         // must NOT hit the ORIGINAL route's prewarmed cache entry; falls back to v.Def.RouteId
         // (identical to before) whenever no reroute has been registered for this vehicle.
-        var routeKey = (EffectiveRouteId(v), departLaneIndex);
-        if (!_insertRouteSeqCache.TryGetValue(routeKey, out var seq))
+        // Issue 1 cross-edge fix: a vehicle with a qualifying <stop parkingArea> on its route's FINAL
+        // edge resolves its pool DIRECTLY (stop-lane-targeted, per-vehicle) and bypasses the
+        // ROUTE-keyed cache entirely -- see ParkStopFinalEdgeOverride's header and
+        // PrewarmInsertRouteCache's matching skip. null for every other vehicle, so the cache path
+        // below is completely unchanged for them.
+        var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, route.Edges);
+        (int[] Pool, int[] Arrival) seq;
+        if (stopOverride is not null)
         {
-            seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, departLaneIndex);
-            _insertRouteSeqCache[routeKey] = seq;
+            seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, departLaneIndex, stopOverride: stopOverride);
+        }
+        else
+        {
+            var routeKey = (EffectiveRouteId(v), departLaneIndex);
+            if (!_insertRouteSeqCache.TryGetValue(routeKey, out seq))
+            {
+                seq = _network!.ResolveLaneSequenceHandlesWithArrival(route.Edges, departLaneIndex);
+                _insertRouteSeqCache[routeKey] = seq;
+            }
         }
 
         var (poolSeq, arrivalSeq) = seq;
@@ -3975,7 +4043,10 @@ public sealed partial class Engine : IEngine
             // C2-v: append BOTH the Exit (pool) and Arrival slices in lockstep (they share
             // LaneSeqStart/Len). The reroute keeps the vehicle physically where it is (arrival[0] ==
             // its current lane), so for the common no-intra-change route this is identical to before.
-            var (newPoolSeq, newArrivalSeq) = _network.ResolveLaneSequenceHandlesWithArrival(newEdges, laneIndex);
+            // Issue 1 cross-edge fix: see RerouteActive's matching comment -- keep the stop-lane
+            // override alive across an obstacle-triggered reroute too.
+            var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, newEdges);
+            var (newPoolSeq, newArrivalSeq) = _network.ResolveLaneSequenceHandlesWithArrival(newEdges, laneIndex, stopOverride: stopOverride);
             var newLaneSeqStart = _laneSeqPool.Count;
             _laneSeqPool.AddRange(newPoolSeq);
             _laneSeqArrival.AddRange(newArrivalSeq);
@@ -4026,6 +4097,32 @@ public sealed partial class Engine : IEngine
         {
             if (!v.RerouteEquipped || v.LaneId.StartsWith(':') || time < v.NextRerouteTime
                 || v.LastRoutingTime >= _lastAdaptationTime)
+            {
+                continue;
+            }
+
+            // Issue 1 cross-edge fix follow-up (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md par 7): a
+            // vehicle currently HELD at a stop (including parked, off-lane) must not be rerouted --
+            // ported from MSDevice_Routing::wrappedRerouteCommandExecute (sumo/src/microsim/devices/
+            // MSDevice_Routing.cpp:278-284): `if (myHolder.isStopped()) { myRerouteAfterStop = true;
+            // } else { reroute(...); }` -- a stopped holder is skipped THIS cycle, not rerouted.
+            // Without this, a park-and-stay sink that has ALREADY converged onto its parkingArea's
+            // lane and parked (the very case the cross-edge fix restores) gets swept into a later
+            // periodic-reroute batch anyway (ActiveVehicles() does not exclude parked vehicles --
+            // see RearmostOnLaneAmongActive's own IsParked-exclusion comment for why that query is
+            // deliberately narrower); the router then computes a same-edge-to-same-edge candidate
+            // that differs from the trivial "stay put" answer, installs a fresh
+            // RegisterPeriodicReroute route/pool via ReplaceRoute, and the vehicle spuriously
+            // resumes moving and drives off -- undoing the residency fix. `NextRerouteTime` is
+            // deliberately left UNADVANCED here (unlike a vehicle that actually gets routed below),
+            // so a still-stopped vehicle is cheaply re-skipped every step and a vehicle that later
+            // resumes becomes reroute-eligible again immediately, matching `myRerouteAfterStop`'s
+            // "reroute once it starts moving again" intent closely enough for this scenario shape.
+            // GATED on GetStops(v)'s front stop being Reached (MSVehicle::isStopped(): `!myStops.
+            // empty() && myStops.front().reached`) -- false for every moving vehicle, so byte-
+            // identical for every existing device.rerouting scenario (none of which combine it with
+            // a stop that is still held when a periodic reroute comes due).
+            if (GetStops(v) is { Count: > 0 } vStops && vStops.Peek().Reached)
             {
                 continue;
             }
@@ -4089,7 +4186,11 @@ public sealed partial class Engine : IEngine
             RegisterPeriodicReroute(v, candidate);
 
             var laneIndex = network.LanesByHandle[v.LaneHandle].Index;
-            var (newPoolSeq, newArrivalSeq) = network.ResolveLaneSequenceHandlesWithArrival(candidate, laneIndex);
+            // Issue 1 cross-edge fix: see RerouteActive's matching comment -- keep the stop-lane
+            // override alive across a periodic congestion reroute too (the synthetic grid equips
+            // device.rerouting on every vehicle, sinks included).
+            var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, candidate);
+            var (newPoolSeq, newArrivalSeq) = network.ResolveLaneSequenceHandlesWithArrival(candidate, laneIndex, stopOverride: stopOverride);
             var newLaneSeqStart = _laneSeqPool.Count;
             _laneSeqPool.AddRange(newPoolSeq);
             _laneSeqArrival.AddRange(newArrivalSeq);
@@ -8790,7 +8891,10 @@ public sealed partial class Engine : IEngine
         int[] arrival;
         try
         {
-            (pool, arrival) = _network.ResolveLaneSequenceHandlesWithArrival(remaining, currentLane.Index, forceFirstExitToArrival: true);
+            // Issue 1 cross-edge fix: see RerouteActive's matching comment -- a park-and-stay stop
+            // still further down `remaining` must keep steering the re-resolved pool toward its lane.
+            var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, remaining);
+            (pool, arrival) = _network.ResolveLaneSequenceHandlesWithArrival(remaining, currentLane.Index, forceFirstExitToArrival: true, stopOverride: stopOverride);
         }
         catch (InvalidDataException)
         {
@@ -8919,6 +9023,29 @@ public sealed partial class Engine : IEngine
         const double changeProbThresholdLeft = 0.2; // ctor: (0.2/mySpeedGainParam), default mySpeedGainParam=1
 
         {
+            // Issue 1 cross-edge fix follow-up (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md par 7): a
+            // PARKED vehicle (VehicleRuntime.IsParked) is off the running lane entirely in SUMO --
+            // MSLaneChanger's checkChangeOnLane machinery only ever runs for a vehicle actually IN a
+            // lane's vehicle list, which a parked vehicle is not (MSVehicleTransfer / the parking
+            // removal). It therefore makes NO keep-right / strategic / speed-gain decision at all
+            // while parked. Without this guard, a park-and-stay sink parked on the PARKINGAREA's own
+            // lane still runs the full keep-right/strategic/speed-gain decision every step -- on the
+            // synthetic grid (real cross-lane traffic present, unlike the single-vehicle scenarios
+            // 48/67/69/70), the SPEED-GAIN branch further below (comparing ego's -- stationary,
+            // speed=0 -- current lane against a moving neighbor lane) can decide a spurious LEFT
+            // change off the parkingArea's lane; once ego's LaneId no longer equals the stop's LaneId,
+            // StopLineConstraint/ProcessNextStop's `stop.LaneId != v.LaneId` guard stops holding it
+            // (see those methods' own header comments), so the "parked" vehicle silently starts
+            // driving again and eventually wrongly "arrives" -- exactly undoing the residency fix
+            // this session restores. Gated on IsParked (false for every moving vehicle, default
+            // false), so byte-identical for every existing scenario: none of the committed
+            // parking goldens (48/66/67/68/69/70) has a SECOND vehicle on an adjacent lane to even
+            // make the (pre-existing, unguarded) speed-gain comparison non-trivial while parked.
+            if (v.IsParked)
+            {
+                return;
+            }
+
             // C10-i: a vehicle mid continuous-maneuver is committed to that change -- it makes no
             // new keep-right/strategic/speed-gain decision until the maneuver completes (SUMO holds
             // the change to completion). Inert when lanechange.duration 0 (LcTargetHandle stays -1).
@@ -9655,7 +9782,18 @@ public sealed partial class Engine : IEngine
 
             var routeId = EffectiveRouteId(v);   // see _effectiveRouteIdByEntity's header comment
             var route = _routesById[routeId];
-            var bestLanes = BestLanesCached(routeId, route.Edges, lane.EdgeId);
+
+            // Issue 1 cross-edge fix (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §7): a vehicle with a
+            // qualifying park-and-stay stop on its route's FINAL edge (ParkStopFinalEdgeOverride) must
+            // read a STOP-AWARE bestLanes here -- the SAME override the pool itself was built with at
+            // insertion/reroute (see TryInsertOnLane/RerouteActive) -- so `curr.BestLaneOffset` agrees
+            // with the pool's own steering (per-vehicle, so it deliberately bypasses the shared
+            // ROUTE-keyed `_bestLanesCache`; see that cache's own caching-hazard note). null for every
+            // other vehicle, taking the exact prior cached path, byte-identical.
+            var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, route.Edges);
+            var bestLanes = stopOverride is not null
+                ? _network!.ComputeBestLanes(route.Edges, lane.EdgeId, stopOverride)
+                : BestLanesCached(routeId, route.Edges, lane.EdgeId);
 
             LaneContinuation? curr = null;
             foreach (var continuation in bestLanes)
@@ -10321,7 +10459,11 @@ public sealed partial class Engine : IEngine
         var continuation = edgeIndex == 0
             ? edges
             : edges.Skip(edgeIndex).ToList();
-        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(continuation, lane.Index);
+        // Issue 1 cross-edge fix: see RerouteActive's matching comment -- a jam-teleported vehicle
+        // re-installing its route continuation must keep steering toward a further-down park-and-stay
+        // stop's lane too.
+        var stopOverride = ParkStopFinalEdgeOverride(v.Def.Stops, continuation);
+        var (poolSeq, arrivalSeq) = _network!.ResolveLaneSequenceHandlesWithArrival(continuation, lane.Index, stopOverride: stopOverride);
 
         v.LaneId = lane.Id;
         v.LaneHandle = lane.Handle;
