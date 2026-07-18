@@ -8789,19 +8789,23 @@ public sealed partial class Engine : IEngine
                     && neighFollow is not null
                     && !IsTargetLaneSafe(v, null, neighFollow, dt))
                 {
-                    // P2G-2 informFollower (MSLCM_LC2013::informFollower): the change is WANTED but
-                    // blocked by the target-lane FOLLOWER. Advise the follower to slow to a safe follow
-                    // speed BEHIND ego (as if ego has cut in), opening the gap so the change succeeds a
-                    // step or two later -- SUMO's coordination that keeps aggressive lane-changing from
-                    // thrashing into gridlock. Recorded via the command buffer (applied as a MIN into the
-                    // follower's CoopSpeedAdvice, consumed next step). Gated on CoordinatedLaneChange, so
-                    // inert by default. Only advise when ego is actually ahead of the follower (gap>0).
+                    // P2G-2 informFollower (MSLCM_LC2013::informFollower, MSLCM_LC2013.cpp:697-708): the
+                    // change is WANTED but blocked by the target-lane FOLLOWER. Ask the follower to yield a
+                    // GENTLE, bounded amount -- SUMO assumes the equivalent of ONE step of helpDecel
+                    // (= maxDecel * HELP_DECEL_FACTOR, 0.5) to make room, NOT a hard cap to full follow
+                    // speed. The crude full-follow-speed cap (the earlier spike) over-braked followers on
+                    // organic nets, cascading into MORE congestion (58 vs parity's 24 stuck on
+                    // city-organic-L2); the bounded one-step helpDecel yield opens enough gap to keep the
+                    // saturated grid flowing (0 stuck) WITHOUT the organic over-braking. Applied as a MIN
+                    // into the follower's CoopSpeedAdvice (consumed next step). Only when ego is actually
+                    // ahead of the follower (gap>0). Inert by default (CoordinatedLaneChange off).
                     var gap = (v.Kinematics.Pos - v.VType.Length) - neighFollow.VType.MinGap - neighFollow.Kinematics.Pos;
                     if (gap > 0.0)
                     {
-                        var adviceSpeed = KraussModel.MaximumSafeFollowSpeed(
-                            gap, neighFollow.Kinematics.Speed, v.Kinematics.Speed, v.VType.Decel, neighFollow.VType, dt, onInsertion: false);
-                        _commandBuffer.SpeedAdvice(neighFollow, Math.Max(0.0, adviceSpeed));
+                        const double helpDecelFactor = 0.5; // MSLCM_LC2013.cpp HELP_DECEL_FACTOR
+                        var helpDecel = neighFollow.VType.Decel * helpDecelFactor;
+                        var adviceSpeed = Math.Max(0.0, neighFollow.Kinematics.Speed - (helpDecel * dt));
+                        _commandBuffer.SpeedAdvice(neighFollow, adviceSpeed);
                     }
                 }
             }
