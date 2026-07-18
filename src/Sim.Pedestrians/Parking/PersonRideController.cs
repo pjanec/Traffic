@@ -46,7 +46,7 @@ public sealed class PersonRideController
     {
         public required int PersonId;
         public PersonRegime Regime;
-        public int CrowdIndex = -1;   // index into the CURRENT crowd when Walking; -1 when Riding
+        public OrcaHandle CrowdIndex = OrcaHandle.Invalid;   // handle into the CURRENT crowd when Walking; Invalid when Riding
         public double MaxSpeed;
         public double Radius;
         public Vec2 LastPosition;     // last known world position (kept across Board/Alight for observability)
@@ -149,7 +149,7 @@ public sealed class PersonRideController
         {
             var e = _people[id];
             e.Regime = PersonRegime.Riding;
-            e.CrowdIndex = -1;
+            e.CrowdIndex = OrcaHandle.Invalid;
             _events.Add(new PersonLifecycleEvent(id, PersonLifecycleEventKind.Boarded, now, e.LastPosition));
         }
 

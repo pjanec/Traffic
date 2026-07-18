@@ -47,7 +47,7 @@ public sealed class CrossingGate
 {
     private sealed class Route
     {
-        public required int CrowdIndex;
+        public required OrcaHandle CrowdIndex;
         public required IReadOnlyList<Vec2> Path;
         public required int PortalIndex;
         public required double MaxSpeed;
@@ -93,7 +93,7 @@ public sealed class CrossingGate
     // hold point -- see the class remarks for the measured transient-shove margin this buys.
     private const int FrontSlotBuffer = 2;
 
-    // Registers an already-added crowd agent (the index OrcaCrowd.Add returned) to follow `path`,
+    // Registers an already-added crowd agent (the handle OrcaCrowd.Add returned) to follow `path`,
     // holding at a queue slot behind `path[portalIndex]` -- the crossing's near-side waypoint --
     // whenever the signal is closed. The slot is this route's position in registration order plus
     // FrontSlotBuffer (the first-registered route holds `FrontSlotBuffer * queueSpacing` behind the
@@ -102,7 +102,7 @@ public sealed class CrossingGate
     // (when present) is the far-side waypoint, only pursued once released. Immediately targets the
     // agent's goal (matching PedRouteController.AddRoute), so a caller does not need to call Update()
     // before the first OrcaCrowd.Step().
-    public void AddRoute(int crowdIndex, IReadOnlyList<Vec2> path, int portalIndex, double maxSpeed, double now)
+    public void AddRoute(OrcaHandle crowdIndex, IReadOnlyList<Vec2> path, int portalIndex, double maxSpeed, double now)
     {
         if (portalIndex < 0 || portalIndex >= path.Count)
         {
@@ -122,7 +122,7 @@ public sealed class CrossingGate
     }
 
     // True once crowdIndex has advanced past the last waypoint of its registered path.
-    public bool IsRouteComplete(int crowdIndex)
+    public bool IsRouteComplete(OrcaHandle crowdIndex)
     {
         foreach (var route in _routes)
         {
@@ -138,7 +138,7 @@ public sealed class CrossingGate
     // True while `crowdIndex` is being held at its portal: registered, has not advanced its waypoint
     // cursor past the portal, and the signal is closed at `now`. Observability hook for "none entering
     // the roadway" (POC-2 success condition 1).
-    public bool IsHeld(int crowdIndex, double now)
+    public bool IsHeld(OrcaHandle crowdIndex, double now)
     {
         foreach (var route in _routes)
         {
@@ -151,7 +151,7 @@ public sealed class CrossingGate
         return false;
     }
 
-    public int WaypointIndexOf(int crowdIndex)
+    public int WaypointIndexOf(OrcaHandle crowdIndex)
     {
         foreach (var route in _routes)
         {

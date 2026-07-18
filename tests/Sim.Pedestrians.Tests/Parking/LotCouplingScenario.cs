@@ -59,10 +59,10 @@ internal static class LotCouplingScenario
     }
 
     // The full condition-3 scenario: car + parked boxes + all three crossing pedestrians.
-    public static LotCoupling NewFullScenario(out int carId, out int[] pedIds)
+    public static LotCoupling NewFullScenario(out int carId, out OrcaHandle[] pedIds)
     {
         var coupling = NewCouplingWithCarAndBoxes(out carId);
-        pedIds = new int[PedRoutes.Length];
+        pedIds = new OrcaHandle[PedRoutes.Length];
         for (var i = 0; i < PedRoutes.Length; i++)
         {
             var (start, goal) = PedRoutes[i];

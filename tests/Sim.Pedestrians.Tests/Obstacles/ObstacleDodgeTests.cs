@@ -108,7 +108,7 @@ public class ObstacleDodgeTests
             crowd.AddObstacle(box);
         }
 
-        var indices = new int[StartYs.Length];
+        var indices = new OrcaHandle[StartYs.Length];
         var goals = new Vec2[StartYs.Length];
         var controller = new PedRouteController(crowd, new WaypointFollower(), ArriveRadius);
         for (var i = 0; i < StartYs.Length; i++)

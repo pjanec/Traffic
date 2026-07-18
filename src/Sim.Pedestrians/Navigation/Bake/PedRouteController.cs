@@ -25,7 +25,7 @@ public sealed class PedRouteController
 {
     private sealed class Route
     {
-        public required int CrowdIndex;
+        public required OrcaHandle CrowdIndex;
         public required IReadOnlyList<Vec2> Path;
         public required double MaxSpeed;
         public int WaypointIndex;
@@ -43,9 +43,9 @@ public sealed class PedRouteController
         _arriveRadius = arriveRadius;
     }
 
-    // Registers an already-added crowd agent (the index OrcaCrowd.Add returned) to follow `path`
+    // Registers an already-added crowd agent (the handle OrcaCrowd.Add returned) to follow `path`
     // at `maxSpeed`, and immediately targets its goal at the path's first steering waypoint.
-    public void AddRoute(int crowdIndex, IReadOnlyList<Vec2> path, double maxSpeed)
+    public void AddRoute(OrcaHandle crowdIndex, IReadOnlyList<Vec2> path, double maxSpeed)
     {
         var route = new Route { CrowdIndex = crowdIndex, Path = path, MaxSpeed = maxSpeed, WaypointIndex = 0 };
         _routes.Add(route);
@@ -53,7 +53,7 @@ public sealed class PedRouteController
     }
 
     // True once crowdIndex has advanced past the last waypoint of its registered path.
-    public bool IsRouteComplete(int crowdIndex)
+    public bool IsRouteComplete(OrcaHandle crowdIndex)
     {
         foreach (var route in _routes)
         {
@@ -66,7 +66,7 @@ public sealed class PedRouteController
         return true; // not a registered route -> vacuously "complete"
     }
 
-    public int WaypointIndexOf(int crowdIndex)
+    public int WaypointIndexOf(OrcaHandle crowdIndex)
     {
         foreach (var route in _routes)
         {

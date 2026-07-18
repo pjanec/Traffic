@@ -26,7 +26,7 @@ public class UnifiedSolverTests
 
     // The canonical crossing: a 13.9 m/s vehicle down the lane centreline; a pedestrian crossing
     // perpendicular (1.0 m/s, +Y) timed to reach the lane just as the vehicle arrives (xCross=34).
-    private static (UnifiedWorld world, OrcaCrowd crowd, int ped, UnifiedWorld.Vehicle veh) BuildCrossing(int subSteps)
+    private static (UnifiedWorld world, OrcaCrowd crowd, OrcaHandle ped, UnifiedWorld.Vehicle veh) BuildCrossing(int subSteps)
     {
         var crowd = new OrcaCrowd(2) { NeighbourDist = 30.0 };
         var ped = crowd.Add(new Vec2(34.0, -2.0), radius: 0.3, maxSpeed: 1.0, goal: new Vec2(34.0, 6.0));

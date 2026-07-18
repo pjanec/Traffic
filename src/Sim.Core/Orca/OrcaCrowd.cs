@@ -72,6 +72,29 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // alone crowd is byte-identical to the pre-Q2 behaviour).
     private bool[] _active;
 
+    // P0-1 (docs/PEDESTRIAN-TASKS.md, PEDESTRIAN-DESIGN.md §3(d)): real Add/Remove via a free-list of
+    // recycled slots + a per-slot generation counter, mirroring ObstacleStore/ObstacleHandle exactly.
+    //
+    // `_slotAlive` is DISTINCT from `_active` above: `_active` is the RemoveOnArrival "parked" state (the
+    // agent is still a live slot, just not moving/constraining -- Remove is never involved); `_slotAlive`
+    // is whether the slot holds an agent AT ALL. A slot that is `!_slotAlive` is also always `!_active`
+    // (Remove clears both), so every existing "skip when !_active" scan already skips a removed slot for
+    // free -- the explicit `!_slotAlive` checks added alongside them (Step, RebuildGrid, AllArrived,
+    // QueryNear) are belt-and-suspenders correctness for the NEW removal path, not a behavior change: with
+    // `_slotAlive` all-true (Remove never called) they are always false and never taken, so the no-remove
+    // path stays byte-identical to pre-P0-1.
+    //
+    // `_generation` starts at 1 for every never-used slot (0 is reserved for OrcaHandle.Invalid, exactly
+    // ObstacleStore's convention) and is bumped again each time its slot is vacated, so any OrcaHandle
+    // captured before a Remove is stale afterwards even if the slot is immediately recycled by a later
+    // Add. `_freeSlots` is the LIFO of vacated slot indices Add pops from before ever growing/appending;
+    // recycling does not disturb any OTHER agent's slot or handle, and does not touch iteration order
+    // (iteration is always ascending slot index 0.._count-1, `_count` being the high-water mark of
+    // slots ever allocated -- NOT the live agent count once Remove has been used).
+    private uint[] _generation;
+    private bool[] _slotAlive;
+    private readonly Stack<int> _freeSlots = new();
+
     // Q3 uniform spatial hash (opt-in via UseSpatialHash; default off -> brute-force, byte-identical).
     // Rebuilt once per Step from the frozen positions: agents are bucketed by their cell (cell size ==
     // NeighbourDist, so an agent's whole neighbourhood lies in its own cell + the 8 around it). Each
@@ -196,30 +219,82 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _maxSpeed = new double[capacity];
         _newVelocity = new Vec2[capacity];
         _active = new bool[capacity];
+        _generation = new uint[capacity];
+        _slotAlive = new bool[capacity];
+        for (var i = 0; i < capacity; i++)
+        {
+            _generation[i] = 1;   // never-used slot starts at 1; 0 is reserved for OrcaHandle.Invalid
+        }
+
         _scratch = new ScratchSet(capacity);
     }
 
+    // High-water mark of slots ever allocated -- NOT the live agent count once Remove has been used (a
+    // vacated, not-yet-recycled slot is still < _count but is neither active nor alive). Byte-identical
+    // to "number of agents added" for any crowd that never calls Remove (the pre-P0-1 meaning).
     public int Count => _count;
 
     public Vec2 Position(int i) => _position[i];
+    public Vec2 Position(OrcaHandle h) => _position[ResolveOrThrow(h)];
+
     public Vec2 Velocity(int i) => _velocity[i];
+    public Vec2 Velocity(OrcaHandle h) => _velocity[ResolveOrThrow(h)];
+
     public Vec2 Goal(int i) => _goal[i];
+    public Vec2 Goal(OrcaHandle h) => _goal[ResolveOrThrow(h)];
+
     public double Radius(int i) => _radius[i];
+    public double Radius(OrcaHandle h) => _radius[ResolveOrThrow(h)];
 
     // False once RemoveOnArrival has parked agent i at its goal (it no longer moves or constrains).
     public bool IsActive(int i) => _active[i];
+    public bool IsActive(OrcaHandle h) => _active[ResolveOrThrow(h)];
 
     public void SetGoal(int i, Vec2 goal) => _goal[i] = goal;
+    public void SetGoal(OrcaHandle h, Vec2 goal) => _goal[ResolveOrThrow(h)] = goal;
 
-    // Add an agent; returns its stable int index. Grows the SoA arrays as needed.
-    public int Add(Vec2 position, double radius, double maxSpeed, Vec2 goal, Vec2 velocity = default)
+    // True iff `h` still addresses a live (added, not yet removed) slot -- the non-throwing counterpart
+    // to the accessors above, mirroring ObstacleStore.IsAlive. Handy for tests/callers that want to check
+    // "is this handle still good" without a try/catch.
+    public bool IsAlive(OrcaHandle h) =>
+        h.Index >= 0 && h.Index < _count && _slotAlive[h.Index] && _generation[h.Index] == h.Generation;
+
+    // Resolves a handle to its live slot index, or throws if `h` is stale (already Removed, possibly
+    // recycled to a DIFFERENT agent since) or was never valid. A caller holding a stale handle is a bug
+    // -- unlike Remove (see below), which is an inert no-op on a stale handle, matching this codebase's
+    // established "removing something already gone is harmless" convention (ObstacleStore.Remove) while
+    // still catching "read through a dangling reference" fast.
+    private int ResolveOrThrow(OrcaHandle h)
     {
-        if (_count == _position.Length)
+        if (!IsAlive(h))
         {
-            Grow(_position.Length * 2);
+            throw new InvalidOperationException(
+                $"OrcaHandle {h} is stale or invalid (crowd currently has {_count} slot(s) allocated).");
         }
 
-        var i = _count++;
+        return h.Index;
+    }
+
+    // Add an agent; returns a stable OrcaHandle (index + generation). Pops a vacated slot off the free
+    // list left by a prior Remove (reusing its index, generation already bumped there) before ever
+    // growing/appending a brand new one -- O(1) either way. Grows the SoA arrays as needed.
+    public OrcaHandle Add(Vec2 position, double radius, double maxSpeed, Vec2 goal, Vec2 velocity = default)
+    {
+        int i;
+        if (_freeSlots.Count > 0)
+        {
+            i = _freeSlots.Pop();
+        }
+        else
+        {
+            if (_count == _position.Length)
+            {
+                Grow(_position.Length * 2);
+            }
+
+            i = _count++;
+        }
+
         _position[i] = position;
         _velocity[i] = velocity;
         _goal[i] = goal;
@@ -227,7 +302,31 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _maxSpeed[i] = maxSpeed;
         _newVelocity[i] = Vec2.Zero;
         _active[i] = true;
-        return i;
+        _slotAlive[i] = true;
+        return new OrcaHandle(i, _generation[i]);
+    }
+
+    // Removes an agent in O(1): the slot stops being planned/executed (Step), stops constraining other
+    // agents' neighbour gathers, and stops being exposed via QueryNear -- from the NEXT Step onward (a
+    // Remove mid-step, i.e. between Plan and Execute, is not a supported call pattern; Remove is meant to
+    // be called from the same single-threaded input phase as Add, never concurrently with Step). Its
+    // slot is pushed on the free list for a later Add to recycle; every OTHER agent's slot/handle is
+    // completely undisturbed (no shifting, no shuffling -- the whole point of P0-1). Inert no-op if `h`
+    // is already stale/invalid (mirrors ObstacleStore.Remove's "inert-when-absent" contract) -- see
+    // ResolveOrThrow's remarks for why Remove and the read accessors deliberately differ here.
+    public void Remove(OrcaHandle h)
+    {
+        if (!IsAlive(h))
+        {
+            return;
+        }
+
+        var i = h.Index;
+        _slotAlive[i] = false;
+        _active[i] = false;      // belt-and-suspenders: a dead slot is never "active" either
+        _velocity[i] = Vec2.Zero;
+        _generation[i]++;         // invalidates every handle to this slot, including this one
+        _freeSlots.Push(i);
     }
 
     // Add one static-obstacle polyline (a "wall"), ported EXACTLY from RVO2's
@@ -324,9 +423,9 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         {
             for (var i = 0; i < _count; i++)
             {
-                if (!_active[i])
+                if (!_active[i] || !_slotAlive[i])
                 {
-                    continue;   // parked agent: stays put, keeps zero velocity
+                    continue;   // parked agent (stays put) or a removed/vacated slot (P0-1: contributes nothing)
                 }
 
                 _newVelocity[i] = Plan(i, dt, _scratch);
@@ -342,9 +441,10 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
             var position = _position;
             var newVelocity = _newVelocity;
             var active = _active;
+            var slotAlive = _slotAlive;
             System.Threading.Tasks.Parallel.For(0, _count, _parallelOptions, i =>
             {
-                if (!active[i])
+                if (!active[i] || !slotAlive[i])
                 {
                     return;
                 }
@@ -357,7 +457,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         {
             for (var i = 0; i < _count; i++)
             {
-                if (!_active[i])
+                if (!_active[i] || !_slotAlive[i])
                 {
                     continue;
                 }
@@ -378,6 +478,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     private void PlanParallel(double dt)
     {
         var active = _active;
+        var slotAlive = _slotAlive;
         var newVelocity = _newVelocity;
 
         System.Threading.Tasks.Parallel.For(
@@ -385,7 +486,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
             () => new ScratchSet(),
             (i, _, local) =>
             {
-                if (active[i])
+                if (active[i] && slotAlive[i])
                 {
                     newVelocity[i] = Plan(i, dt, local);
                 }
@@ -396,12 +497,18 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     }
 
     // True once every agent is within `epsilon` of its goal (the crowd has settled). Handy as a
-    // behavioural stop condition in tests.
+    // behavioural stop condition in tests. A removed/vacated slot (P0-1) is skipped -- its stale
+    // leftover position/goal must never hold this false forever.
     public bool AllArrived(double epsilon)
     {
         var epsSq = epsilon * epsilon;
         for (var i = 0; i < _count; i++)
         {
+            if (!_slotAlive[i])
+            {
+                continue;
+            }
+
             if ((_goal[i] - _position[i]).AbsSq > epsSq)
             {
                 return false;
@@ -568,12 +675,21 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
     // Cross-regime bridge (Direction B): expose this crowd's agents as world discs so the OTHER regime
     // (the lane engine) can discover and avoid them. Brute-force radius scan (the spatial hash is the
     // shared perf axis, not built here); fills `into` up to its length and returns the count written.
+    // Deliberately does NOT check `_active` (a RemoveOnArrival-parked agent still occupies its spot and
+    // is still exposed here, unchanged pre-P0-1 behavior) but DOES check `_slotAlive` (P0-1: a genuinely
+    // Removed slot must never appear as a live footprint to the other regime) -- inert (no-op difference)
+    // for any crowd that never calls Remove, since `_slotAlive` is then all-true.
     public int QueryNear(double x, double y, double radius, Span<WorldDisc> into)
     {
         var rSq = radius * radius;
         var n = 0;
         for (var i = 0; i < _count && n < into.Length; i++)
         {
+            if (!_slotAlive[i])
+            {
+                continue;
+            }
+
             var dx = _position[i].X - x;
             var dy = _position[i].Y - y;
             if (dx * dx + dy * dy > rSq)
@@ -600,7 +716,10 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         for (var idx = 0; idx < m; idx++)
         {
             var j = useAll ? idx : candidates[idx];
-            if (j == i || !_active[j])
+            // `!_active[j]` alone already excludes a removed slot (Remove clears `_active` too); the
+            // `!_slotAlive[j]` is explicit belt-and-suspenders for the P0-1 removal path and is a no-op
+            // when Remove is never called.
+            if (j == i || !_active[j] || !_slotAlive[j])
             {
                 continue;
             }
@@ -653,7 +772,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         _bucketCount = 0;
         for (var i = 0; i < _count; i++)
         {
-            if (!_active[i])
+            if (!_active[i] || !_slotAlive[i])
             {
                 continue;
             }
@@ -733,6 +852,7 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
 
     private void Grow(int newCapacity)
     {
+        var oldCapacity = _position.Length;
         Array.Resize(ref _position, newCapacity);
         Array.Resize(ref _velocity, newCapacity);
         Array.Resize(ref _goal, newCapacity);
@@ -740,6 +860,13 @@ public sealed class OrcaCrowd : ICrowdFootprintSource
         Array.Resize(ref _maxSpeed, newCapacity);
         Array.Resize(ref _newVelocity, newCapacity);
         Array.Resize(ref _active, newCapacity);
+        Array.Resize(ref _generation, newCapacity);
+        Array.Resize(ref _slotAlive, newCapacity);
+        for (var i = oldCapacity; i < newCapacity; i++)
+        {
+            _generation[i] = 1;   // never-used slot starts at 1; 0 is reserved for OrcaHandle.Invalid
+        }
+
         Array.Resize(ref _scratch.NeighbourScratch, newCapacity);
         Array.Resize(ref _scratch.NeighbourDistSq, newCapacity);
         Array.Resize(ref _scratch.LineScratch, newCapacity);

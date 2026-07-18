@@ -43,7 +43,7 @@ public sealed class PedLodManager
         public IReadOnlyList<Vec2> Path = Array.Empty<Vec2>();
         public double PathStartTime;
 
-        public int HighIndex = -1;    // index into the CURRENT high-power OrcaCrowd, or -1 when Low
+        public OrcaHandle HighIndex = OrcaHandle.Invalid;    // handle into the CURRENT high-power OrcaCrowd, or Invalid when Low
         public Vec2 PendingVelocity;  // velocity-at-promotion, stashed for the rebuild that follows
 
         public double StateEnteredAt;             // sim time this ped entered its CURRENT LOD state
@@ -207,7 +207,7 @@ public sealed class PedLodManager
             e.Model = PedDrModel.FreeKinematic;
             e.StateEnteredAt = now;
             e.OutsideSince = double.NaN;
-            e.HighIndex = -1;
+            e.HighIndex = OrcaHandle.Invalid;
             _publisher.PublishSwitch(id, PedDrModel.PathArc, PedDrModel.FreeKinematic, now);
         }
 
@@ -222,7 +222,7 @@ public sealed class PedLodManager
             e.Path = newPath;
             e.PathStartTime = now;
             e.StateEnteredAt = now;
-            e.HighIndex = -1;
+            e.HighIndex = OrcaHandle.Invalid;
             _publisher.PublishPathArc(id, newPath, now, e.MaxSpeed, now);
             _publisher.PublishSwitch(id, PedDrModel.FreeKinematic, PedDrModel.PathArc, now);
         }
@@ -290,7 +290,7 @@ public sealed class PedLodManager
             }
 
             Vec2 pos, vel;
-            if (e.HighIndex >= 0)
+            if (e.HighIndex.IsValid)
             {
                 pos = oldCrowd.Position(e.HighIndex);
                 vel = oldCrowd.Velocity(e.HighIndex);

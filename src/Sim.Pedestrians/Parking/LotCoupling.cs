@@ -175,7 +175,7 @@ public sealed class LotCoupling
         return id;
     }
 
-    public int AddPedestrian(Vec2 position, double radius, double maxSpeed, Vec2 goal) =>
+    public OrcaHandle AddPedestrian(Vec2 position, double radius, double maxSpeed, Vec2 goal) =>
         _peds.Add(position, radius, maxSpeed, goal);
 
     // Setting a new goal re-arms an ARRIVED car (a caller-driven "depart" -- not exercised by the
@@ -188,7 +188,7 @@ public sealed class LotCoupling
         c.Arrived = false;
     }
 
-    public void SetPedGoal(int pedIndex, Vec2 goal) => _peds.SetGoal(pedIndex, goal);
+    public void SetPedGoal(OrcaHandle pedIndex, Vec2 goal) => _peds.SetGoal(pedIndex, goal);
 
     // ----- observability (tests + viz) -----
 
@@ -209,9 +209,9 @@ public sealed class LotCoupling
     }
 
     public int PedCount => _peds.Count;
-    public Vec2 PedPosition(int i) => _peds.Position(i);
-    public double PedRadius(int i) => _peds.Radius(i);
-    public Vec2 PedGoal(int i) => _peds.Goal(i);
+    public Vec2 PedPosition(OrcaHandle i) => _peds.Position(i);
+    public double PedRadius(OrcaHandle i) => _peds.Radius(i);
+    public Vec2 PedGoal(OrcaHandle i) => _peds.Goal(i);
 
     // Nearest distance from `point` to an oriented-box footprint (thin convenience wrapper around
     // `BoxObstacle.NearestPoint`, used by both `CarFootprint` overlap checks and `ParkedCarFootprints`

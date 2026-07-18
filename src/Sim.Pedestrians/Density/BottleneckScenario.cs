@@ -64,7 +64,7 @@ public sealed class BottleneckScenario
         var spawnNear = spawnFar - ApproachSpawnDepth;
         var spawnPositions = CorridorScenario.GridPositions(spawnNear, spawnFar, -spawnYHalf, spawnYHalf, AgentCount);
 
-        var indices = new int[AgentCount];
+        var indices = new OrcaHandle[AgentCount];
         var controller = new PedRouteController(crowd, new WaypointFollower(), ArriveRadius);
         var farGoalX = GateX + QueueRegionDepth + ApproachSpawnDepth;
 

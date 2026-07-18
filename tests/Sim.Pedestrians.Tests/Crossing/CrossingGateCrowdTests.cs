@@ -60,7 +60,7 @@ public class CrossingGateCrowdTests
     // not starting at rest near their eventual slot), each registered on the SAME
     // [portalNear, portalFar, destination] path (portalIndex 0), and returns the crowd + gate + crowd
     // indices for the caller to drive.
-    private static (OrcaCrowd Crowd, CrossingGate Gate, int[] Indices) BuildQueueScenario(
+    private static (OrcaCrowd Crowd, CrossingGate Gate, OrcaHandle[] Indices) BuildQueueScenario(
         int count, ICrossingSignal signal, double startTime)
     {
         var crowd = new OrcaCrowd { MaxNeighbours = 8 };
@@ -68,7 +68,7 @@ public class CrossingGateCrowdTests
             crowd, new WaypointFollower(), signal, ArriveRadius,
             queueDirection: new Vec2(0.0, 1.0), QueueSpacing);
 
-        var indices = new int[count];
+        var indices = new OrcaHandle[count];
         for (var k = 0; k < count; k++)
         {
             var path = new Vec2[] { PortalNear, PortalFar, DestinationFor(k) };

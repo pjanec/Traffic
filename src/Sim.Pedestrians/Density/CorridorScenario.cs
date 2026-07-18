@@ -55,7 +55,7 @@ public sealed class CorridorScenario
         crowd.AddObstacle(new[] { new Vec2(-10.0, Width), new Vec2(Length + 10.0, Width) });
 
         var total = AgentsPerGroup * 2;
-        var indices = new int[total];
+        var indices = new OrcaHandle[total];
         var dir = new int[total];       // +1 == walks +x (group A); -1 == walks -x (group B)
         var group = new bool[total];    // true == group A
 
