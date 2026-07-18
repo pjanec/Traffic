@@ -30,6 +30,7 @@ SCENES = [
     ("social", "Meet & talk", "Pre-scheduled two-ped interaction: step aside, face each other, talk, resume"),
     ("waiter", "Waiter", "Templated micro-scenario actor: serves tables in rotation, goes inside between rounds"),
     ("lively-crowd", "Lively crowd", "The routed O-D crowd, now with seeded Pause beats along real routes"),
+    ("remote", "Remote (over the wire)", "Reconstructed from the real DR-error-gated multicast stream, not the sim"),
 ]
 
 

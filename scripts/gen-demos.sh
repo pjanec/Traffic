@@ -291,6 +291,9 @@ try ped-waiter "Waiter (micro-scenario actor)" \
 try ped-lively-crowd "Lively crowd (routed + activity timelines)" \
   "The same Poisson-demand O-D crowd as the plain OD-routing demo, now graduated to LIVE-PROD-1b: PedDemand seeds Pause (\"sip\") beats into each spawn's route as an ActivityTimeline, so the routed crowd occasionally stops in place mid-transit -- still low-power, still server==IG, still routed across the junction's real sidewalks/crossings/walkingareas (PedDemand + PedLodManager.AddPedLively)." \
   "Pedestrians" demo_ped lively-crowd ped-lively-crowd
+try ped-remote "Remote (over the wire)" \
+  "The same sweeping-interest-source LOD promotion demo, but every disc is drawn from a PedRemoteReconstructor fed by the real DR-error-gated PedReplicationPublisher over an InMemoryPedReplicationBus -- each path is sent once, high-power positions are gated onto the wire only when dead-reckoning would drift out of tolerance, and a playout-delay render clock plus capped-correction smoothing reconstruct every pose (including the promotion/demotion DR-switch) with no visible pop: this crowd is literally reconstructed from the one multicast stream, not the sim (P3-3)." \
+  "Pedestrians" demo_ped remote ped-remote
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \

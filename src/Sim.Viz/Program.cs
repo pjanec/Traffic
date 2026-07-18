@@ -44,6 +44,7 @@ internal static class Program
             Console.Error.WriteLine("       Sim.Viz --ped-social <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-waiter <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-lively-crowd <outPath>");
+            Console.Error.WriteLine("       Sim.Viz --ped-remote <outPath>");
             return args.Length == 0 ? 2 : 0;
         }
 
@@ -62,6 +63,7 @@ internal static class Program
             "--ped-social" => RunPedSocial(args),
             "--ped-waiter" => RunPedWaiter(args),
             "--ped-lively-crowd" => RunPedLivelyCrowd(args),
+            "--ped-remote" => RunPedRemote(args),
             _ => RunSingle(args),
         };
     }
@@ -367,6 +369,53 @@ internal static class Program
         Console.WriteLine(
             $"wrote {outPath}  ({size} bytes)  frames={scene.Frames.Length} maxConcurrentPeds={maxPeds} "
             + $"framesWithPausedPed={framesWithPaused} maxConcurrentPaused={maxConcurrentPaused}");
+        return 0;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Pedestrian showcase: "Remote (over the wire)" (P3-3, docs/PEDESTRIAN-TASKS.md). Reports
+    // maxConcurrentPeds like the other ped scenes, plus everPromoted (a DR-switch was actually
+    // observed on the wire) -- direct evidence the reconstructed crowd really did promote, not just
+    // that the underlying LOD-promotion mechanism ran.
+    // ---------------------------------------------------------------------------------------
+    private static int RunPedRemote(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("error: --ped-remote requires an output path");
+            return 2;
+        }
+
+        var outPath = args[1];
+        var repoRoot = RepoRoot();
+        var scenarioDir = Path.Combine(repoRoot, "scenarios", "_ped", "poc0-crossing-plaza");
+
+        var scene = SceneGen.BuildPedRemote(scenarioDir);
+        var payload = new ReplayData(new[] { scene });
+        if (!WriteHtml(payload, scene.Name, outPath))
+        {
+            return 2;
+        }
+
+        var maxPeds = 0;
+        var everPromoted = false;
+        foreach (var frame in scene.Frames)
+        {
+            var n = 0;
+            foreach (var d in frame.D)
+            {
+                if (d is null) continue;
+                n++;
+                if (d.Length > 3 && d[3] == SceneGen.KindPedHighPower) everPromoted = true;
+            }
+
+            if (n > maxPeds) maxPeds = n;
+        }
+
+        var size = new FileInfo(outPath).Length;
+        Console.WriteLine(
+            $"wrote {outPath}  ({size} bytes)  frames={scene.Frames.Length} maxConcurrentDiscs={maxPeds} " +
+            $"everPromoted={everPromoted}");
         return 0;
     }
 

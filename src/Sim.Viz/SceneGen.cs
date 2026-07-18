@@ -10,6 +10,7 @@ using Sim.Pedestrians.Navigation;
 using Sim.Pedestrians.Navigation.Bake;
 using Sim.Pedestrians.Obstacles;
 using Sim.Pedestrians.Parking;
+using Sim.Replication;
 using static Sim.Viz.PayloadBuilder;
 
 namespace Sim.Viz;
@@ -492,6 +493,249 @@ internal static class SceneGen
             + "sweeps through; any pedestrian it nears promotes to a full-ORCA, reactive high-power "
             + "agent (orange) and demotes back once the source moves on and a dwell period elapses. "
             + "Driven end-to-end through PedLodManager + InterestField.",
+            new double[] { R(minX), R(minY), R(maxX), R(maxY) },
+            network,
+            new double[] { 0, 0 },
+            Dt * Decimate,
+            frames.ToArray());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Scene -- "Remote (over the wire)" (P3-3, docs/PEDESTRIAN-TASKS.md; docs/PEDESTRIAN-DESIGN.md
+    // §7): the SAME LOD-promotion setup as BuildLodPromotion (a sweeping interest source promotes
+    // low-power sidewalk walkers to full-ORCA high-power agents and demotes them once it passes), but
+    // this scene's discs are drawn from a PedRemoteReconstructor (P3-3, NEW) fed by the real GATED
+    // PedReplicationPublisher (PedPublishScheduler + PedBandwidthGovernor, P3-2) over an
+    // InMemoryPedReplicationBus (P3-1) -- NOT from PedLodManager.PositionOf/ModelOf directly. Every
+    // ped's PathArc leg is sent once; every high-power ped's position is DR-error-gated (sent only
+    // when the receiver's own linear extrapolation would drift out of tolerance); the promotion/
+    // demotion DR-model switch rides the same lifecycle topic. The reconstructor applies a
+    // playout-delay render clock plus capped-correction smoothing so the sparse high-power stream
+    // (and the DR-switch itself) render with no visible pop -- this is the whole server -> wire -> IG
+    // -> render loop, watchable.
+    // ---------------------------------------------------------------------------------------
+    internal static ScenePayload BuildPedRemote(string scenarioDir)
+    {
+        var netPath = Path.Combine(scenarioDir, "net.net.xml");
+        var walkableAddPath = Path.Combine(scenarioDir, "walkable.add.xml");
+        var network = BuildNetwork(NetworkParser.Parse(netPath));
+
+        var pedNetwork = PedNetworkParser.Load(netPath, walkableAddPath);
+        network = WithCrossings(network, pedNetwork, netPath);
+        var polygons = WalkablePolygonBaker.Bake(pedNetwork);
+        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons));
+
+        // Same four arm-crossing candidates as BuildLodPromotion (see its remarks for the geometry).
+        const double cx = 120.0, cy = 120.0;
+        var candidates = new (Vec2 A, Vec2 B)[]
+        {
+            (new Vec2(cx - 7.4, cy + 20.0), new Vec2(cx + 7.4, cy + 20.0)), // north arm
+            (new Vec2(cx + 20.0, cy - 7.4), new Vec2(cx + 20.0, cy + 7.4)), // east arm
+            (new Vec2(cx - 7.4, cy - 20.0), new Vec2(cx + 7.4, cy - 20.0)), // south arm
+            (new Vec2(cx - 20.0, cy - 7.4), new Vec2(cx - 20.0, cy + 7.4)), // west arm
+        };
+
+        var validPairs = new List<(Vec2[] Forward, Vec2[] Backward)>();
+        foreach (var (a, b) in candidates)
+        {
+            var path = nav.FindPath(a, b);
+            if (path is { Count: >= 2 })
+            {
+                var fwd = path.ToArray();
+                var bwd = fwd.Reverse().ToArray();
+                validPairs.Add((fwd, bwd));
+            }
+        }
+
+        if (validPairs.Count == 0)
+        {
+            throw new InvalidOperationException("BuildPedRemote: no valid arm-crossing routes found on the net.");
+        }
+
+        const double MaxSpeed = 1.3;
+        const double PedRadius = 0.3;
+        const double ArriveRadius = 0.3;
+        const double DwellSeconds = 1.0;
+        const double PromoteRadius = 6.0;
+        const double DemoteRadius = 13.0;
+        const double Dt = 0.2;
+        const int Decimate = 2;
+        const int steps = 700; // 140s simulated, decimated to 350 recorded frames
+        const int MaxPeds = 14;
+        const int SpawnEveryNSteps = 20; // a fresh ped roughly every 4s
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, ArriveRadius, DwellSeconds);
+        var field = new InterestField();
+        var sourcePos = new Vec2(cx - 25.0, cy);
+        var source = new InterestSource(sourcePos, PromoteRadius, DemoteRadius);
+        var sourceId = field.Register(source, InterestSourceKind.EntityAttached);
+        var noEntities = Array.Empty<WorldDisc>();
+
+        // The wire: gated publisher (DR-error scheduler + global bandwidth governor, P3-2) ->
+        // InMemoryPedReplicationBus (a true byte loopback, P3-1) -> PedRemoteReconstructor (P3-3). The
+        // demo's discs are drawn from THIS reconstructor's render poses (below), not from
+        // manager.PositionOf/ModelOf -- the rendered crowd really is reconstructed from the one
+        // multicast stream.
+        var meter = new PedBandwidthMeter();
+        var scheduler = new PedPublishScheduler(new PedDrErrorPublishPolicy());
+        var governor = new PedBandwidthGovernor(scheduler, meter, maxMbitPerSecond: 500.0);
+        var bus = new InMemoryPedReplicationBus();
+        var wirePublisher = new PedReplicationPublisher(bus.Sink, scheduler, governor, meter, stepDt: Dt);
+        var reconstructor = new PedRemoteReconstructor(bus.Source);
+
+        // Radius chosen from the routes' own measured span, same as BuildLodPromotion.
+        const double SweepRadius = 16.0;
+        const double SweepPeriod = 70.0; // seconds per revolution
+
+        var pedInfo = new Dictionary<int, (Vec2[] Forward, Vec2[] Backward, bool GoingForward)>();
+        var activeIds = new List<int>();
+        var nextId = 1;
+        var pairCursor = 0;
+
+        void Spawn(double now)
+        {
+            var (fwd, bwd) = validPairs[pairCursor % validPairs.Count];
+            var goingForward = (pairCursor / validPairs.Count) % 2 == 0;
+            pairCursor++;
+
+            var id = nextId++;
+            var path = goingForward ? fwd : bwd;
+            manager.AddPed(id, path, MaxSpeed, PedRadius, now);
+            pedInfo[id] = (fwd, bwd, goingForward);
+            activeIds.Add(id);
+        }
+
+        var snapshots = new List<List<(string Key, double[] Disc)>>();
+
+        var now = 0.0;
+        for (var step = 0; step < steps; step++)
+        {
+            // Whole-step wire batch: capture the event-list cursor BEFORE this step's spawn/promotion/
+            // demotion so a freshly-spawned ped's spawn-time PathArcRecord (published by AddPed, above)
+            // rides the SAME wire batch as everything PedLodManager.Step emits this tick -- exactly
+            // the whole-step publish granularity PedReplicationRoundTripTests/PedRemoteReconstructorTests
+            // rely on (a promotion's DR-switch and its first FreeKinematicSample always land in the same
+            // Drain(), so the receiver never observes a "switched but no sample yet" ped).
+            var beforeCount = publisher.Events.Count;
+
+            if (step % SpawnEveryNSteps == 0 && activeIds.Count < MaxPeds)
+            {
+                Spawn(now);
+            }
+
+            // Sweep the interest source in a slow circle around the junction so it passes near every
+            // arm's route in turn over the clip.
+            var angle = (now / SweepPeriod) * 2.0 * Math.PI;
+            sourcePos = new Vec2(cx + (SweepRadius * Math.Cos(angle)), cy + (SweepRadius * Math.Sin(angle)));
+            field.Move(sourceId, sourcePos);
+
+            manager.Step(now, Dt, field, noEntities);
+            now += Dt;
+
+            // Cycle each ped back and forth once it reaches the end of its current leg -- a sustained
+            // flow instead of everyone arriving and stopping. Only recycles a currently LOW-power ped:
+            // RemovePed/AddPed here is a demand-side "reached destination, walk back" reset, not
+            // PedLodManager's own promote/demote transition, so it never publishes a DR-switch: cycling
+            // a still-FreeKinematic ped this way would desync the wire (the reconstructor would keep
+            // believing it is high-power with no more samples ever coming). A high-power ped instead
+            // demotes and re-routes through PedLodManager.Step's own dwell-based mechanism (which DOES
+            // publish the DR-switch + a fresh PathArcRecord), then cycles normally next time it arrives
+            // as a plain PathArc ped.
+            foreach (var id in activeIds)
+            {
+                if (manager.ModelOf(id) != PedDrModel.PathArc)
+                {
+                    continue;
+                }
+
+                var (fwd, bwd, goingForward) = pedInfo[id];
+                var dest = goingForward ? fwd[^1] : bwd[^1];
+                if ((manager.PositionOf(id, now) - dest).Abs < 0.75)
+                {
+                    manager.RemovePed(id);
+                    var nextPath = goingForward ? bwd : fwd;
+                    manager.AddPed(id, nextPath, MaxSpeed, PedRadius, now);
+                    pedInfo[id] = (fwd, bwd, !goingForward);
+                }
+            }
+
+            var newEvents = new List<PedEvent>(publisher.Events.Count - beforeCount);
+            for (var e = beforeCount; e < publisher.Events.Count; e++)
+            {
+                newEvents.Add(publisher.Events[e]);
+            }
+
+            wirePublisher.Publish(newEvents);
+            reconstructor.Pump(now);
+
+            if (step % Decimate != 0)
+            {
+                continue;
+            }
+
+            var discs = new List<(string, double[])>(activeIds.Count + 1);
+            foreach (var id in activeIds)
+            {
+                if (!reconstructor.TryGetRenderPose(id, out var pos, out var visible, out _) || !visible)
+                {
+                    continue; // not yet observed on the wire this run, or (a future liveliness combo) hidden
+                }
+
+                var kind = reconstructor.Ig.ModelOf(id) == PedDrModel.FreeKinematic ? KindPedHighPower : KindPedLowPower;
+                discs.Add(($"ped{id}", new[] { R(pos.X), R(pos.Y), PedRadius, (double)kind }));
+            }
+
+            discs.Add(("source", new[] { R(sourcePos.X), R(sourcePos.Y), 1.5, (double)KindInterestSource }));
+            snapshots.Add(discs);
+        }
+
+        var frames = new List<FramePayload>(snapshots.Count);
+        var noVehicles = Array.Empty<double[]?>();
+        foreach (var _ in snapshots)
+        {
+            frames.Add(new FramePayload(noVehicles, Array.Empty<double[]?>()));
+        }
+
+        AssignStableDiscSlots(frames, snapshots);
+
+        double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
+        void Track(double x, double y)
+        {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        foreach (var lane in network.Lanes)
+        {
+            for (var p = 0; p < lane.Shape.Length; p += 2) Track(lane.Shape[p], lane.Shape[p + 1]);
+        }
+
+        foreach (var j in network.Junctions)
+        {
+            for (var p = 0; p < j.Shape.Length; p += 2) Track(j.Shape[p], j.Shape[p + 1]);
+        }
+
+        const double pad = 6.0;
+        minX = Math.Min(minX, cx - SweepRadius - pad);
+        maxX = Math.Max(maxX, cx + SweepRadius + pad);
+        minY = Math.Min(minY, cy - SweepRadius - pad);
+        maxY = Math.Max(maxY, cy + SweepRadius + pad);
+
+        return new ScenePayload(
+            "Remote (over the wire)",
+            "This crowd is rendered from the one multicast stream, not the sim: each pedestrian's "
+            + "sidewalk path is sent once (grey = low-power PathArc), a moving interest source (yellow "
+            + "marker) promotes nearby walkers to full-ORCA high-power agents (orange) whose positions "
+            + "are DR-error-gated onto the wire (sent only when the receiver's own dead-reckoning would "
+            + "drift out of tolerance), and a playout-delay render clock plus capped-correction smoothing "
+            + "reconstruct every pose -- including the promotion/demotion DR-switch itself -- with no "
+            + "visible pop. Driven end-to-end through PedLodManager -> the gated PedReplicationPublisher "
+            + "-> InMemoryPedReplicationBus -> PedRemoteReconstructor: server == IG within render "
+            + "tolerance.",
             new double[] { R(minX), R(minY), R(maxX), R(maxY) },
             network,
             new double[] { 0, 0 },

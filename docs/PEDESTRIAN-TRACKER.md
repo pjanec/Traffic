@@ -101,7 +101,15 @@ Graduation into production (making the *routed ambient crowd* lively):
       (first-sightings never) — 100k all-high-power = 144 Mbit/s, 400k-promotion spike held at 499.99 Mbit/s
       (governor engaged, caught up in 2 steps), low-power 0 per-step crowd bytes; gated-by-flag so P3-1
       round-trip unchanged; 590 parity + 116 ped green)*
-- [ ] **P3-3** IG-side reconstruction (FreeKinematic extrapolator + PathArc follower; server==IG over DDS)
+- [x] **P3-3** Remote reconstruction render pipeline + demo *(`PedRemoteReconstructor`: playout-delay render
+      clock + holonomic capped-correction smoothing over P3-1's receiver; `--ped-remote` scene renders the
+      crowd from the gated multicast wire, not the sim; tests: server==IG within render tolerance over the
+      GATED wire — low-power exact, high-power ≤0.25 m; cap absorbs a 1 m snap over 2 frames (no teleport);
+      determinism; 590 parity + 120 ped green)*
+
+**Stage P3 (DDS-multicast networking) COMPLETE** — wire codec + reconstruction (P3-1), DR-error gating +
+bandwidth governor (P3-2), remote render with no-pop smoothing (P3-3); all hermetic on the InMemory byte
+loopback; the live CycloneDDS binding remains a separate out-of-`Traffic.sln` concern.
 
 ## Stage P4 — Engine coordination seams (Core; with lane-engine session)
 
