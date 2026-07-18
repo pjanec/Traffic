@@ -3242,9 +3242,26 @@ public sealed partial class Engine : IEngine
         // a real gap<0 overlap still fails. Given (patchSpeed=false) keeps today's exact literal,
         // gap-checked but never adjusted.
         var isMaxSpeed = v.Def.DepartSpeed.Kind == DepartSpeedSpec.Max;
-        var resolvedSpeed = isMaxSpeed
-            ? KraussModel.LaneVehicleMaxSpeed(lane.Speed, v.SpeedFactor, v.VType)
-            : v.Def.DepartSpeed.Literal;
+        // Issue-1 follow-up (docs/ISSUE2-JUNCTION-TELEPORT-DESIGN.md §4-CORRECTION): SUMO inserts a
+        // departPos="stop" vehicle STOPPED at its stop (MSLane::insertVehicle STOP case, MSLane.cpp:
+        // 692-698 -- a car placed at its stop has speed 0), regardless of departSpeed. Without this,
+        // a departPos="stop" + departSpeed="max" car inserts MOVING, immediately lane-changes off the
+        // stop lane before ProcessNextStop (which needs speed<=haltingSpeed ON the stop lane) can mark
+        // the stop Reached, so the stop becomes a permanent unreached "zombie" in the vehicle's queue.
+        // When the car later reaches its real arrival edge, the GAP-3/Issue-1 residency guard
+        // (near DestroyWithArrival) misreads that stale zombie as a still-pending parking obligation
+        // and freezes the car forever at the lane end instead of arriving it -- the root cause of the
+        // synthetic-junction never-arrived gap (149 veh) and the teleport cascade it drives. Forcing
+        // speed 0 here lets ProcessNextStop mark the origin stop Reached on step 1 exactly as vanilla
+        // does. Byte-identical for every committed departPos="stop" golden (48/67/68 all use
+        // departSpeed="0", so resolvedSpeed was already 0); only the departSpeed!="0" case changes.
+        var isStopDepart = v.Def.DepartPos.Kind == DepartPosSpec.Stop
+            && v.Def.Stops.Count > 0 && v.Def.Stops[0].LaneId == lane.Id;
+        var resolvedSpeed = isStopDepart
+            ? 0.0
+            : isMaxSpeed
+                ? KraussModel.LaneVehicleMaxSpeed(lane.Speed, v.SpeedFactor, v.VType)
+                : v.Def.DepartSpeed.Literal;
 
         if (leader is not null)
         {

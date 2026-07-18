@@ -299,6 +299,40 @@ Full suite 613 parity (+5) / 3 skipped; only `scenarios/71-*` new — every exis
 (LC 07/12/18/41/45/46/49, routing 15, junctions 08/11/26/38/39/40, parking 48/66/67/68/69/70, Issue-1
 69, determinism D1/D8 all green). **Issue 1 and Issue 2 are both fully closed and match vanilla.**
 
+## Issue 2 (junction teleports) — RESOLVED, and it was NEVER a right-of-way bug
+
+Chasing the teleport count gap (SumoSharp 75 vs vanilla 3 on `scenarios/_repro/synthetic-junction`) led
+to a decisive course-correction. The core session's on-junction-RoW hypothesis was investigated and
+**disproved by deeper tracing**: every over-teleported car is not stuck in a right-of-way contest — it
+is blocked by cars that are **permanently frozen** by a bug in *this session's own Issue-1 residency
+guard*. Chain: a `departPos="stop"` + `departSpeed="max"` origin was inserted **moving** (at lane max
+speed), immediately lane-changed off its stop lane before `ProcessNextStop` (which needs speed ≤ halting
+*on the stop lane*) could mark the stop `Reached`, leaving a permanent unreached "zombie" stop in its
+queue. When the car later reached its real arrival edge, the Issue-1 residency guard misread the zombie
+as a pending parking obligation and **froze the car forever at the lane end** (Engine.cs `if
+(frontStopAtArrival is { Reached: false, IsParking: true }) { Pos = laneLength; Speed = 0; break; }`).
+149 such frozen cars on the junction grid blocked junctions → cascaded into 75 jam/yield teleports.
+
+**Fix (surgical, in the parkingArea path):** SUMO inserts a `departPos="stop"` vehicle **stopped**
+(`MSLane::insertVehicle` STOP case, MSLane.cpp:692-698 — a car at its stop has speed 0), regardless of
+`departSpeed`. `TryInsertOnLane` now forces the insertion speed to 0 for `departPos="stop"`, so
+`ProcessNextStop` marks the origin stop `Reached` on step 1 exactly as vanilla does — no zombie.
+**Byte-identical for every committed `departPos="stop"` golden (48/67/68 all use `departSpeed="0"`, so
+the speed was already 0); only the `departSpeed!="0"` case changes.**
+
+**Verified first-hand** — one line closed both the never-arrived gap AND the entire teleport count:
+
+| synthetic-junction `--end 1000` | vanilla | before | after |
+|---|--:|--:|--:|
+| arrived (tripinfo) | 475 | 326 | **475** (exact) |
+| teleports total / jam / yield | 3 / 0 / 3 | 75 / 31 / 44 | **0 / 0 / 0** |
+
+`synthetic-parity` (Issue 1) unchanged: sinks wrongly completed 0, `ids(ss.ti)−ids(van.ti)=0`, teleports
+0. Full suite **613 parity byte-identical** (no committed golden moved). The Part-1 classification stays
+(correct jam/yield split for any genuine future case), but on these scenarios the count is now 0 because
+the frozen blockers are gone. Credit: the on-junction-RoW subagent correctly **refused to build the
+assigned (ineffective) fix** and traced the real root instead.
+
 ## All three gaps landed — definitive acceptance status
 
 GAP-1→GAP-3 are complete and golden-verified against vanilla SUMO 1.20.0. The `sumosharp` binary now
