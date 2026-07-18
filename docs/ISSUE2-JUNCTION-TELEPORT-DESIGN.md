@@ -42,27 +42,52 @@ TL phase char for a TL link, else the static `<connection state=…>` char, now 
 produced yet (documented simplification: every in-scope scenario reports 0). Verified byte-identical:
 full suite 613 green, scenario 47's golden stays `jam=1` (its teleport link is `state="M"`, major).
 
-## 4. Part 2 — the count gap (in progress)
+## 4. Part 2 — the count gap: ROOT CAUSE FOUND
 
-### 4a. Yield gap → impatience (MSLink::blockedByFoe, MSLink.cpp:921-1014)
-SumoSharp's junction RoW is ported with `impatience==0` (Engine.cs:6940 "phase 1 has no impatience").
-SUMO grows a vehicle's impatience with its waiting time (`getImpatience() = base + waitingTime /
-gTimeToImpatience`, default `--time-to-impatience 180`) and, when `impatience>0`, assumes a
-priority foe will brake for it (`foeArrivalTime = (1-imp)·foeAT + imp·foeArrivalTimeBraking`,
-MSLink.cpp:949-954) — so a long-waiting minor-road vehicle forces through instead of freezing to the
-120 s cutoff. **Confirmed the lever:** vanilla with `--time-to-impatience 0` rises 3→12 teleports (still
-all yield, still 0 jam). Plan: port impatience into the arrival-time RoW gate, growing with
-`WaitingTime`. Parity guard: impatience is 0 while `WaitingTime==0`, so scenarios whose junction waits
-never accumulate stay byte-identical — to be verified against goldens 26/27/29/31/39.
+### 4a. The primary cause — the crossing yield is a BLANKET stop, not arrival-time gap acceptance
+`JunctionYieldConstraint`'s crossing-foe arm (Engine.cs:6335) is:
+```
+takesCrossingYield = !(egoOnInternal || foeWillNotPass || foeNotApproaching || foeYieldsThisStep || ignoresFoe)
+```
+None of the escape conditions is an **arrival-time** check. So ego stops completely whenever *any*
+priority foe is within its reservation distance of the conflict. SUMO's `MSLink::blockedByFoe`
+(MSLink.cpp:981-1013) instead compares arrival-time windows: ego may **cross as the leader** when it
+clears the conflict before the foe arrives (`foeArrivalTime > egoLeave + lookAhead`), and only yields on
+a genuine window overlap. The merge arm already does this (`BlockedByMergeFoe`, 6964); the **crossing arm
+never got it** — it blanket-yields. On a busy foe stream there is almost always a foe within reservation
+distance, so SumoSharp's minor-road vehicle waits for a *completely empty* stream → freezes to the 120 s
+cutoff → teleports. SUMO darts through the gaps between foes. **This is the dominant cause of the yield
+count gap (44 vs 3).**
 
-### 4b. Jam gap (31 vs 0) — separate flow/creep issue
-Even impatience-off vanilla has 0 jam, so the 31 jam teleports are not impatience. They are major-link
-vehicles behind a standing downstream jam. Hypotheses to confirm: (i) a cascade — frozen minor-link
-yielders (4a) back up their approaches, and once 4a clears the yielders the jams may drain; (ii) SUMO's
-front-of-lane vehicles CREEP in stop-and-go (resetting `getWaitingTime`) where SumoSharp freezes solid
-(observed: teleported SumoSharp vehicles sit at the exact same pos for 120 s, 0 creep); (iii) 2→1
-lane-drop merge throughput (39% of the repro's nodes). Measure 4a's effect on the jam count first before
-attributing (ii)/(iii).
+### 4b. The secondary refinement — impatience (MSLink.cpp:947-965)
+On top of arrival-time RoW, SUMO grows impatience with waiting time (`getImpatience() = base +
+waitingTime/gTimeToImpatience`, default `--time-to-impatience 180`) and, when impatient, blends the foe's
+arrival time toward its braking arrival (`foeArrivalTime = (1-imp)·foeAT + imp·fatb`) — a long waiter
+assumes the foe will brake and forces through. **Confirmed the lever:** vanilla with
+`--time-to-impatience 0` rises 3→12 (still all yield, 0 jam); so arrival-time RoW alone (no impatience)
+already gets vanilla to 12, and impatience closes 12→3. So 4a is the big lever, 4b the finisher.
+
+### 4c. The jam gap (31 vs 0) is a cascade of 4a
+Even impatience-off vanilla has **0 jam**. SumoSharp's 31 jam teleports are major-link vehicles queued
+behind the frozen minor-link yielders of 4a: a blanket-yielding minor vehicle freezes at a junction, its
+approach backs up, and the major-link vehicle feeding that approach is now "jammed" behind a standing
+queue → jam teleport. Fixing 4a (letting the minor vehicles find gaps) should drain those queues and
+clear most of the 31 jam teleports without a separate fix. (Residual creep / 2→1 lane-drop throughput to
+be re-measured only if jam does not fall after 4a.)
+
+## 4bis. The count-gap fix plan (faithful, not a cap/relabel)
+Port SUMO's arrival-time RoW into the crossing-yield arm, mirroring the existing merge arm:
+1. Compute ego's arrival/leaving window at the crossing conflict (the `getMinimalArrivalTime` machinery
+   `SeenToInternalLaneEntry` + the conflict geometry already feed the merge arm) and the foe's window.
+2. Replace the blanket `takesCrossingYield` with `BlockedByMergeFoe`-style arrival-time logic adapted to
+   a *crossing* conflict (windows from `MSLink::blockedByFoe`, MSLink.cpp:981-1013): don't yield when ego
+   clears before the foe arrives.
+3. Add impatience: grow it from `WaitingTime`, blend `foeArrivalTime` toward the braking arrival.
+**Parity risk is real and must be gated by verification** — this changes when minor-road vehicles cross
+at *every* priority junction, so goldens 08/11/26/27/34/38/39/40 must be re-run and stay byte-identical
+(the arrival-time RoW must reduce to the same wait where no early gap exists). If any moves, the port is
+wrong and is corrected, never the golden. Impatience stays 0 while `WaitingTime==0`, preserving
+uncongested goldens. This is a substantial, delicate RoW change warranting its own focused pass.
 
 ## 5. Gates
 Every existing golden byte-identical (47-teleport-jam + junctions 08/11/26/27/34/38/39/40 + determinism
