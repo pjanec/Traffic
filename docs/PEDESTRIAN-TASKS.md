@@ -84,13 +84,29 @@ Design ref: `PEDESTRIAN-DESIGN.md` §3(d), `PEDESTRIAN-POC7C-FINDINGS.md` Q2.
   any promote-radius, demotes correctly with hysteresis (no flap), and the per-step interest scan is
   sub-linear in ped count (measured: adding sources or peds does not blow up the stable-scenario ms/step).
 
-### P1-2 — API surface + packaging
+### P1-2 — API surface + packaging *(scheduled BEFORE P5 — evac (P5-B) consumes it)*
 - **Design ref:** §10. **Files:** `src/Sim.Pedestrians/*`, new `README.md`, `.csproj` packaging. **Deps:** P1-1.
-- Consolidate the POC namespaces (`Lod`/`Navigation`/`Crossing`/`Obstacles`/`Parking`) into a coherent,
-  documented public API; make `Sim.Pedestrians` a packable NuGet library (like `SumoSharp.Evac`), with the
-  DotRecast provider staying in its own optional package.
-- **Success conditions:** the package builds/packs; a short sample app drives a pedestrian scenario through
-  the public API only (no internals); README documents the seams; hermetic `dotnet test` unaffected.
+- A coherent `PedestrianWorld` **facade** over the common wiring (`PedLodManager` + `InterestField` +
+  `PedPublisher`): `AddWalker`/`AddLivelyWalker`, `SetForcedHighPower(id,on)` (the panic/pin control),
+  `AddInterestSource`/`MoveInterestSource`/`RemoveInterestSource`, `SetExternalObstacles`, `Step(now,dt)`,
+  `PositionOf`/`ModelOf`/`Remove`/`LiveIds` — so a consumer never hand-wires the internals. Add
+  `PedLodManager.SetForcedHighPower` (a pinned ped promotes immediately and never demotes while pinned;
+  default off → bit-identical). Make `Sim.Pedestrians` a packable library (packaging metadata on the
+  `.csproj`); DotRecast provider stays its own optional package.
+- **Success conditions:** the package builds/packs; a short sample drives a scenario through the facade
+  only (no internals); `SetForcedHighPower` promotes a ped regardless of interest field and holds it high;
+  the unpinned path stays bit-identical (existing ped tests unchanged); README documents the seams;
+  hermetic `dotnet test` unaffected.
+
+### P5-PRE — Synthetic pedestrian evac district (walkable net) *(prerequisite for P5-B)*
+- **Design ref:** §4 (bake), §6. **Files:** new `scenarios/_ped/evac-district/` (`*.net.xml` +
+  `walkable.add.xml` + safe-zone anchors). **Deps:** P2-1.
+- Author/generate a synthetic SUMO net with real pedestrian infrastructure (sidewalks + crossings +
+  walkingareas) over a few blocks, an incident-able interior, and **safe-zone anchor points** at the
+  fringe (the flee destinations). It must bake cleanly through `SumoNavMesh`/`WalkablePolygonBaker`.
+- **Success conditions:** `SumoNavMesh` bakes a connected walkable graph; `FindPath(interiorPoint,
+  safeZone)` returns a route along sidewalks/crossings (not a straight line through buildings); committed
+  as a reusable evac scenario.
 
 ---
 
@@ -183,13 +199,21 @@ Design ref: `PEDESTRIAN-DESIGN.md` §3(d), `PEDESTRIAN-POC7C-FINDINGS.md` Q2.
 
 ## Stage P5 — Evac generalization
 
-### P5-1 — `Sim.Evac` consumes `Sim.Pedestrians`
-- **Design ref:** §6 (evac = specialization). **Files:** `src/Sim.Evac/*`. **Deps:** P1-2, P2-3.
-- Refactor evac so panic = a **forced high-power promotion** + the flee param override, and destination =
-  nearest safe zone via `IPedNavigation` — replacing `FleeGoalFor` radial steering and `ExitsFarthestFirst`.
-  `FearField`/`LineOfSight`/`BlockedDetector` are reused unchanged.
-- **Success conditions:** existing evac demos/tests (`EvacOrganicDemoTests`, etc.) still pass (or are updated
-  with justified new goldens); evac now routes peds to safe zones along real walkable space, not radially.
+### P5-1 (B) — `Sim.Evac` consumes `Sim.Pedestrians` on a real walkable net
+- **Design ref:** §6 (evac = specialization). **Files:** `src/Sim.Evac/*` (a new evac scenario on the P5-PRE
+  net). **Deps:** P1-2 (the facade + `SetForcedHighPower`), P5-PRE (the synthetic walkable net), P2-3.
+- Rebuild the pedestrian side of evac on the `PedestrianWorld` facade over the P5-PRE walkable net: panic =
+  `SetForcedHighPower` (forced promotion to reactive ORCA) + the flee param override; the fleeing ped's
+  destination = the **nearest safe zone routed via `IPedNavigation`** (`SumoNavMesh`) along real sidewalks/
+  crossings, replacing `FleeGoalFor` radial steering (and, for the ped side, the fake-navmesh band). Abandoned
+  cars feed in as external obstacles (`SetExternalObstacles`). `FearField`/`LineOfSight`/`BlockedDetector`
+  reused unchanged. Keep the legacy `FakeNavMesh`/radial path available for the existing (netless) evac
+  scenarios so their aggregate-property tests stay green; the NEW walkable-net evac scenario exercises the
+  routed flee.
+- **Success conditions:** a new evac-district scenario runs end-to-end; panicked peds route to the nearest
+  safe zone **along walkable space** (a ped's path bends around a block, not straight through it) and reach
+  it (escaped); existing evac demo tests (aggregate-property) still pass; a `--evac-district`/Sim.Viz demo
+  shows the routed foot-exodus; hermetic `dotnet test` unaffected.
 
 ---
 

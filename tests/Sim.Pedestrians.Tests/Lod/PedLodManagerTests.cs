@@ -500,4 +500,45 @@ public class PedLodManagerTests
 
         Assert.True(everPromoted, "a lively low-power ped inside a promote radius must promote to FreeKinematic");
     }
+
+    // ---- P1-2: forced high-power (evac panic pin) -----------------------------------------------
+
+    [Fact]
+    public void SetForcedHighPower_PromotesWithNoInterestSource_AndHoldsHigh_ThenDemotesWhenCleared()
+    {
+        var nav = BuildNav();
+        var path = nav.FindPath(WestNorthArm, EastNorthArm);
+        Assert.NotNull(path);
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, ArriveRadius, DwellSeconds);
+        manager.AddPed(id: 1, path!, MaxSpeed, Radius, now: 0.0);
+
+        // An interest field with its ONE source parked far away -> nothing would ever promote by proximity.
+        var field = new InterestField();
+        field.Register(new InterestSource(new Vec2(-10_000, -10_000), promoteRadius: 1.0, demoteRadius: 2.0));
+        var noEntities = Array.Empty<WorldDisc>();
+
+        // Pin it high-power (evac panic). It must promote on the next step despite no source nearby.
+        manager.SetForcedHighPower(1, true);
+        var now = 0.0;
+        manager.Step(now, Dt, field, noEntities); now += Dt;
+        Assert.Equal(PedDrModel.FreeKinematic, manager.ModelOf(1));
+
+        // And it must STAY high across many steps while pinned (never demotes, even far from any source).
+        for (var i = 0; i < 100; i++) { manager.Step(now, Dt, field, noEntities); now += Dt; }
+        Assert.Equal(PedDrModel.FreeKinematic, manager.ModelOf(1));
+
+        // Unpin -> it demotes back to low-power once past the dwell/hysteresis (it is far from every
+        // demote radius, so the countdown runs immediately).
+        manager.SetForcedHighPower(1, false);
+        var demoted = false;
+        for (var i = 0; i < 100 && !demoted; i++)
+        {
+            manager.Step(now, Dt, field, noEntities); now += Dt;
+            if (manager.ModelOf(1) == PedDrModel.PathArc) demoted = true;
+        }
+
+        Assert.True(demoted, "an unpinned ped far from every source must demote back to low-power");
+    }
 }

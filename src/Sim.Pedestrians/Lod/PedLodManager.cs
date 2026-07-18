@@ -61,6 +61,11 @@ public sealed class PedLodManager
         // that special-cases it is inert and the PathArc path stays bit-identical.
         public ActivityTimeline? Timeline;
 
+        // P1-2 (evac panic, docs/PEDESTRIAN-DESIGN.md §6): when true this ped is PINNED high-power --
+        // it promotes on the next step regardless of any InterestSource, and never demotes while pinned.
+        // Default false -> the interest-field-driven promotion path is exactly as before (bit-identical).
+        public bool ForcedHighPower;
+
         public OrcaHandle HighIndex = OrcaHandle.Invalid;    // handle into the persistent high-power OrcaCrowd, or Invalid when Low
 
         public double StateEnteredAt;             // sim time this ped entered its CURRENT LOD state
@@ -208,6 +213,20 @@ public sealed class PedLodManager
 
     public PedDrModel ModelOf(int id) => _peds[id].Model;
 
+    // P1-2 (docs/PEDESTRIAN-DESIGN.md §6 evac panic; the PedestrianWorld facade's `SetForcedHighPower`):
+    // pin/unpin a ped to high-power. While pinned it promotes on the next Step regardless of any
+    // InterestSource and never demotes; unpinning lets it demote normally once it is outside every
+    // demote radius. Inert (no-op) if `id` is not registered, mirroring RemovePed's convention. The
+    // actual PathArc->FreeKinematic Add happens in the next Step's promotion pass (never mid-call),
+    // preserving the "structural mutations are deferred to Step" discipline the whole manager relies on.
+    public void SetForcedHighPower(int id, bool on)
+    {
+        if (_peds.TryGetValue(id, out var e))
+        {
+            e.ForcedHighPower = on;
+        }
+    }
+
     // LIVE-PROD-1b (docs/PEDESTRIAN-LIVELINESS-DESIGN.md §4, §10): the ped's current animation tag, so
     // a caller (a Sim.Viz demo, or eventually an IG) can pick a disc kind / anim clip without
     // re-evaluating PoseAt itself or reaching into PedEntry (private). An ActivityTimeline ped reports
@@ -286,14 +305,17 @@ public sealed class PedLodManager
             // the same way. FreeKinematic is the only high-power model. Stationary is not used here.
             if (e.Model != PedDrModel.FreeKinematic)
             {
-                if (stateAge >= _dwellSeconds && interestField.Query(pos).AnyWithinPromote)
+                // A pinned ped (P1-2 SetForcedHighPower, evac panic) promotes immediately -- no interest
+                // source and no minimum-dwell gate; otherwise the ordinary interest-field promotion.
+                if (e.ForcedHighPower || (stateAge >= _dwellSeconds && interestField.Query(pos).AnyWithinPromote))
                 {
                     toPromote.Add(id);
                 }
             }
             else if (e.Model == PedDrModel.FreeKinematic)
             {
-                if (interestField.Query(pos).AllOutsideDemote)
+                // A pinned ped never demotes while pinned.
+                if (!e.ForcedHighPower && interestField.Query(pos).AllOutsideDemote)
                 {
                     if (double.IsNaN(e.OutsideSince))
                     {
