@@ -25,11 +25,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked/ne
 
 ## Stage P0 — Crowd-store Add/Remove (PRIORITY)
 
-- [ ] **P0-1** `OrcaCrowd` stable-handle `Add`/`Remove` (free-list + generation) — bit-identical no-remove
-      path; determinism + parallel gates
-- [ ] **P0-2** `MixedTrafficCrowd` `Add`/`Remove` + `SetExternalObstacles` dynamic disc input
-- [ ] **P0-3** `PedLodManager` / `LotCoupling` use Add/Remove (retire rebuild) — churn benchmark B≈A
-      (per-switch O(1)); before/after recorded
+- [x] **P0-1** `OrcaCrowd` stable-handle `Add`/`Remove` (free-list + generation) — bit-identical no-remove
+      path; determinism + parallel gates *(OrcaHandle; 3 new tests; 578 parity green)*
+- [x] **P0-2** `MixedTrafficCrowd` `Add`/`Remove` + `SetExternalObstacles` dynamic disc input
+      *(velocity-aware avoidance proven; 582 parity green)*
+- [x] **P0-3** `PedLodManager` / `LotCoupling` use Add/Remove (retire rebuild) *(same-VM A/B: churn ~9%
+      faster, stable neutral — net win, no regression; high-water compaction noted as a P6 refinement)*
 
 ## Stage P1 — Consolidate API + interest-source system
 
