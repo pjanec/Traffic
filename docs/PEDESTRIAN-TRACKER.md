@@ -34,12 +34,15 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked/ne
 
 ## Stage P1 — Consolidate API + interest-source system
 
-- [ ] **P1-1** Movable multi-source interest field (spatial, hysteretic, deterministic)
+- [x] **P1-1** Movable multi-source interest field (spatial, hysteretic, deterministic)
+      *(InterestField; inverse spatial index matches a brute-force oracle; 8 tests; 582 parity green)*
 - [ ] **P1-2** `Sim.Pedestrians` production API surface + NuGet packaging + sample
 
 ## Stage P2 — Navigation productionization
 
-- [ ] **P2-1** Harden SUMO-geometry bake (mitred strips, bent-sidewalk adjacency) + static-obstacle index
+- [x] **P2-1** Harden SUMO-geometry bake (mitred strips, bent-sidewalk adjacency) + static-obstacle index
+      *(OrcaCrowd.UseObstacleSpatialIndex bit-identical serial+parallel, sub-linear scaling; mitred
+      sidewalks + 2-polygon-cluster adjacency + spine threading; 585 parity green)*
 - [ ] **P2-2** Dynamic blockers + reroute in `IPedNavigation` (no thrash)
 - [ ] **P2-3** Production navmesh integration contract + example + ped OD demand
 
