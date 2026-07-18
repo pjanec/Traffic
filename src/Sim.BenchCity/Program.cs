@@ -76,6 +76,7 @@ internal static class Program
         var fastGate = false;
         var spatial = false;
         var region = false;
+        var coordinatedLc = false;
         var regionGrid = 4;
         string? sumoSummaryPath = null;
         string? sumoTripinfoPath = null;
@@ -159,6 +160,12 @@ internal static class Program
                     // tolerance, and no vehicle overlaps. Prints PASS/FAIL and returns.
                     fastGate = true;
                     break;
+                case "--coordinated-lc":
+                    // P2G-2: opt into the coordinated dense lane-change model (cooperative informFollower
+                    // + cross-junction speed-gain). Believable multi-lane overtaking/merging at a
+                    // per-step LC cost; measure the delta vs the default (gate off) with this flag.
+                    coordinatedLc = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"error: unrecognized argument: {args[i]}");
                     return 2;
@@ -208,6 +215,7 @@ internal static class Program
         engine.SpatialPlan = spatial; // opt-in spatial plan probe (off = default; byte-identical when on)
         engine.RegionGrid = regionGrid; // spatial region grid G (regions = G*G); set BEFORE LoadScenario
         engine.RegionPlan = region; // opt-in region-parallel plan/willPass (byte-identical when on)
+        engine.CoordinatedLaneChange = coordinatedLc; // P2G-2 opt-in coordinated dense LC (believable, costs LC-phase time)
 
         engine.LoadScenario(net, rou, cfg);
 

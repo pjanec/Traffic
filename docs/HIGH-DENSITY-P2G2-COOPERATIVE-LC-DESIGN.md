@@ -114,6 +114,29 @@ as a gated foundation:
 4. **Keep-right follower veto + informFollower** (the P2-G follower half) under the same gate.
 5. **A bit-exact anchor + golden** under the flag, and a **perf measurement** of the gate-ON LC phase.
 
+## 3.6 PERFORMANCE MEASURED (session 3) — the gate-ON cost is negligible-to-neutral
+
+Measured with `Sim.BenchCity --coordinated-lc` (the flag added for this), gate-OFF vs gate-ON:
+
+| scenario | gate OFF | gate ON | note |
+|---|---|---|---|
+| dense saturated `-L2` grid (412 veh, 700 steps) | ~1.6-1.7 s, ~410-495x RTF | ~1.2-1.6 s, ~426-577x RTF | both drain 411/412, 0 stuck; ON **≈ neutral / slightly faster** |
+| light `-L2` grid (75 veh, 600 steps) | ~0.38-0.48 s | ~0.30-0.41 s | both 74 arrived, 0 stuck; delta **within noise** |
+
+**Finding: the coordinated model is NOT a performance regression.** The extra per-vehicle LC work
+(memoized `BestLanesCached`, a bounded `TryFindContinuationLeader` scan, rare `informFollower`) is cheap;
+on dense traffic the improved flow *offsets it entirely* (fewer vehicle-steps of congestion). The engine
+runs 400-2000x realtime in both modes. So the config gate's original perf worry is largely moot — ON is
+a cheap opt-in, not a slow one. (Default stays OFF only to preserve the byte-identical parity anchor, not
+for speed.)
+
+### Direction update (owner steer, 2026-07-18): bit-exact parity is NOT the goal
+Smooth + believable flow + high performance are. The coordinated mode already delivers all three (flows
+dense at 0 stuck, SUMO-like overtaking, perf-neutral), so the §3.5 "make gate-ON bit-exact" iteration
+list is DE-PRIORITISED — pursue those only if a believability defect (not a parity delta) shows up. The
+scenario-46 downstream divergence is a parity delta, not a believability defect (all vehicles flow +
+arrive, 0 stuck), so it is acceptable.
+
 ## 4. Tracked as
-`docs/HIGH-DENSITY-PLAN.md` P2G-2 (config-gated). Foundation + spike LANDED (gate off byte-identical);
-bit-exact gate-ON path is the remaining iteration list above.
+`docs/HIGH-DENSITY-PLAN.md` P2G-2 (config-gated). Foundation + spike + perf LANDED; the coordinated mode
+is a believable, perf-neutral opt-in. Bit-exact gate-ON is de-prioritised per the owner steer above.
