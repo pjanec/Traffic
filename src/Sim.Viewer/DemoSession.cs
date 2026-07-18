@@ -152,7 +152,12 @@ public sealed class DemoSession : IDisposable
                 // so it never needs a host reference back.
                 var pedKind = entry.PedKind
                     ?? throw new InvalidOperationException($"Demo '{entry.Name}' has Kind.Pedestrian but no PedKind.");
-                var pedOverlay = new PedOverlay(pedKind, repoRoot);
+                // P7-2: pick the overlay by pedKind -- "lod-remote" reconstructs its crowd from the wire
+                // (RemotePedOverlay), every other kind is the in-process PedOverlay. Both implement
+                // IPedDemoOverlay, so the host is built uniformly through that seam.
+                IPedDemoOverlay pedOverlay = pedKind == "lod-remote"
+                    ? new RemotePedOverlay(repoRoot)
+                    : new PedOverlay(pedKind, repoRoot);
                 var pedHost = EngineHost.CreateCustom(pedOverlay.NetPath, pedOverlay.Build);
                 return (pedHost, pedOverlay);
             case DemoKind.Sandbox:

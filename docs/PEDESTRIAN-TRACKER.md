@@ -161,8 +161,18 @@ zones along sidewalks with forced promotion; the legacy car-centric radial evac 
       real `scenarios/_ped/evac-district` net (zero vehicles). Xvfb screenshot-verified: both regimes drawn
       distinct (slate low-power vs cyan high-power), HUD `pop/low/high/escaped` split live; in-sln gate
       596/139/2/1 green, Sim.Core untouched *(scheduled early for a visible demo)*
-- [ ] **P7-2** Native viewer remote ped render over DR/DDS (FreeKinematic extrapolate + PathArc follow;
-      server==IG visual parity; no promotion pop)
+- [x] **P7-2** Native viewer remote ped render over DR/DDS (FreeKinematic extrapolate + PathArc follow;
+      server==IG visual parity; no promotion pop) — new `RemotePedOverlay` (+ `IPedDemoOverlay` seam):
+      the native analog of the HTML `BuildPedRemote` scene — same server ped-sim (`PedLodManager` sweep) →
+      gated `PedReplicationPublisher` → `InMemoryPedReplicationBus` → `PedRemoteReconstructor`, drawn from
+      the reconstructed IG poses with the server ground-truth as coincident outline rings (the parity made
+      visible) + an on-screen `max |server−IG|` / wire-rate HUD. Wired as the `"lod-remote"` PedKind demo
+      "Pedestrian remote (over the wire)" over `scenarios/_ped/poc0-crossing-plaza`. Verified first-hand:
+      in-sln gate 596/139/2/1 green; a fresh headless run reproduced 98 promotion ticks (first t=29.4s) with
+      peak render error **0.213 m** across the whole run incl. promotions (no pop), sub-kbit gated stream;
+      Xvfb screenshot shows slate/cyan regimes distinct, rings hugging the discs, cyan promotions clustered
+      at the amber interest source. (DDS transport for peds not built yet — in-process byte loopback is the
+      full server→wire→IG→render proof; DDS-ped binding is a follow-up, same staging as vehicles.)
 - [ ] **P7-3** City3D (Godot 3D) ped render — in-process (`SimSource`) + remote (`Reconstructor`/DDS);
       ground placement, heading, GPU LOD-cull
 

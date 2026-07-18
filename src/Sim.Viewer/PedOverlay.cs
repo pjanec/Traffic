@@ -57,7 +57,7 @@ public sealed class PedHudCounters
     public int Escaped;
 }
 
-public sealed class PedOverlay : IRenderOverlay
+public sealed class PedOverlay : IPedDemoOverlay
 {
     // Colours deliberately distinct from EvacOverlay's own evac-cascade palette (that overlay's cyan/green
     // mean "fleeing"/"escaped" IN THE CONTEXT of cars+incidents+pushers): here cyan/green mean the more

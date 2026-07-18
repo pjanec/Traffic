@@ -141,6 +141,12 @@ public static class DemoCatalog
             "flee along the sidewalk grid to the nearest safe corner -- regime-aware (low-power ambient vs " +
             "high-power fleeing).",
             DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "evac-district"),
+        new DemoEntry("Pedestrian remote (over the wire)",
+            "The crowd is reconstructed PURELY from the DR-error-gated multicast replication stream, not " +
+            "read from the sim: a swept interest source promotes nearby low-power walkers to high-power, and " +
+            "the reconstructed (IG) discs render coincident with the server ground-truth rings -- server == " +
+            "IG, no promotion pop.",
+            DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "lod-remote"),
     };
 
     // Only the entries whose backing path actually exists under `repoRoot` -- so a trimmed checkout
@@ -182,7 +188,8 @@ public static class DemoCatalog
     public static string PedNetPath(string pedKind, string repoRoot) => pedKind switch
     {
         "evac-district" => Path.Combine(repoRoot, "scenarios", "_ped", "evac-district", "net.net.xml"),
-        _ => throw new ArgumentException($"Unknown pedestrian kind '{pedKind}' (expected \"evac-district\").",
+        "lod-remote" => Path.Combine(repoRoot, "scenarios", "_ped", "poc0-crossing-plaza", "net.net.xml"),
+        _ => throw new ArgumentException($"Unknown pedestrian kind '{pedKind}' (expected \"evac-district\" or \"lod-remote\").",
             nameof(pedKind)),
     };
 
