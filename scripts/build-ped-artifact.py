@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the pedestrian-demo gallery artifact.
 
-Runs the nine Sim.Viz --ped-* scenes, base64-embeds each self-contained HTML into a single
+Runs the ten Sim.Viz --ped-* scenes, base64-embeds each self-contained HTML into a single
 gallery page (a scene picker over a viewport-filling iframe), and writes it to the output path.
 The gallery is body-content-only (no <html>/<head>/<body>) so it publishes cleanly as a
 claude.ai Artifact, which wraps it in its own skeleton.
@@ -29,6 +29,7 @@ SCENES = [
     ("liveliness", "Liveliness", "Deterministic activity-timeline replay: sip, sit, go inside, re-emerge"),
     ("social", "Meet & talk", "Pre-scheduled two-ped interaction: step aside, face each other, talk, resume"),
     ("waiter", "Waiter", "Templated micro-scenario actor: serves tables in rotation, goes inside between rounds"),
+    ("lively-crowd", "Lively crowd", "The routed O-D crowd, now with seeded Pause beats along real routes"),
 ]
 
 

@@ -208,6 +208,18 @@ public sealed class PedLodManager
 
     public PedDrModel ModelOf(int id) => _peds[id].Model;
 
+    // LIVE-PROD-1b (docs/PEDESTRIAN-LIVELINESS-DESIGN.md §4, §10): the ped's current animation tag, so
+    // a caller (a Sim.Viz demo, or eventually an IG) can pick a disc kind / anim clip without
+    // re-evaluating PoseAt itself or reaching into PedEntry (private). An ActivityTimeline ped reports
+    // its live `PoseAt(now).AnimTag` (walk/pause/dwell tag, per the timeline); every other model (plain
+    // PathArc, FreeKinematic) has no richer per-step state than "in motion", so it reports
+    // ActivityTimeline.WalkAnimTag -- read-only, additive, and touches no existing behavior.
+    public string AnimTagOf(int id, double now)
+    {
+        var e = _peds[id];
+        return e.Model == PedDrModel.ActivityTimeline ? e.Timeline!.PoseAt(now).AnimTag : ActivityTimeline.WalkAnimTag;
+    }
+
     public int HighPowerCount => _highPowerLiveCount;
 
     // Diagnostic-only (P0-4 investigation, docs/PEDESTRIAN-POC7C-FINDINGS.md follow-up hypothesis):

@@ -288,6 +288,9 @@ try ped-social "Meet & talk (pre-scheduled two-ped interaction)" \
 try ped-waiter "Waiter (micro-scenario actor)" \
   "A waiter emerges from a restaurant's service door, walks to a table in a seed-varied rotation, dwells to serve it, walks back, and dwells inside (no disc) before the next round -- a single templated, looping ActivityTimeline, so the scripted actor stays exactly as low-power and server==IG-reconstructable as a solo walker (LIVE-POC-3, WaiterScenario)." \
   "Pedestrians" demo_ped waiter ped-waiter
+try ped-lively-crowd "Lively crowd (routed + activity timelines)" \
+  "The same Poisson-demand O-D crowd as the plain OD-routing demo, now graduated to LIVE-PROD-1b: PedDemand seeds Pause (\"sip\") beats into each spawn's route as an ActivityTimeline, so the routed crowd occasionally stops in place mid-transit -- still low-power, still server==IG, still routed across the junction's real sidewalks/crossings/walkingareas (PedDemand + PedLodManager.AddPedLively)." \
+  "Pedestrians" demo_ped lively-crowd ped-lively-crowd
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \

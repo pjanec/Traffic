@@ -40,8 +40,11 @@ Graduation into production (making the *routed ambient crowd* lively):
       `ActivityTimeline.VelocityAt`; promote/demote treats low-power as PathArc OR ActivityTimeline;
       null-timeline path bit-identical — existing 101 ped tests unchanged; 2 new tests: exact server==IG
       sweep <1e-12 + promotion)*
-- [~] **LIVE-PROD-1b** — `PedDemand` schedule generator (seeded Pause/Dwell beats along routes) +
-      `--ped-lively-crowd` demo; liveliness-off bit-identical, no spawn-timing/O-D shift
+- [x] **LIVE-PROD-1b** — `PedDemand` schedule generator (seeded Pause beats along routes) +
+      `--ped-lively-crowd` demo *(dedicated `LivelinessSalt`; `Liveliness=null` → exact original
+      `AddPed` call, bit-identical; `BuildLivelyTimeline` splices seeded pauses, last Walk ends at the
+      true destination so arrivals fire; `AnimTagOf` drives the paused disc kind; 4 tests: bit-identical
+      off, determinism-on, no spawn/O-D shift, paused-ped-still-arrives; 589 parity + 107 ped green)*
 
 ---
 

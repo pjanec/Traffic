@@ -984,6 +984,156 @@ internal static class SceneGen
     }
 
     // ---------------------------------------------------------------------------------------
+    // Scene -- "Lively crowd" (LIVE-PROD-1b, docs/PEDESTRIAN-LIVELINESS-DESIGN.md §4;
+    // docs/PEDESTRIAN-TASKS.md): the SAME routed O-D crowd as BuildOdRouting, above, but with
+    // PedDemandConfig.Liveliness turned ON -- each spawn's route becomes an ActivityTimeline with
+    // seeded Pause ("sip") beats spliced in, via PedDemand.TrySpawnOne's new AddPedLively branch,
+    // rather than a bare PathArc. Still low-power (ActivityTimeline.PoseAt is the same O(1) pure-
+    // function-of-time evaluator PathArc used) and still server==IG (the whole timeline is broadcast
+    // once by PedLodManager.AddPedLively, exactly like AddPed's "path sent once"). Disc colour is
+    // driven by PedLodManager.AnimTagOf(id, now): a paused ped (anything other than
+    // ActivityTimeline.WalkAnimTag -- here, just "sip") renders as KindPedPaused (yellow); a walking
+    // ped renders as the ordinary KindPedestrian (purple), matching BuildOdRouting's own look so the
+    // only visible difference IS the new paused state, not a palette change.
+    // ---------------------------------------------------------------------------------------
+    internal static ScenePayload BuildLivelyCrowd(string scenarioDir)
+    {
+        var netPath = Path.Combine(scenarioDir, "net.net.xml");
+        var walkableAddPath = Path.Combine(scenarioDir, "walkable.add.xml");
+        var network = BuildNetwork(NetworkParser.Parse(netPath));
+
+        var pedNetwork = PedNetworkParser.Load(netPath, walkableAddPath);
+        network = WithCrossings(network, pedNetwork, netPath);
+        var polygons = WalkablePolygonBaker.Bake(pedNetwork);
+        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons));
+
+        // Same four arms' OD point set as BuildOdRouting.
+        const double cx = 120.0, cy = 120.0;
+        var odPoints = new[]
+        {
+            new Vec2(cx - 7.4, cy + 20.0), new Vec2(cx + 7.4, cy + 20.0),  // north arm
+            new Vec2(cx + 20.0, cy - 7.4), new Vec2(cx + 20.0, cy + 7.4),  // east arm
+            new Vec2(cx - 7.4, cy - 20.0), new Vec2(cx + 7.4, cy - 20.0),  // south arm
+            new Vec2(cx - 20.0, cy - 7.4), new Vec2(cx - 20.0, cy + 7.4),  // west arm
+        };
+
+        var config = new Sim.Pedestrians.Demand.PedDemandConfig
+        {
+            Origins = odPoints,
+            Destinations = odPoints,
+            SpawnRatePerSecond = 0.5,
+            PopulationCap = 14,
+            Seed = 20260718UL,
+            MaxSpeed = 1.3,
+            Radius = 0.3,
+            ArrivalRadius = 0.6,
+            Liveliness = new Sim.Pedestrians.Demand.PedLivelinessConfig
+            {
+                PauseProbability = 0.6,
+                MinPauseSeconds = 2.0,
+                MaxPauseSeconds = 5.0,
+                MaxPausesPerTrip = 2,
+                PauseAnimTag = "sip",
+            },
+        };
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, arriveRadius: 0.3, dwellSeconds: 1.0);
+        var demand = new Sim.Pedestrians.Demand.PedDemand(config, nav, manager, startTime: 0.0);
+        var field = new InterestField(); // no interest sources -- everyone stays low-power (PathArc or ActivityTimeline)
+        var noEntities = Array.Empty<WorldDisc>();
+
+        const double Dt = 0.2;
+        const int Decimate = 2;
+        const int steps = 600; // 120s simulated, decimated to 300 recorded frames
+
+        var snapshots = new List<List<(string Key, double[] Disc)>>();
+        var lastRecordedPos = new Dictionary<int, Vec2>();
+
+        var now = 0.0;
+        for (var step = 0; step < steps; step++)
+        {
+            demand.Step(now, Dt, field, noEntities);
+            now += Dt;
+
+            if (step % Decimate != 0)
+            {
+                continue;
+            }
+
+            var discs = new List<(string, double[])>(demand.LiveIds.Count);
+            foreach (var id in demand.LiveIds)
+            {
+                var pos = manager.PositionOf(id, now);
+                var animTag = manager.AnimTagOf(id, now);
+                var kind = animTag == ActivityTimeline.WalkAnimTag ? KindPedestrian : KindPedPaused;
+
+                // Same deterministic lateral-offset overlap fix as BuildOdRouting (finite-differenced
+                // heading against the ped's own last RECORDED-frame position). While paused, `pos` is
+                // unchanging frame-to-frame, so `heading` naturally decays to ~zero and the disc
+                // renders exactly on the centreline while stopped -- a paused ped visibly settling
+                // onto its stopping point rather than an offset walking pose freezing mid-stride.
+                var heading = lastRecordedPos.TryGetValue(id, out var prev) ? pos - prev : Vec2.Zero;
+                lastRecordedPos[id] = pos;
+
+                var rendered = pos;
+                if (heading.Abs > 1e-6)
+                {
+                    var headingUnit = heading.Normalized();
+                    var perp = new Vec2(-headingUnit.Y, headingUnit.X);
+                    rendered += perp * OdLateralOffsetMeters(id);
+                }
+
+                discs.Add(($"ped{id}", new[] { R(rendered.X), R(rendered.Y), 0.3, (double)kind }));
+            }
+
+            snapshots.Add(discs);
+        }
+
+        var frames = new List<FramePayload>(snapshots.Count);
+        var noVehicles = Array.Empty<double[]?>();
+        foreach (var _ in snapshots)
+        {
+            frames.Add(new FramePayload(noVehicles, Array.Empty<double[]?>()));
+        }
+
+        AssignStableDiscSlots(frames, snapshots);
+
+        double minX = double.PositiveInfinity, minY = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity;
+        void Track(double x, double y)
+        {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        foreach (var lane in network.Lanes)
+        {
+            for (var p = 0; p < lane.Shape.Length; p += 2) Track(lane.Shape[p], lane.Shape[p + 1]);
+        }
+
+        foreach (var j in network.Junctions)
+        {
+            for (var p = 0; p < j.Shape.Length; p += 2) Track(j.Shape[p], j.Shape[p + 1]);
+        }
+
+        return new ScenePayload(
+            "Lively crowd (routed + activity timelines)",
+            "The same routed O-D crowd as the plain OD-routing demo, now graduated to LIVE-PROD-1b: "
+            + "PedDemand's schedule generator builds each spawn's route as an ActivityTimeline with "
+            + "seeded Pause (\"sip\") beats along the way, instead of a bare PathArc. Yellow = paused "
+            + "(stopped in place, mid-beat); purple = walking -- both are still low-power, still "
+            + "server==IG, still routed across the junction's real sidewalks/crossings/walkingareas.",
+            new double[] { R(minX), R(minY), R(maxX), R(maxY) },
+            network,
+            new double[] { 0, 0 },
+            Dt * Decimate,
+            frames.ToArray());
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Scene -- "Dodge / reroute" (docs/PEDESTRIAN-POC-PLAN.md POC-5; docs/PEDESTRIAN-TASKS.md P2-2):
     // two distinct obstacle-avoidance mechanisms sharing one crowd. (1) LOCAL dodge: a bidirectional
     // pedestrian stream on a straight sidewalk swerves around a static box obstacle purely via
