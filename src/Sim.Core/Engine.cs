@@ -247,6 +247,16 @@ public sealed partial class Engine : IEngine
     private int _runtimeRouteCounter;
     private int _runtimeVehicleCounter;
 
+    // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): every vehicle that has genuinely ARRIVED
+    // (route-end, not a jam-teleport removal or X1 de-jam despawn) so far this scenario, in the
+    // order CaptureCompletedTrips appended them (EntityIndex order within a step -- see that
+    // method's own comment on why). Cleared on LoadScenario so a re-run starts empty.
+    private readonly List<CompletedTripInfo> _completedTrips = new();
+
+    // Public read-only view for a host/CLI (Sim.Sumo's --tripinfo-output writer) to consume after
+    // Run()/Step(). Valid immediately after any Advance() call, growing as more vehicles arrive.
+    public IReadOnlyList<CompletedTripInfo> CompletedTrips => _completedTrips;
+
     // SUMO's built-in default vehicle type id -- auto-registered at load so SpawnVehicle works without a
     // prior DefineVType. Harmless for loaded scenarios (no vehicle references it unless spawned).
     private const string DefaultVTypeId = "DEFAULT_VEHTYPE";
@@ -1403,6 +1413,10 @@ public sealed partial class Engine : IEngine
         BuildTlControlledLanes();
 
         _vehicles.Clear();
+        // GAP-2: completed-trip records belong to the previous scenario's run -- a fresh
+        // (re)load must start CompletedTrips empty, same discipline as every other per-scenario
+        // list below.
+        _completedTrips.Clear();
         // D3: side storage is keyed by EntityIndex (== _vehicles list index) -- clear it in
         // lockstep with _vehicles so a re-LoadScenario on the same Engine instance never leaves
         // stale entries keyed against the previous scenario's vehicles. The pool only ever grows
@@ -3134,6 +3148,9 @@ public sealed partial class Engine : IEngine
             // (lane-centred, gated on _sublane), so byte-identical.
             LatOffset = InitialLatOffset(v, lane),
         };
+        // GAP-2: remember the resolved depart position for the WHOLE trip (Kinematics.Pos itself
+        // advances/wraps as the vehicle moves) -- see VehicleRuntime.DepartPosResolved's own comment.
+        v.DepartPosResolved = insertPos;
 
         // Rung 9a: resolve the FULL lane sequence for this vehicle's route (spanning internal/
         // junction lanes between edges), not just the departure edge/lane. For a single-edge
@@ -8192,6 +8209,10 @@ public sealed partial class Engine : IEngine
             });
 
             _commandBuffer.Flush();
+            // GAP-2: read right after Flush (guaranteed serial even though the moves above ran
+            // region-parallel -- Parallel.For blocks until every region finishes) -- see
+            // CaptureCompletedTrips' own comment.
+            CaptureCompletedTrips();
             return;
         }
 
@@ -8202,6 +8223,79 @@ public sealed partial class Engine : IEngine
         }
 
         _commandBuffer.Flush();
+        CaptureCompletedTrips();
+    }
+
+    // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): drains CommandBuffer.ArrivedThisFlush (the
+    // vehicles this ExecuteMoves' Flush() just marked Arrived via DestroyWithArrival -- i.e. genuine
+    // route-end arrivals, never a jam-teleport removal or X1 de-jam despawn) into `_completedTrips`.
+    // Called only from ExecuteMoves, right after `_commandBuffer.Flush()`, which is ALWAYS a serial
+    // point (even on the region-parallel path, Parallel.For has already joined by the time Flush()
+    // runs) -- so this method itself never needs its own locking despite ExecuteMoveVehicle's
+    // DestroyWithArrival calls being recorded from parallel workers.
+    private void CaptureCompletedTrips()
+    {
+        var arrivals = _commandBufferImpl.ArrivedThisFlush;
+        if (arrivals.Count == 0)
+        {
+            return;
+        }
+
+        // Determinism (CLAUDE.md iron law): under RegionPlan, DestroyWithArrival calls are recorded
+        // from multiple worker threads under CommandBuffer's own lock, so ArrivedThisFlush's order
+        // reflects non-deterministic thread-interleaving timing, not a reproducible ordering. Re-sort
+        // by EntityIndex before appending -- the SAME "repeatable parallel simulation" discipline
+        // ProcessTransferQueue/CheckJamTeleports already apply to their own parallel-collected
+        // candidate lists, so CompletedTrips' order is deterministic regardless of RegionPlan/thread
+        // scheduling.
+        var ordered = new List<(VehicleRuntime Vehicle, double ArrivalTime)>(arrivals);
+        ordered.Sort(static (a, b) => a.Vehicle.EntityIndex.CompareTo(b.Vehicle.EntityIndex));
+
+        foreach (var (v, arrivalTime) in ordered)
+        {
+            _completedTrips.Add(BuildCompletedTripInfo(v, arrivalTime));
+        }
+    }
+
+    // GAP-2: builds one CompletedTripInfo from a just-arrived vehicle's SETTLED state (LaneId/
+    // Kinematics/TripWaitingTime/TripTimeLoss were all finalized by ExecuteMoveVehicle before it
+    // called DestroyWithArrival -- Flush's Kind.Destroy case only sets Arrived=true, it does not
+    // mutate any of these). See CompletedTripInfo's own header comment for the field-by-field
+    // citation of each SUMO formula.
+    private CompletedTripInfo BuildCompletedTripInfo(VehicleRuntime v, double arrivalTime)
+    {
+        // Configured arrival pos: the arrival edge's lane length (no scenario sets a literal
+        // <vehicle arrivalPos=>, so SUMO's MIN2(param.arrivalPos, lastLaneLength) default -- the
+        // last lane's length -- is exact for every committed route). v.LaneId/v.LaneHandle are the
+        // FINAL (arrival) lane -- the arrival branch in ExecuteMoveVehicle breaks before advancing
+        // past it.
+        var arrivalLane = _network!.LanesByHandle[v.LaneHandle];
+        var arrivalPos = arrivalLane.Length;
+
+        // routeLength = (sum of full lengths of every route edge BEFORE the arrival edge) -
+        // departPos + arrivalPos (see VehicleRuntime.DepartPosResolved's own comment for the SUMO
+        // citation). The arrival edge is always route.Edges[^1] here (arrival only ever fires on the
+        // vehicle's LAST route edge).
+        var route = _routesById[EffectiveRouteId(v)];
+        var lengthBeforeArrivalEdge = 0.0;
+        for (var i = 0; i < route.Edges.Count - 1; i++)
+        {
+            lengthBeforeArrivalEdge += _network.EdgesById[route.Edges[i]].Lanes[0].Length;
+        }
+
+        var routeLength = lengthBeforeArrivalEdge - v.DepartPosResolved + arrivalPos;
+
+        return new CompletedTripInfo(
+            Id: v.Def.Id,
+            Depart: v.Def.Depart,
+            Arrival: arrivalTime,
+            ArrivalLane: v.LaneId,
+            ArrivalPos: arrivalPos,
+            ArrivalSpeed: v.Kinematics.Speed,
+            Duration: arrivalTime - v.Def.Depart,
+            RouteLength: routeLength,
+            WaitingTime: v.TripWaitingTime,
+            TimeLoss: v.TripTimeLoss);
     }
 
     // One vehicle's move (integration + lane-boundary wrap + arrival), extracted so ExecuteMoves can
@@ -8236,9 +8330,55 @@ public sealed partial class Engine : IEngine
             // Byte-identical for the existing suite: scenarios with no stops never hit IsStoppedAtStop
             // (GetStops returns null), and a stopped vehicle's WaitingTime is never read by any
             // committed scenario (none pairs a scheduled stop with an allway_stop junction / teleport).
-            v.WaitingTime = v.Intent.NewSpeed <= KraussModel.HaltingSpeed && v.Acceleration <= 0.5 * v.VType.Accel && !IsStoppedAtStop(v)
+            var stoppedAtStopThisMove = IsStoppedAtStop(v);
+            var haltedLowAccelThisMove = v.Intent.NewSpeed <= KraussModel.HaltingSpeed && v.Acceleration <= 0.5 * v.VType.Accel;
+            v.WaitingTime = haltedLowAccelThisMove && !stoppedAtStopThisMove
                 ? v.WaitingTime + dt
                 : 0.0;
+
+            // GAP-2: SUMO applies a stop's reached/duration-decrement transition SYNCHRONOUSLY inside
+            // the SAME executeMove() call that later runs updateWaitingTime/updateTimeLoss/notifyMove
+            // (MSVehicle::processNextStop is called BEFORE those, MSVehicle.cpp's own executeMove
+            // ordering) -- so on the exact step a vehicle's front stop transitions (just reached, or
+            // just resumed), SUMO's isStopped() already reflects THIS step's new state. Our engine
+            // instead defers applying `stop.Reached` to the "apply stop-queue update" block further
+            // down THIS SAME method (D5's command-buffer-shaped deferred-mutation discipline) -- so
+            // `stoppedAtStopThisMove` above (IsStoppedAtStop, a plain field read) is stale by one step
+            // exactly at a transition. v.Intent.StopUpdate is this step's ALREADY-DECIDED target
+            // (ProcessNextStop, computed in the Plan phase) -- reading `.Reached` from it when present
+            // gives the post-transition value SUMO's synchronous ordering would see, matching
+            // MSDevice_Tripinfo's real tripinfo output exactly (verified against scenario
+            // 66-tripinfo-arrivallane's golden: the leader's front stop transition step must NOT
+            // accumulate waitingTime/timeLoss, or its golden waitingTime=0.00 does not reproduce).
+            // Deliberately NOT applied to the existing WaitingTime field above (unchanged, per its own
+            // "byte-identical for the existing suite" comment) -- no committed scenario pairs a
+            // scheduled stop with the allway_stop/jam-teleport readers of that field, so this
+            // corrected predicate is scoped to the two NEW trip-total accumulators only.
+            var stoppedAtStopForTrip = v.Intent.StopUpdate?.Reached ?? stoppedAtStopThisMove;
+
+            // GAP-2 (MSDevice_Tripinfo::notifyMove, MSDevice_Tripinfo.cpp:179-193): the tripinfo
+            // device's own trip-TOTAL waitingTime -- the SAME halted+low-accel+not-at-stop predicate
+            // as WaitingTime just above (using the corrected stoppedAtStopForTrip), but accumulated
+            // WITHOUT ever resetting (see VehicleRuntime.TripWaitingTime's own comment).
+            if (haltedLowAccelThisMove && !stoppedAtStopForTrip)
+            {
+                v.TripWaitingTime += dt;
+            }
+
+            // GAP-2 (MSVehicle::updateTimeLoss, MSVehicle.cpp:4095-4105): trip-TOTAL "how much slower
+            // than free-flow was I", gated on the SAME corrected !isStopped() predicate. vmax is THIS
+            // lane's speed-limit x speedFactor cap -- the exact laneVehicleMaxSpeed convention every
+            // car-following constraint above already uses (KraussModel.LaneVehicleMaxSpeed), evaluated
+            // on v.LaneHandle BEFORE the lane-boundary-crossing loop below advances it, matching SUMO's
+            // own pre-processLaneAdvances timing.
+            if (!stoppedAtStopForTrip)
+            {
+                var tripVMax = KraussModel.LaneVehicleMaxSpeed(_network!.LanesByHandle[v.LaneHandle].Speed, v.SpeedFactor, v.VType);
+                if (tripVMax > 0.0)
+                {
+                    v.TripTimeLoss += dt * (tripVMax - v.Intent.NewSpeed) / tripVMax;
+                }
+            }
             v.Kinematics.Pos += _config!.Ballistic
                 ? 0.5 * (oldSpeed + v.Intent.NewSpeed) * dt
                 : v.Intent.NewSpeed * dt;
@@ -8342,7 +8482,17 @@ public sealed partial class Engine : IEngine
                     // ExecuteMoves pass reads v.Arrived (the outer foreach's own `if (!v.Inserted ||
                     // v.Arrived) continue;` guard only ever reads a vehicle's OWN Arrived value, set at
                     // the top of ITS OWN iteration, never another vehicle's just-this-step arrival).
-                    _commandBuffer.Destroy(v);
+                    //
+                    // GAP-2: DestroyWithArrival (via the concrete `_commandBufferImpl`, not the
+                    // ICommandBuffer-typed `_commandBuffer` field -- see that method's own comment)
+                    // instead of plain Destroy -- this IS a genuine SUMO tripinfo ARRIVED event (the
+                    // OTHER three Destroy call sites, jam-teleport removal and X1 de-jam despawn, are
+                    // not, so they keep calling plain Destroy). `time + dt` is this step's end-of-
+                    // interval sim time, matching SUMO's notifyLeave `getCurrentTimeStep()` convention
+                    // (verified against the regenerated scenario 66 golden.tripinfo.xml). Still
+                    // thread-safe under the region-parallel path: DestroyWithArrival takes the same
+                    // `_recordLock` Destroy does.
+                    _commandBufferImpl.DestroyWithArrival(v, time + dt);
                     break;
                 }
 

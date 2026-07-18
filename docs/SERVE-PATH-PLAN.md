@@ -162,8 +162,29 @@ SUMO 1.20.0**, wired into `dotnet test`:
     README, Geneva box `-109298,-138987,-107798,-137487`) is **not yet present** in the repo/branch —
     needed for GAP-2's realistic scenario and the definitive end-to-end audit. GAP-1 used
     `41-multifile-cfg` (already committed) as its acceptance scenario, so it is unblocked.
-- **GAP-2 — next.**
-- **GAP-3 — after GAP-2.**
+- **GAP-2 — DONE** (Opus-reviewed hard, not taken on the implementor's word). Engine now captures a
+  real per-vehicle arrival record at the single-threaded post-`Flush()` seam
+  (`CommandBuffer.DestroyWithArrival` → `ArrivedThisFlush` → `Engine.CaptureCompletedTrips`, sorted by
+  `EntityIndex` for RegionPlan determinism), exposed as `Engine.CompletedTrips`. Two **new never-reset**
+  trip-total accumulators `TripWaitingTime`/`TripTimeLoss` (distinct from the existing consecutive
+  `WaitingTime`, which is left byte-identical — the shared predicate was refactored into named locals
+  with the *same* result; the SUMO-synchronous-stop correction reading `Intent.StopUpdate?.Reached` is
+  scoped **only** to the two new fields). `routeLength = Σ(edges before arrival) − departPos +
+  arrivalPos`, `arrivalPos` = arrival lane length, per `MSDevice_Tripinfo`. New `TripInfoWriter`
+  (SUMO-schema, arrival order) + `TripInfoComparator` (exact `arrivalLane`, 0.05 abs on numerics,
+  absent-vs-present → +∞ so an omitted field fails loud); `TripInfoRecord`/parser extended (nullable,
+  back-compat). `--tripinfo-output` now really writes on the CLI. Acceptance:
+  `scenarios/66-tripinfo-arrivallane` (leader with a brief `<stop>` + a follower that queues behind it
+  → **nonzero** waitingTime 2.0 and timeLoss 5.993/8.333, both arrive), golden regenerated from **SUMO
+  1.20.0** (provenance-verified), sentinel-gated (`.wants-tripinfo`) in `regen-goldens.sh` so no other
+  golden changed. `RungHDgap2TripinfoTests` asserts both the engine path and the CLI path vs golden,
+  and guards the null-vs-null vacuity trap. **Re-ran the full suite first-hand: 595 parity (+2) / 3
+  skipped, 72 pedestrian, 2 nav, 1 host; determinism (D1/D8) green; `git status scenarios/` shows only
+  the new `66-*`.**
+- **GAP-3 — next** (multi-occupant parkingArea). Will reuse `scripts/audit_nocheat.py` (now committed)
+  as the network-tier no-cheating check + a C# offline port of its logic as a `dotnet test` assertion
+  on a synthetic served scenario (parkingArea id `pa_<edge>`, fringe births/deaths), since the real
+  Geneva box is company-restricted — a synthetic box is built from the documented contract instead.
 
 ## 4. Recommendation
 

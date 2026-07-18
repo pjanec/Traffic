@@ -415,4 +415,39 @@ internal sealed class VehicleRuntime
     // ScenarioConfig.TimeToTeleport>0, so every pre-P1F scenario (time-to-teleport=-1) never
     // touches it and the active-query filters stay byte-identical.
     public bool InTransfer;
+
+    // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2, docs/SERVE-PATH-PLAN.md): SUMO's
+    // MSDevice_Tripinfo::myWaitingTime (MSDevice_Tripinfo::notifyMove, MSDevice_Tripinfo.cpp:179-193)
+    // -- a TRIP-TOTAL accumulator, DISTINCT from WaitingTime above (which resets to 0 the instant the
+    // vehicle moves/accelerates away -- that field is SUMO's *consecutive*-halt timer,
+    // MSVehicle::updateWaitingTime, used by the all-way-stop tie-break). This one NEVER resets: each
+    // Engine.ExecuteMoves step, while the vehicle is NOT currently halted at a reached <stop>
+    // (!IsStoppedAtStop) AND newSpeed <= haltingSpeed AND this step's acceleration <=
+    // accelThresholdForWaiting (0.5*maxAccel) -- the SAME predicate WaitingTime already evaluates --
+    // `+= dt`. Written ONLY in Engine.ExecuteMoves; read ONLY by Engine's trip-arrival capture
+    // (CaptureCompletedTrips) to populate a completed trip's tripinfo `waitingTime`. Default 0.0;
+    // BuildRuntime always constructs a fresh VehicleRuntime (append or recycled slot), so this is
+    // always 0 at a vehicle's insertion -- no separate reset path needed.
+    public double TripWaitingTime;
+
+    // GAP-2: SUMO's MSVehicle::myTimeLoss (MSVehicle::updateTimeLoss, MSVehicle.cpp:4095-4105) -- a
+    // TRIP-TOTAL accumulator of "how much slower than the lane's free-flow speed was I", in seconds.
+    // Each Engine.ExecuteMoves step, while the vehicle is NOT currently halted at a reached <stop>
+    // (!IsStoppedAtStop): `+= dt * (vmax - newSpeed) / vmax`, where vmax is this lane's
+    // KraussModel.LaneVehicleMaxSpeed for this vehicle (lane speed limit x this vehicle's SpeedFactor,
+    // capped at VType.MaxSpeed) -- SUMO's `myLane->getVehicleMaxSpeed(this)`. Never resets. Written
+    // ONLY in Engine.ExecuteMoves; read ONLY by CaptureCompletedTrips. Default 0.0, same fresh-
+    // instance-per-insertion guarantee as TripWaitingTime above.
+    public double TripTimeLoss;
+
+    // GAP-2: the RESOLVED depart position -- this vehicle's Kinematics.Pos at the exact moment of
+    // insertion (TryInsertOnLane's `insertPos`), captured ONCE there and never touched again. This is
+    // SUMO's `-veh.getPositionOnLane()` seed for myRouteLength at NOTIFICATION_DEPARTED
+    // (MSDevice_Tripinfo.cpp:239-245): unlike Kinematics.Pos (which advances as the vehicle moves and
+    // wraps at each lane boundary), this stays the vehicle's ORIGINAL insertion offset for the whole
+    // trip, which CaptureCompletedTrips needs for the routeLength formula (routeLength = sum of full
+    // lengths of every route edge before the arrival edge, minus this depart pos, plus the configured
+    // arrival pos). Default 0.0 -- always overwritten by TryInsertOnLane before a vehicle can become
+    // Inserted (and therefore before it can ever Arrive).
+    public double DepartPosResolved;
 }

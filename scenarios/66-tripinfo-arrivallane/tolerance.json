@@ -1,0 +1,10 @@
+{
+  "parityMode": "exact",
+  "comparedAttributes": ["lane", "pos", "speed"],
+  "pos": 0.001,
+  "speed": 0.001,
+  "tripinfo": {
+    "abs": 0.05,
+    "note": "GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): single absolute tolerance applied to every numeric tripinfo field (depart/arrival/arrivalPos/arrivalSpeed/duration/routeLength/waitingTime/timeLoss) by TripInfoComparator.Compare -- arrivalLane is EXACT string match, not tolerance-gated. 0.05 comfortably covers golden.tripinfo.xml's own 3-decimal rounding (timeLoss=5.993 vs the engine's full-precision 5.9928...) while still catching a real behavioral divergence (residuals here are all well under 0.01)."
+  }
+}

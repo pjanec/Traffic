@@ -31,9 +31,11 @@ namespace Sim.Sumo;
 //   --fcd-output <path>        SUMO-schema FCD             (FcdWriterObserver)
 //   --summary-output <path>    per-step summary            (SummaryWriterObserver)
 //   --statistic-output <path>  <teleports total=.. jam=..> (StatisticWriter)
-//   --tripinfo-output <path>   ACCEPTED here; the writer + arrivalLane land in GAP-2. Passing it in
-//                              GAP-1 does not error (so the serve/verify invocation shape works now),
-//                              but no tripinfo file is produced yet -- a clear notice is printed.
+//   --tripinfo-output <path>   SUMO-schema <tripinfo> per ARRIVED vehicle (id/depart/arrival/
+//                              arrivalLane/arrivalPos/arrivalSpeed/duration/routeLength/
+//                              waitingTime/timeLoss -- GAP-2, docs/SUMOSHARP-SERVE-PATH-DROP-
+//                              IN.md §2). Sourced from engine.CompletedTrips (Engine.cs's
+//                              CaptureCompletedTrips), written via Sim.Harness.TripInfoWriter.
 //   --no-step-log [bool]       accepted and ignored (we never print a per-step log)
 // Any OTHER flag is TOLERATED (a warning to stderr, not an abort) so minor extra flags SumoData
 // passes never break the run. Both `--flag value` and `--flag=value` forms are accepted.
@@ -235,12 +237,26 @@ public static class SumoShim
 
         if (tripinfoOut is not null)
         {
-            // GAP-2 delivers the real per-vehicle arrival record (arrivalLane/arrivalPos/duration/
-            // timeLoss/...). Until then, accept the flag without aborting -- the serve/verify shape
-            // runs -- but be honest that no file was produced.
-            stderr.WriteLine(
-                $"notice: --tripinfo-output '{tripinfoOut}' accepted but not yet produced " +
-                "(the tripinfo writer + arrivalLane land in GAP-2).");
+            // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): engine.CompletedTrips is the real per-
+            // vehicle arrival record (Sim.Core.CompletedTripInfo, captured at the route-end arrival
+            // seam). Adapt it to Sim.Harness.TripInfoRecord here -- Sim.Core cannot reference
+            // Sim.Harness (Sim.Harness already depends on Sim.Core; see CompletedTripInfo's own header
+            // comment for why), so this shim, which references both, is where the two meet.
+            var trips = new List<TripInfoRecord>(engine.CompletedTrips.Count);
+            foreach (var trip in engine.CompletedTrips)
+            {
+                trips.Add(new TripInfoRecord(
+                    trip.Id, trip.Depart, trip.Duration, trip.ArrivalSpeed,
+                    ArrivalLane: trip.ArrivalLane,
+                    ArrivalPos: trip.ArrivalPos,
+                    ArrivalTime: trip.Arrival,
+                    RouteLength: trip.RouteLength,
+                    WaitingTime: trip.WaitingTime,
+                    TimeLoss: trip.TimeLoss));
+            }
+
+            TripInfoWriter.Write(tripinfoOut, trips);
+            stdout.WriteLine($"wrote {tripinfoOut}");
         }
 
         stdout.WriteLine($"ran {steps} steps over [{beginTime}, {endTime}] @ {config.StepLength}s");

@@ -8,12 +8,18 @@
 #
 # For each scenario directory under /scenarios that contains a config.sumocfg it
 # produces, next to the inputs:
-#   golden.fcd.xml     -- full trajectory dump (the behavioral ground truth)
-#   golden.state.xml   -- fully-resolved vehicle/vType parameters at t=1
-#                         (the initialization ground truth: catches vType-default
-#                          bugs directly instead of via drifting trajectories)
-#   provenance.txt     -- SUMO version, exact command, date, input file hashes
-#                         (so goldens are trustworthy and staleness is detectable)
+#   golden.fcd.xml       -- full trajectory dump (the behavioral ground truth)
+#   golden.state.xml     -- fully-resolved vehicle/vType parameters at t=1
+#                           (the initialization ground truth: catches vType-default
+#                            bugs directly instead of via drifting trajectories)
+#   golden.tripinfo.xml  -- GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): per-vehicle arrival
+#                           record (arrivalLane/arrivalPos/duration/routeLength/waitingTime/
+#                           timeLoss/...), ONLY for a scenario that opts in via a committed
+#                           sentinel file `.wants-tripinfo` in its directory -- every OTHER
+#                           scenario's golden set is UNCHANGED by this addition (verified by
+#                           `git status` showing no diff on any pre-existing golden.*).
+#   provenance.txt       -- SUMO version, exact command, date, input file hashes
+#                           (so goldens are trustworthy and staleness is detectable)
 #
 # DETERMINISM: goldens for phase-1 parity are generated with randomness stripped.
 # Each scenario's config is expected to set sigma=0, fixed depart, Euler stepping,
@@ -22,6 +28,15 @@
 #
 # The VM is volatile: the SUMO install here does not persist and does not need to.
 # The committed goldens carry all ground truth forward to the offline test loop.
+#
+# USAGE: scripts/regen-goldens.sh [scenario-dir-or-glob-root]
+#   With no argument, regenerates EVERY scenario under scenarios/ (the default, full sweep).
+#   With an argument, scopes the sweep to just that directory (e.g.
+#   `scripts/regen-goldens.sh scenarios/66-tripinfo-arrivallane`) -- use this for a SINGLE new
+#   scenario so `generated_utc`/hashes in every OTHER scenario's provenance.txt are left
+#   untouched (a full-sweep re-run is safe/idempotent for fcd/state/tripinfo content, but
+#   provenance.txt's timestamp always changes, which would needlessly dirty `git status` for
+#   scenarios that did not actually change).
 
 set -euo pipefail
 
@@ -35,11 +50,16 @@ source "$REPO_ROOT/SUMO_VERSION"
 # Step 1: ensure SUMO is present (volatile install).
 "$REPO_ROOT/scripts/install-sumo.sh"
 
-SCENARIOS_DIR="$REPO_ROOT/scenarios"
-if [[ ! -d "$SCENARIOS_DIR" ]]; then
-  echo "ERROR: no scenarios directory at $SCENARIOS_DIR" >&2
+RAW_SCENARIOS_DIR="${1:-$REPO_ROOT/scenarios}"
+if [[ ! -d "$RAW_SCENARIOS_DIR" ]]; then
+  echo "ERROR: no scenarios directory at $RAW_SCENARIOS_DIR" >&2
   exit 1
 fi
+# Canonicalize to absolute -- the per-scenario loop below `cd`s into each $SCEN_DIR before
+# invoking sumo, so a relative $CFG (derived from a relative SCENARIOS_DIR) would resolve
+# against the WRONG directory after that cd. An absolute SCENARIOS_DIR keeps every derived path
+# absolute throughout.
+SCENARIOS_DIR="$(cd "$RAW_SCENARIOS_DIR" && pwd)"
 
 # Portable-ish sha256 helper.
 hash_file() {
@@ -83,6 +103,15 @@ while IFS= read -r -d '' CFG; do
     --no-step-log true
   )
 
+  # GAP-2: opt-in tripinfo golden, gated on the scenario's own committed `.wants-tripinfo`
+  # sentinel -- keeps every scenario that does NOT carry the sentinel byte-identical (no new
+  # --tripinfo-output flag added to its SUMO_CMD at all).
+  TRIPINFO_OUT=""
+  if [[ -f "$SCEN_DIR/.wants-tripinfo" ]]; then
+    TRIPINFO_OUT="$SCEN_DIR/golden.tripinfo.xml"
+    SUMO_CMD+=(--tripinfo-output "$TRIPINFO_OUT")
+  fi
+
   # Phase 2 (sublane): SUMO does NOT emit posLat in the default FCD attribute set, even with the
   # sublane model active. A scenario with <lateral-resolution value="R"/> (R > 0) is a sublane
   # scenario whose golden must carry the lateral position, so request the explicit attribute list
@@ -112,7 +141,11 @@ while IFS= read -r -d '' CFG; do
     done
   } > "$PROV_OUT"
 
-  echo "    wrote: $(basename "$FCD_OUT"), $(basename "$STATE_OUT"), $(basename "$PROV_OUT")"
+  if [[ -n "$TRIPINFO_OUT" ]]; then
+    echo "    wrote: $(basename "$FCD_OUT"), $(basename "$STATE_OUT"), $(basename "$TRIPINFO_OUT"), $(basename "$PROV_OUT")"
+  else
+    echo "    wrote: $(basename "$FCD_OUT"), $(basename "$STATE_OUT"), $(basename "$PROV_OUT")"
+  fi
   GENERATED_ANY=1
 done < <(find "$SCENARIOS_DIR" -name config.sumocfg -print0 | sort -z)
 
@@ -122,5 +155,5 @@ fi
 
 echo
 echo "==> Done. Review diffs, then COMMIT the golden files:"
-echo "      git add scenarios/**/golden.fcd.xml scenarios/**/golden.state.xml scenarios/**/provenance.txt"
+echo "      git add scenarios/**/golden.fcd.xml scenarios/**/golden.state.xml scenarios/**/golden.tripinfo.xml scenarios/**/provenance.txt"
 echo "      git commit -m 'Regenerate goldens (SUMO ${SUMO_VERSION})'"

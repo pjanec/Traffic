@@ -51,9 +51,29 @@ internal sealed class CommandBuffer : ICommandBuffer
         public int IntArg1;
         public string? StringArg0;
         public double DoubleArg0;
+
+        // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): Destroy ONLY -- non-null iff this Destroy
+        // is a genuine route-end arrival (Engine.ExecuteMoveVehicle's DestroyWithArrival call), never
+        // set by the OTHER Destroy call sites (jam-teleport removal, X1 de-jam despawn) -- those are
+        // not SUMO tripinfo ARRIVED events. Carries the arrival timestamp (this step's `time + dt`,
+        // matching SUMO's `getCurrentTimeStep()` at notifyLeave) so Flush can record it into
+        // ArrivedThisFlush for Engine's trip-arrival capture, without every OTHER Destroy call site
+        // needing to know or care about tripinfo at all.
+        public double? TripArrivalTime;
     }
 
     private readonly List<Command> _commands = new();
+
+    // GAP-2: vehicles whose Destroy this Flush() call just applied WITH a genuine trip-arrival
+    // timestamp (see TripArrivalTime above), populated during Flush and cleared at the start of the
+    // NEXT Flush -- so a caller that reads this immediately after Flush() sees exactly this flush's
+    // new arrivals, no more. Read by Engine.CaptureCompletedTrips right after each
+    // `_commandBuffer.Flush()` call inside ExecuteMoves. Empty for every scenario with no route-end
+    // arrival this step (the overwhelmingly common case), so this list only ever grows to the handful
+    // of vehicles that actually arrive in a given step.
+    private readonly List<(VehicleRuntime Vehicle, double ArrivalTime)> _arrivedThisFlush = new();
+
+    public IReadOnlyList<(VehicleRuntime Vehicle, double ArrivalTime)> ArrivedThisFlush => _arrivedThisFlush;
 
     // Domain decomposition: the recording methods below may be called concurrently (region-parallel
     // execute/speed-gain). Guard the shared backing list with a lock -- commands are rare (arrivals /
@@ -109,6 +129,22 @@ internal sealed class CommandBuffer : ICommandBuffer
         }
     }
 
+    // GAP-2: the SAME "DestroyEntity" analog as Destroy above, for the ONE call site that is a
+    // genuine SUMO tripinfo ARRIVED event -- the route-end arrival in Engine.ExecuteMoveVehicle.
+    // `arrivalTime` is that step's `time + dt` (matches SUMO's notifyLeave timestamp convention --
+    // see VehicleRuntime.TripWaitingTime's own header comment). Deliberately a SEPARATE method (not
+    // an optional parameter on Destroy) because Destroy is also the ICommandBuffer interface member
+    // the other three non-arrival Destroy call sites use through the ICommandBuffer-typed
+    // `_commandBuffer` field -- this overload is called only via the concrete `_commandBufferImpl`
+    // reference, at the one call site that needs it.
+    public void DestroyWithArrival(VehicleRuntime v, double arrivalTime)
+    {
+        lock (_recordLock)
+        {
+            _commands.Add(new Command { Kind = Kind.Destroy, Vehicle = v, TripArrivalTime = arrivalTime });
+        }
+    }
+
     // P2G-2 (cooperative LC / informFollower): advise `follower` to slow to `speed` so a blocked
     // lane-changer can cut in. Applied as a MIN into follower.CoopSpeedAdvice at Flush -- MIN is
     // commutative, so the non-deterministic parallel RECORD order does not affect the result even when
@@ -125,6 +161,10 @@ internal sealed class CommandBuffer : ICommandBuffer
     // Applies every recorded command, in record order, then clears the buffer for reuse.
     public void Flush()
     {
+        // GAP-2: fresh per-flush (see ArrivedThisFlush's own comment) -- cleared here, not at the end,
+        // so a caller reading it right after this Flush() call sees exactly the arrivals just applied.
+        _arrivedThisFlush.Clear();
+
         foreach (var cmd in _commands)
         {
             switch (cmd.Kind)
@@ -154,6 +194,11 @@ internal sealed class CommandBuffer : ICommandBuffer
 
                 case Kind.Destroy:
                     cmd.Vehicle.Arrived = true;
+                    if (cmd.TripArrivalTime is { } arrivalTime)
+                    {
+                        _arrivedThisFlush.Add((cmd.Vehicle, arrivalTime));
+                    }
+
                     break;
 
                 case Kind.SpeedAdvice:

@@ -4,14 +4,19 @@ using System.Xml.Linq;
 namespace Sim.Harness;
 
 /// <summary>
-/// VB-6: reads a SUMO-schema tripinfo file into <see cref="TripInfoRecord"/>s. Deliberately reads
-/// ONLY the subset of attributes the aggregate comparator needs (id, depart, duration,
-/// arrivalSpeed) and ignores everything else -- which is exactly why this same parser can read
-/// BOTH a real SUMO <c>--tripinfo-output</c> file (root <c>&lt;tripinfos&gt;</c>, many more
-/// attributes: routeLength, waitingTime, rerouteNo, devices, vType, speedFactor, vaporized, ...)
-/// AND the engine's tripinfo ANALOG emitted by the VB-7 benchmark runner (same root/element/
-/// attribute names, only the subset below populated). One schema, one loader, two producers --
-/// see VIZ_BENCH_TASKS.md VB-6's "clear input schema/loader for both" requirement.
+/// VB-6: reads a SUMO-schema tripinfo file into <see cref="TripInfoRecord"/>s. Originally read
+/// ONLY the subset of attributes the aggregate comparator needed (id, depart, duration,
+/// arrivalSpeed) -- which is exactly why this same parser can read BOTH a real SUMO
+/// <c>--tripinfo-output</c> file (root <c>&lt;tripinfos&gt;</c>, many more attributes: routeLength,
+/// waitingTime, rerouteNo, devices, vType, speedFactor, vaporized, ...) AND the engine's tripinfo
+/// ANALOG emitted by the VB-7 benchmark runner (same root/element/attribute names, only the subset
+/// below populated). One schema, one loader, two producers -- see VIZ_BENCH_TASKS.md VB-6's "clear
+/// input schema/loader for both" requirement.
+///
+/// GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2) additionally parses <c>arrivalLane</c>,
+/// <c>arrivalPos</c>, <c>arrival</c>, <c>routeLength</c>, <c>waitingTime</c>, <c>timeLoss</c> --
+/// all TOLERATED-ABSENT (null when missing), so this parser still reads every pre-GAP-2 tripinfo
+/// file (real SUMO's without those attributes populated, or the VB-7 4-field analog) unchanged.
 ///
 /// <c>duration</c> is read directly if present (both SUMO and the engine analog always write it);
 /// if a producer ever omits it, it is derived from <c>arrival - depart</c> as a fallback.
@@ -37,12 +42,25 @@ public static class TripInfoParser
         {
             var id = RequireAttribute(el, "id");
             var depart = ParseDouble(el, "depart");
+            var arrival = TryParseDouble(el, "arrival");
             var duration = TryParseDouble(el, "duration")
-                ?? (TryParseDouble(el, "arrival") is { } arrival ? arrival - depart : throw new InvalidDataException(
+                ?? (arrival is { } arrivalForDuration ? arrivalForDuration - depart : throw new InvalidDataException(
                     $"<tripinfo id='{id}'> has neither 'duration' nor 'arrival' -- cannot derive trip duration."));
             var arrivalSpeed = TryParseDouble(el, "arrivalSpeed");
+            var arrivalLane = el.Attribute("arrivalLane")?.Value;
+            var arrivalPos = TryParseDouble(el, "arrivalPos");
+            var routeLength = TryParseDouble(el, "routeLength");
+            var waitingTime = TryParseDouble(el, "waitingTime");
+            var timeLoss = TryParseDouble(el, "timeLoss");
 
-            records.Add(new TripInfoRecord(id, depart, duration, arrivalSpeed));
+            records.Add(new TripInfoRecord(
+                id, depart, duration, arrivalSpeed,
+                ArrivalLane: arrivalLane,
+                ArrivalPos: arrivalPos,
+                ArrivalTime: arrival,
+                RouteLength: routeLength,
+                WaitingTime: waitingTime,
+                TimeLoss: timeLoss));
         }
 
         return records;

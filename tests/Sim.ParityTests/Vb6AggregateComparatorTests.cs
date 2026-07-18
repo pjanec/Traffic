@@ -22,8 +22,15 @@ public class Vb6AggregateComparatorTests
         """);
 
     [Fact]
-    public void TripInfoParser_ReadsSumoSchema_IgnoringExtraAttributes()
+    public void TripInfoParser_ReadsSumoSchema_IncludingGap2Fields_IgnoringOtherExtraAttributes()
     {
+        // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): the parser now also reads
+        // arrivalLane/arrivalPos/arrival/routeLength/waitingTime/timeLoss (all TOLERATED-ABSENT --
+        // see the second <tripinfo>, which carries none of them and still parses). The remaining
+        // real-SUMO decorations (departLane/departPos/departSpeed/waitingCount/stopTime/rerouteNo/
+        // devices/vType/speedFactor/vaporized) are still simply ignored -- this test's original
+        // purpose (VB-6's "one schema, one loader" contract tolerates a real SUMO file's full
+        // attribute set) is unchanged, only the read subset grew.
         var xml = """
             <tripinfos>
                 <tripinfo id="0" depart="0.00" departLane="a_0" departPos="5.10" departSpeed="0.00"
@@ -38,7 +45,11 @@ public class Vb6AggregateComparatorTests
         var records = TripInfoParser.ParseXml(xml);
 
         Assert.Equal(2, records.Count);
-        Assert.Equal(new TripInfoRecord("0", 0.0, 52.0, 12.62), records[0]);
+        Assert.Equal(
+            new TripInfoRecord("0", 0.0, 52.0, 12.62,
+                ArrivalLane: "b_0", ArrivalPos: 179.20, ArrivalTime: 52.0, RouteLength: 366.33,
+                WaitingTime: 0.0, TimeLoss: 6.38),
+            records[0]);
         Assert.Equal(new TripInfoRecord("1", 3.0, 30.0, 10.0), records[1]);
     }
 

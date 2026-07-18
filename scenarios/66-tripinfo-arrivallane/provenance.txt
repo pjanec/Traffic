@@ -1,0 +1,9 @@
+sumo_version=1.20.0
+sumo_version_reported=Eclipse SUMO sumo Version 1.20.0
+generated_utc=2026-07-18T11:54:51Z
+command=sumo -c /home/user/SumoSharp/scenarios/66-tripinfo-arrivallane/config.sumocfg --fcd-output /home/user/SumoSharp/scenarios/66-tripinfo-arrivallane/golden.fcd.xml --fcd-output.acceleration --precision 6 --save-state.times 1 --save-state.files /home/user/SumoSharp/scenarios/66-tripinfo-arrivallane/golden.state.xml --no-step-log true --tripinfo-output /home/user/SumoSharp/scenarios/66-tripinfo-arrivallane/golden.tripinfo.xml
+state_time=1
+# input file hashes (sha256):
+input=net.net.xml sha256=d200314737026f4fae5ecce83e72966a7dfbe02ff944201fd428aaf984b2be60
+input=rou.rou.xml sha256=6f3c1cbc19539c8ecbed6592b29c74f45987d9f788d4c54fb7225084e6d39fe1
+input=config.sumocfg sha256=53f49f1759ee97b9633681d41da2293c785033015164e2a6571e2b8feda4e06a

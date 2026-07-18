@@ -48,10 +48,16 @@ public class RungHDgap1SumoCliTests
             Assert.Equal(0, exit);
             Assert.True(File.Exists(summary), "summary-output not produced");
             Assert.True(File.Exists(statistic), "statistic-output not produced");
-            // GAP-1: tripinfo is ACCEPTED but not yet produced (GAP-2 delivers the writer). The run
-            // must not abort, and the notice must be surfaced.
-            Assert.False(File.Exists(tripinfo), "tripinfo should not be produced until GAP-2");
-            Assert.Contains("--tripinfo-output", stderr.ToString());
+            // GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): tripinfo is now REALLY produced (the
+            // GAP-1-era "accepted but not yet produced" notice is gone). This scenario's leader is
+            // capped at 5 m/s on a 1000 m edge (behaviourally == scenarios/02-two-vehicle-following),
+            // so over 120 s neither vehicle reaches the far end -- the tripinfo is a valid, EMPTY
+            // <tripinfos/> (no cheating: nobody arrives early), which is itself the correct proof the
+            // writer only emits genuine arrivals. The dedicated GAP-2 golden-parity test
+            // (RungHDgap2TripinfoTests, scenario 66) is where actual arrivals are asserted field-by-
+            // field against a SUMO golden.
+            Assert.True(File.Exists(tripinfo), "tripinfo-output not produced");
+            Assert.Empty(TripInfoParser.Parse(tripinfo));
             // Unknown flag tolerated with a warning, not an abort.
             Assert.Contains("--some-future-flag", stderr.ToString());
 

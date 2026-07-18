@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- GAP-2 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §2): tripinfo/arrivalLane parity scenario.
+         Two passenger vehicles, sigma=0 (deterministic), single 400m edge. The leader has a brief
+         scheduled <stop> partway along the edge (mirrors scenarios/03-approach-and-stop's stop
+         mechanic); the follower, starting 100m behind, catches up and must queue/halt behind the
+         stopped leader before both resume and reach the edge end. This exercises NONZERO
+         waitingTime and timeLoss for BOTH vehicles (the follower halts behind the queue; the
+         leader itself accrues timeLoss during its own accel/decel/stop cycle even though its
+         waitingTime is 0 while genuinely stopped-at-stop, per MSDevice_Tripinfo's own semantics),
+         and both ARRIVE (reach the edge end) well before the configured sim end. -->
+    <vType id="passenger0" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="leader" type="passenger0" route="r0" depart="0" departPos="100" departSpeed="0" departLane="0">
+        <stop lane="e0_0" startPos="195" endPos="200" duration="8"/>
+    </vehicle>
+    <vehicle id="follower" type="passenger0" route="r0" depart="0" departPos="0" departSpeed="0" departLane="0"/>
+</routes>
