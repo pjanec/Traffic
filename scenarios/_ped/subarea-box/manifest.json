@@ -1,0 +1,319 @@
+{
+  "status": "warn",
+  "net": "net.xml",
+  "out_dir": ".",
+  "scenario_sumocfg": "scenario.sumocfg",
+  "scenario_rou": "scenario.rou.xml",
+  "scenario_add": "scenario.add.xml",
+  "lane_km": 48.614399999999996,
+  "knee": {
+    "veh_lkm": 13.741,
+    "period": 0.154,
+    "pop_pct": 0.74,
+    "degraded": false,
+    "knee_confidence": "ok"
+  },
+  "requested_percent": 100.0,
+  "target_veh_lkm": 13.741,
+  "chosen_period": 0.154,
+  "seed": 42,
+  "serve_end": 3600,
+  "subarea": {
+    "bbox": null,
+    "box_bounds": {
+      "xmin": 0.0,
+      "ymin": 0.0,
+      "xmax": 800.0,
+      "ymax": 800.0
+    },
+    "coordinate_frame": {
+      "units": "metres",
+      "note": "SUMO network XY; same frame as net.net.xml",
+      "net_offset": [
+        0.0,
+        0.0
+      ]
+    },
+    "fringe_edge_count": 48,
+    "fringe_walkable_count": 48,
+    "fringe_edges": [
+      {
+        "id": "A0bottom0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A0left0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A1left1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A2left2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A3left3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A4left4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A5left5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "A5top0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "B0bottom1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "B5top1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "C0bottom2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "C5top2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "D0bottom3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "D5top3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "E0bottom4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "E5top4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F0bottom5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F0right0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F1right1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F2right2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F3right3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F4right4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F5right5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "F5top5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom0A0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom1B0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom2C0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom3D0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom4E0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "bottom5F0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left0A0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left1A1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left2A2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left3A3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left4A4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "left5A5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right0F0",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right1F1",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right2F2",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right3F3",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right4F4",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "right5F5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top0A5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top1B5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top2C5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top3D5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top4E5",
+        "car": true,
+        "ped": true
+      },
+      {
+        "id": "top5F5",
+        "car": true,
+        "ped": true
+      }
+    ]
+  },
+  "density": {
+    "knee_veh_lkm": 13.741,
+    "served_percent": 100.0,
+    "served_veh_lkm": 13.741
+  },
+  "workers": 3,
+  "knee_mode": "full",
+  "mode_detail": {},
+  "compute_budget": "mid",
+  "compute_budget_explicit_override": false,
+  "calibration_seconds": 11.2,
+  "verify": {
+    "no_cheating": "pass",
+    "birth_violations": 0,
+    "death_violations": 0,
+    "peak_moving": 1990.0,
+    "peak_veh_lkm": 40.934,
+    "min_speed_relative": 0.03,
+    "teleports": 1899,
+    "teleport_pct": 19.95,
+    "verify_end": 4500,
+    "verify_seconds": 123.2,
+    "note": null,
+    "achieved_vs_target_pct": 297.9
+  },
+  "total_seconds": 139.5,
+  "timings": {
+    "prepare": 1.5,
+    "calibrate": 11.2,
+    "serve": 3.1,
+    "parking": 0.4,
+    "emit": 0.0,
+    "verify": 123.2
+  },
+  "warnings": [
+    "achieved peak_veh_lkm=40.934 outside sane band [6.87, 20.61] of target 13.74"
+  ]
+}

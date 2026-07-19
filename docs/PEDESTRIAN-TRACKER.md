@@ -231,8 +231,10 @@ Realizes `SUBAREA-FOR-PEDESTRIAN-SESSION.md` §3; mapping in `COORDINATION-pedes
 consequences in `PEDESTRIAN-LIVELINESS-DESIGN.md` §11. All additive + inert by default (empty visible set →
 permissive → existing goldens unchanged). Waits on P2-3 + P1-1 + a real cropped box `net.xml`.
 
-- [ ] **P8-1** Verify the SUMO-geometry bake against a real cropped sub-area net (fringe = boundary-cut
-      walkable stubs; pin the fringe set) — *cheap; run when a crop is available*
+- [x] **P8-1** Verify the SUMO-geometry bake against a real cropped sub-area net (fringe = boundary-cut
+      walkable stubs; pin the fringe set) — *done: SumoData handoff box committed at
+      `scenarios/_ped/subarea-box/`; `SubareaBoxBakeTests` bakes the crop into a connected pathable navmesh
+      and pins all 48 walkable-fringe edges as baked sidewalks. Re-verify vs a real crop later.*
 - [ ] **P8-2** Appearance-legitimacy layer (`PedSpawnPolicy`) — the no-cheating gate, **orthogonal to
       sim-LOD**; spawn/despawn only at fringe/sink/off-camera, reading the same camera visible-edge set as
       the vehicle `RealismMask`; inert-default bit-identical — *the load-bearing new piece*
