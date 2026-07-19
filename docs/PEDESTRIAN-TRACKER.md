@@ -123,7 +123,21 @@ loopback; the live CycloneDDS binding remains a separate out-of-`Traffic.sln` co
 
 ## Stage P4 — Engine coordination seams (Core; with lane-engine session)
 
-- [ ] **P4-1** Engine TLS-crossing signal projection (gate reads live signal; parity hash unchanged) — [!] coordinate
+- [~] **P4-1** Engine TLS-crossing signal projection (gate reads live signal; parity hash unchanged) —
+      **prototype landed on this branch, parity-clean, pending Engine-session review/merge of the Sim.Core
+      change.** `Engine.TryGetTlLinkState(tlId, linkIndex, out char)` — a pure read-only accessor over the
+      SAME private `TlLinkStateChar` the frozen parity path uses (actuated `CurrentState` / static formula
+      split), at `CurrentTime`; reaches the walkingarea→crossing links the vehicle-facing `TlStates`
+      structurally excludes. Never called from `Step()`, mutates nothing → parity hash `909605E965BFFE59`
+      unmoved (full 596 (+3 skip) suite + the DrModelRead hash tests green). Ped side stays Engine-free via a
+      delegate seam: `LiveCrossingSignal(Func<double,char>)` + `CrossingSignalFactory.ForCrossingLive(net,
+      crossing, readLive)`; the caller wires `readLive = (tl,li) => engine.TryGetTlLinkState(tl,li,out c)?c:'r'`.
+      3 tests (142 ped total): over a full stepped POC-0 cycle the live gate opens/closes **exactly** with
+      the Engine's crossing signal and agrees char-for-char with today's XML re-derivation (faithful drop-in;
+      the actuated case where they'd diverge rides the already-parity-tested `TlLinkStateChar` actuated
+      branch), plus the projection's unknown-tl / out-of-range guards. **Remaining:** success condition 3
+      (coordinated merge) — the Engine track owns the `Engine.cs` edit; hand them this reviewed, parity-clean
+      diff.
 
 ## Stage P5 — Evac generalization
 

@@ -1819,6 +1819,41 @@ public sealed partial class Engine : IEngine
     // Step), aligned index-for-index. For rendering junction signals; empty when the net has no road TL.
     public ReadOnlySpan<int> TlLaneHandles => _tlLaneHandles.AsSpan();
     public ReadOnlySpan<byte> TlStates => _tlStates.AsSpan();
+
+    // P4-1 (docs/PEDESTRIAN-TASKS.md §P4-1): read-only projection of the LIVE signal char at an arbitrary
+    // controlled link (tlId, linkIndex), evaluated at CurrentTime. TlStates above is aligned to the
+    // vehicle APPROACH lanes BuildTlControlledLanes enumerates (non-internal lanes only), so it structurally
+    // cannot cover a pedestrian crossing's gating link -- that link runs walkingarea -> crossing and BOTH
+    // endpoints are internal (':'-prefixed), so it is filtered out of that scan. The underlying tlLogic
+    // phase-state string (and, for an actuated program, the actuated CurrentState) nonetheless carries EVERY
+    // link index, including the crossing links, so this accessor reaches them by (tlId, linkIndex) -- the
+    // pair the pedestrian crossing gate already resolves from the net's <connection tl=.. linkIndex=..>.
+    //
+    // Parity: this is a PURE READ over state Step already produced. It calls the SAME private TlLinkStateChar
+    // the frozen parity path uses (identical actuated/static split), evaluates at the Engine's own
+    // CurrentTime, mutates nothing, and is never called from Step() -- so it cannot perturb any golden
+    // trajectory or the parity hash. Returns false (state = '\0') for an unknown tlId or an out-of-range
+    // linkIndex, so a caller built from a mismatched net degrades gracefully instead of throwing.
+    public bool TryGetTlLinkState(string tlId, int linkIndex, out char state)
+    {
+        state = '\0';
+        if (_network is null || linkIndex < 0 || !_network.TlLogicsById.TryGetValue(tlId, out var tlLogic))
+        {
+            return false;
+        }
+
+        // The program's link count is the width of its phase state strings (every phase, and an actuated
+        // program's CurrentState, share it) -- guard linkIndex against it so TlLinkStateChar's own indexing
+        // can never throw.
+        var linkCount = tlLogic.Phases.Count > 0 ? tlLogic.Phases[0].State.Length : 0;
+        if (linkIndex >= linkCount)
+        {
+            return false;
+        }
+
+        state = TlLinkStateChar(tlId, linkIndex, CurrentTime);
+        return true;
+    }
     public ReadOnlySpan<double> Pos => _readBuffer.Pos.AsSpan(0, _readBuffer.Count);
     // Longitudinal acceleration (m/s^2), parity-exact double -- the getAcceleration() analog. The key
     // ingredient for renderer-side dead reckoning (SUMOSHARP-API.md §5.1): pos' = pos + v*dt + 0.5*a*dt^2.
