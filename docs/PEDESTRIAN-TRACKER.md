@@ -159,8 +159,19 @@ zones along sidewalks with forced promotion; the legacy car-centric radial evac 
 
 ## Stage P6 — Scale hardening + on-target validation
 
-- [ ] **P6-1** On-target (16+‑core) benchmark run; replace 4-core estimates in findings
-- [ ] **P6-2** Region decomposition (only if P6-1 shows flat parallel plateaus)
+- [x] **P6-1** On-target (16+‑core) benchmark run; replace 4-core estimates in findings — **DONE** on the
+      owner box (Intel Core Ultra 9 275HX, `ProcessorCount = 24`, Win11, High-perf, Release, 3×/median).
+      Headline (100k, parallel): PedLod **stable = 35.9 ms/step (27.9 steps/s)**, **churn = 54.9 ms/step
+      (18.2 steps/s)** — both interactive (vs 4-core ~12.5 / ~3.5 steps/s); raw `OrcaCrowd.Step` 100k =
+      50.1 ms/step (20.0 steps/s, 6.45× serial); bandwidth **36.75 / 182.4 / 294.4 Mbit/s** confirmed under
+      the 500 Mbit/s budget (byte-identical). All 3 success conditions PASS. Full report:
+      `docs/PEDESTRIAN-P6-1-RESULTS.md`; findings docs updated with on-target columns (POC7A/7B/7C).
+- [ ] **P6-2** Region decomposition — **TRIGGERED by P6-1** (gate was "only if P6-1 shows flat parallel
+      plateaus"; it does). The `Sim.BenchCrowd` 100k thread sweep plateaus at ~8–16 threads and is **flat
+      16→24** on a 24-physical-core box (efficiency 69% @8t → 42% @16t → 28% @24t) — memory-bandwidth bound
+      + P/E-core split. Region decomposition (per-region cache-local neighbour access) is the standard
+      remedy. **Warranted if >~20 steps/s single-world 100k throughput is needed; deferrable otherwise** —
+      it is a headroom ceiling, not a correctness gap. See `docs/PEDESTRIAN-P6-1-RESULTS.md` P6-2 note.
 - [x] **P6-3** Requirement-indexed property-test suite (reqs 1–7, each named; parity untouched) *(11 tests,
       each over ≥5 seeded configs with anti-vacuous guards: Req1 perf (parallel==serial bit-exact over
       78k comparisons + low-power 0 per-step samples), Req2 believability (ORCA no-overlap, worst margin

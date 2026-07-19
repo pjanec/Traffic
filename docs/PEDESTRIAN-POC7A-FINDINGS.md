@@ -134,6 +134,42 @@ falsify a specific 8-thread plateau** the way the lane-engine session did, for l
 machine; that measurement is the natural follow-up once run on-target (16c/24t), the way
 `PERF-HANDOVER.md` did for the lane engine.
 
+## Scale timing — ON-TARGET (P6-1, the follow-up the 4-core run flagged)
+
+Re-run on the owner target box — **Intel Core Ultra 9 275HX, `ProcessorCount = 24`** (8 P-cores + 16
+E-cores, no SMT), Windows 11, High-performance power plan, Release, each config 3× with the **median**
+reported. `Sim.BenchCrowd` code is unchanged since the 4-core run above (its crowd always had
+`UseSpatialHash=true`), so this is a valid same-code core-count comparison. Full write-up:
+`docs/PEDESTRIAN-P6-1-RESULTS.md`. Command used `--steps 20` (vs 15 above — negligible).
+
+Main sweep, runtime-auto (all 24 cores), on-target vs the 4-core VM:
+
+| N (agents) | on-target parallel ms/step | on-target parallel steps/s | prior (4-core VM) parallel steps/s | on-target speedup vs serial |
+|-----------:|---------------------------:|---------------------------:|-----------------------------------:|----------------------------:|
+| 1,000      | 1.53                       | 653                        | 373                                | 2.31×                       |
+| 10,000     | 4.34                       | 230                        | 131                                | 4.26×                       |
+| 50,000     | 18.67                      | 53.6                       | 26.6                               | 4.08×                       |
+| 100,000    | 50.1                       | **20.0**                   | 10.1                               | 6.45×                       |
+
+**Thread-count sweep at N = 100,000 — the plateau the 4-core VM could not reach (now measured):**
+
+| MaxParallelism | parallel ms/step | steps/s | speedup vs 1 thread | parallel efficiency |
+|---------------:|-----------------:|--------:|--------------------:|--------------------:|
+| 1              | 328.8            | 3.0     | 1.00×               | 100%                |
+| 2              | 164.5            | 6.1     | 2.00×               | 100%                |
+| 4              | 91.1             | 11.0    | 3.61×               | 90%                 |
+| 8              | 59.7             | 16.7    | 5.50×               | 69%                 |
+| 16             | 48.5             | 20.6    | 6.78×               | 42%                 |
+| 24             | 48.5             | 20.6    | **6.78×**           | 28%                 |
+
+**The 8-thread plateau this doc predicted is confirmed — and it is FLAT past 16 threads.** Parallel
+efficiency falls 90% (4t) → 69% (8t) → 42% (16t) → 28% (24t); the last 8 physical cores add nothing.
+This is the memory-bandwidth-bound signature `PERF-HANDOVER.md` names for the lane engine, here compounded
+by the 275HX's 8 P-core / 16 E-core split (the taper sharpens right at the 8-thread mark, i.e. where the
+P-cores run out). **This is the trigger for P6-2 (region decomposition)** — the raw ORCA `Step` does not
+scale cleanly to 24 cores; converting the scattered global-array neighbour access into per-region
+locality is the standard remedy. See `docs/PEDESTRIAN-P6-1-RESULTS.md` for the P6-2 recommendation.
+
 ## Friction / notes
 
 - The repo's only `.sln` (`Traffic.sln`) needed `dotnet sln add` for the new `Sim.BenchCrowd` project

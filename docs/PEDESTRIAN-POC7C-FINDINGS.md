@@ -6,8 +6,11 @@ LOD system (`PedLodManager` driving ~10 % high-power `OrcaCrowd` agents + ~90 % 
 path-followers) at the 100k target, via `src/Sim.BenchPedLod`.
 
 **Hardware caveat (as in POC-7a):** this session's VM has **4 logical processors**. The owner target is a
-**16+‑core Windows box**. Numbers below are 4-core measurements; treat the *ratios and shapes* as the
-finding and extrapolate the absolute rates upward with POC-7a's near-linear-to-core-count scaling.
+**16+‑core Windows box**. Numbers in the original sections below are 4-core measurements; treat the
+*ratios and shapes* as the finding. **The on-target measurement now exists** (P6-1) — see the
+**"ON-TARGET (P6-1)"** section at the end of this doc and `docs/PEDESTRIAN-P6-1-RESULTS.md`; the headline
+is stable 100k = **27.9 steps/s** and churn 100k = **18.2 steps/s** parallel on a 24-core Core Ultra 9
+275HX, both interactive.
 
 Benchmark command (Release):
 `dotnet run -c Release --project src/Sim.BenchPedLod -- --sizes 20000,50000,100000 --high-fraction 0.1 --steps 30 --warmup 8`
@@ -61,9 +64,15 @@ churning worlds already run without it.
 
 ## Q3 — interactive-rate verdict + combined acceptance picture
 
-- **On this 4-core VM:** stable 100k ≈ **80 ms/step (~12.5 steps/s)** parallel; heavy-churn 100k ≈
-  **285 ms/step (~3.5 steps/s)**.
-- **Extrapolated to the 16+‑core target:** POC-7a measured near-linear scaling up to the box's core count
+- **On this 4-core VM (original, pre-P0 code):** stable 100k ≈ **80 ms/step (~12.5 steps/s)** parallel;
+  heavy-churn 100k ≈ **285 ms/step (~3.5 steps/s)**.
+- **ON-TARGET (P6-1, current post-P0-3/P0-4 code, 24-core Core Ultra 9 275HX):** stable 100k ≈ **35.9
+  ms/step (27.9 steps/s)** parallel; heavy-churn 100k ≈ **54.9 ms/step (18.2 steps/s)** parallel — **both
+  firmly interactive.** See the "ON-TARGET" section below and `docs/PEDESTRIAN-P6-1-RESULTS.md`. The
+  extrapolation the next bullet made turned out conservative: the stable case is comfortably real-time and
+  the once-worst churn case is now within the interactive band on-target.
+- **Extrapolated to the 16+‑core target (the original projection, now superseded by the measured row above):**
+  POC-7a measured near-linear scaling up to the box's core count
   and the lane engine reaches ~3.2–3.6× at 8 threads on a 16c/24t box (`PERF-HANDOVER.md`, memory-bandwidth
   bound). So the stable 100k case should reach comfortably interactive rates on the target hardware; the
   heavy-churn case is where the Add/Remove fix pays off and should be prioritized before churn-heavy
@@ -228,3 +237,51 @@ churn-bloat concern. Compaction is NOT implemented** — the measured benefit wo
 worth the added complexity (a dense live-slot list, or high-water-shrink-on-trailing-vacate, both need
 their own bit-identical-ordering argument for no real payoff). If a future profiling pass on REAL (not
 synthetic) production churn shows otherwise, this diagnostic getter is already in place to re-check.
+
+---
+
+## ON-TARGET (P6-1) — the 4-core estimates replaced by a real 16+‑core run
+
+Measured on the owner target — **Intel Core Ultra 9 275HX, `ProcessorCount = 24`** (8 P + 16 E cores, no
+SMT), Windows 11, High-performance power plan, Release, **current code** (post P0-3 incremental
+`Add`/`Remove` + P0-4 spatial hash), each config 3× with the **median** reported. Command:
+`--sizes 20000,50000,100000 --high-fraction 0.1 --steps 30 --warmup 8`. Full report:
+`docs/PEDESTRIAN-P6-1-RESULTS.md`.
+
+**Main sweep (runtime-auto parallelism):**
+
+| N total | scenario | actual high | switches/step | serial ms/step | parallel ms/step | parallel steps/s |
+|--------:|----------|------------:|--------------:|---------------:|-----------------:|-----------------:|
+| 20,000  | A/stable | 2,098       | 70            | 27.9           | 8.25             | 121              |
+| 20,000  | B/churn  | 5,254       | 175           | 55.1           | 13.9             | 71.9             |
+| 50,000  | A/stable | 5,235       | 175           | 95.4           | 25.3             | 39.5             |
+| 50,000  | B/churn  | 12,160      | 614           | 265.2          | 33.1             | 30.2             |
+| 100,000 | A/stable | 10,477      | 349           | 158.7          | **35.9**         | **27.9**         |
+| 100,000 | B/churn  | 23,515      | 1,379         | 334.3          | **54.9**         | **18.2**         |
+
+**Same-code core-count scaling (this run vs the 4-core P0-4 numbers above, NOT the pre-P0 80/285 ms):**
+
+| 100k parallel | 4-core (post-P0-4) | 24-core (P6-1) | scaling |
+|---|---:|---:|---:|
+| A/stable | ~88–102 ms | 35.9 ms | ~2.6× |
+| B/churn  | ~183 ms    | 54.9 ms | ~3.3× |
+
+**Q1 confirmed on-target:** 10k-high-only = 16.9 ms parallel; 100k-total (same high set + 90k low) = 33.6
+ms parallel — +~17 ms for 90k low-power followers. Cost still tracks the high-power set, not the total.
+
+**Two honest on-target notes:**
+- **The PedLod `--max-parallelism` knob is a documented no-op** (`Sim.BenchPedLod/Program.cs` ~L187 —
+  `PedLodManager` runs its high crowd at runtime-auto). A `--max-parallelism 8` run returned the same
+  stable-100k time as auto (36.9 vs 35.9 ms), confirming it. The pedestrian thread-scaling curve is
+  therefore the `Sim.BenchCrowd` sweep (POC7A-FINDINGS "ON-TARGET" section) — that is the same
+  `OrcaCrowd.Step` the high-power set runs.
+- **Churn wall-clock is variance-dominated on-target:** B/churn serial swings ±40% run-to-run (334 / 501 /
+  276 ms at 100k) because `RebuildHighCrowd`/membership churn is GC- and allocation-heavy. The parallel
+  churn figure (~54–55 ms) is stable. This variance is itself a signal that churn's residual cost is
+  allocation/GC-bound, not compute-bound — consistent with the P0-3 finding that most of churn's extra
+  cost over stable is genuinely stepping more ORCA agents, not rebuild overhead.
+
+**Verdict:** all three POC-7c acceptance questions resolve favourably on-target. Stable 100k is comfortably
+interactive (27.9 steps/s); the once-worst heavy-churn 100k is now interactive too (18.2 steps/s), which is
+the payoff of the P0-1/P0-3 `Add`/`Remove` + P0-4 spatial-hash chain this doc motivated. CPU remains the
+acceptance constraint (bandwidth is solved, POC-7b), and the LOD split makes the 100k target tractable.
