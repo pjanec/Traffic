@@ -151,11 +151,24 @@ match or improve them. This must be *verified*, not assumed: the full `dotnet te
     (goldens unaffected, zero effect on city-3000) but applying it to the APPROACH arm regressed
     `WillPassSaturationDiagTests` (0→15 stuck). So the work is *where/how* to apply the blend faithfully
     without re-breaking the saturated-grid stress test — a real design cycle, not a trigger-timing tweak.
-  - **Deliberately NOT attempted here.** Rushing an impatience port would be either a quick patch
-    (forbidden) or a large regression-prone change against the parity gate. It must be its own task with
-    a dedicated design + the `WillPassSaturationDiagTests` gate.
   - **Success (when taken on):** synthetic-junction2 teleports → ~0 and the pop%↔density curve monotone
     within noise, with the full suite AND `WillPassSaturationDiagTests` green.
+  - **Attempt log — E1 (merge-arm impatience), reverted.** Ported `getImpatience` = clamp01(waiting/180)
+    and a faithful `computeFoeArrivalTimeBraking` blend into `SameTargetMergeConstraint` (SUMO's own
+    arrival-time locus). Result: **full parity suite byte-identical (635 pass) — the impatience
+    machinery is golden-safe** — but **zero effect on the repro (5→5)**. So the residual teleports are
+    NOT held by the merge arm; they are held by the CROSSING arm (the approaching-foe stop-line yield is
+    a *blanket* yield with no arrival-time gap acceptance to blend impatience into) and/or the
+    red-light + block-the-box (`CrossJunctionLeaderConstraint`, exit-lane occupied) throughput cascade.
+    Reverted per the gate (golden-safe but no value). **Implication for the fix:** impatience must go on
+    the CROSSING arm, which first needs arrival-time gap acceptance ported there — precisely the change
+    the prior session found regressed `WillPassSaturationDiagTests`. And if the true block is
+    block-the-box (a genuinely full exit lane), impatience will NOT help at all — that part needs a
+    throughput/`checkRewindLinkLanes` treatment, not impatience. This is the crux the dedicated task must
+    resolve.
+  - **Deliberately NOT force-landed.** Rushing the crossing-arm change would be either a quick patch
+    (forbidden) or a large regression-prone change against the parity gate. It stays its own task with a
+    dedicated design + the `WillPassSaturationDiagTests` gate.
 - **T4 — regression guard. DONE (partial).** `tests/Sim.ParityTests/LowDensityTeleportTests.cs` runs
   the committed synthetic-junction2 through the in-process `SumoShim` path (engine-only, no SUMO) and
   asserts teleports ≤ 5 — locking the T1 (mechanism-A) fix against regression toward 10. The bound
