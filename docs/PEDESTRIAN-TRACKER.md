@@ -166,17 +166,19 @@ zones along sidewalks with forced promotion; the legacy car-centric radial evac 
       50.1 ms/step (20.0 steps/s, 6.45× serial); bandwidth **36.75 / 182.4 / 294.4 Mbit/s** confirmed under
       the 500 Mbit/s budget (byte-identical). All 3 success conditions PASS. Full report:
       `docs/PEDESTRIAN-P6-1-RESULTS.md`; findings docs updated with on-target columns (POC7A/7B/7C).
-- [ ] **P6-2** Region decomposition — **GO (triggered by P6-1, confirmed by the combined-load test)**.
-      P6-1: the `Sim.BenchCrowd` 100k thread sweep plateaus at ~8–16 threads and is **flat 16→24** on a
-      24-physical-core box (efficiency 69% @8t → 42% @16t → 28% @24t) — memory-bandwidth bound + P/E split.
-      **Combined-load test (`docs/PEDESTRIAN-COMBINED-LOAD-RESULTS.md`)** makes it concrete: under the
-      single-station envelope (~10k veh + 100k ped sharing ~half the box), **peds are the sole real-time-
-      marginal engine** — vehicles clear by 29–53×, but ped heavy-churn **fails real-time when starved to
-      4 cores (5.5 st/s vs 10 st/s bar)** and is core-scaling-limited, not contention-limited (the
-      cross-engine tax is only ~5–9% at 6–8 cores). Porting the vehicle engine's byte-identical `--region`
-      decomposition to `OrcaCrowd.Step` is the direct lever (needs ~1.4× ped churn per-core uplift to clear
-      churn on a 6-core budget). Safe operating point until then: **peds ≥ 8 cores for churn-heavy loads**
-      (the 4+8 split passes today).
+- [~] **P6-2** Region decomposition — **implemented + bit-identical, but the region-*task* version FALLS
+      SHORT of the perf target; phase-2 SoA-reorder needed.** GO was established by P6-1 (BenchCrowd 100k
+      plateaus/flat 16→24) + the combined-load test (peds the sole RT-marginal engine; churn fails at 4
+      cores). **P6-2-1/2/3/5 landed** (`OrcaCrowd.UseRegionDecomposition` + `PedLodManager` passthrough,
+      default-off, bit-identical: `OrcaRegionDecompositionTests`/`PedLodRegionDecompositionTests` +
+      full gate 649/143/2/1 green). **On-target perf validation (`docs/PEDESTRIAN-P6-2-RESULTS.md`, this
+      perf session): targets NOT met** — region-task scheduling over the shared frozen grid (no SoA reorder)
+      is neutral-to-slightly-negative: raw ORCA best 1.03×, isolated ped churn best **1.08×** (4c), regresses
+      at 16–24c; 6-core churn 12.2 st/s (~1.2× margin, not the ≥1.5× goal); concurrent 8+4 churn still fails
+      (6.8 st/s). Root cause: a region's agents stay at scattered SoA indices, so neighbour reads still
+      scatter — no locality win. **Next: the design §8 phase-2 SoA-reorder refinement** (region-contiguous
+      order via index permutation, permuted back for bit-identity), then re-run the P6-2-RESULTS campaign.
+      Operating point until then: **peds ≥ 8 cores for churn-heavy loads** (the 4+8 split clears).
 - [x] **P6-3** Requirement-indexed property-test suite (reqs 1–7, each named; parity untouched) *(11 tests,
       each over ≥5 seeded configs with anti-vacuous guards: Req1 perf (parallel==serial bit-exact over
       78k comparisons + low-power 0 per-step samples), Req2 believability (ORCA no-overlap, worst margin
