@@ -15,7 +15,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked/ne
       *(`src/Sim.PedDdsLoopback`, out of `Traffic.sln`: PathArc + ActivityTimeline reconstruct exactly
       (0/801 mismatches), promoted FreeKinematic error 2.67e-7 m ≤ 0.02 m, promotion observed over the wire;
       live single-stream bandwidth readout emitted; PASS/exit 0)*
-- [~] **D3** — wire the live DDS ped path into the viewers:
+- [x] **D3** — wire the live DDS ped path into the viewers (native + Godot, both two-process verified):
   - [x] **D3a** — native viewer: `RemotePedOverlay` transport-pluggable (InMemory | `Dds`); new demo
         "Pedestrian remote (DDS multicast)" reconstructs the crowd over the live CycloneDDS binding.
         Headless-verified: renders server==IG over real DDS, **max |server−IG| 0.203 m (run max 0.232 m)**,
@@ -33,8 +33,10 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked/ne
           local byte-loopback `PedSimSource`; server clock driven off the wire (`LatestCrowdTime`, monotonic).
           Compiles under `-p:City3DRemote=true` (CITY3D_REMOTE). The data path is the SAME
           `DdsPedReplicationSource` + `PedRemoteReconstructor` the native two-process render verified; Godot's
-          `PedReconstructor` is a thin wrapper over it, and the P7-3 local path already proved Godot renders
-          reconstructed peds. *(Live Godot screenshot depends on fetching the ~100 MB Godot runtime.)*
+          `PedReconstructor` is a thin wrapper over it. **Live Godot screenshot verified** (Godot 4.7.1 under
+          Xvfb + llvmpipe, fed by a separate `--mode ped-publish` process): the City3D crossing plaza rendered
+          `peds=8` cross-process over CycloneDDS including a **cyan high-power** ped (DR-switch crossed the
+          wire); wire-authoritative `pedTime` advanced to 29.40. Compiles under `-p:City3DRemote=true`.
 
 ## Standing invariants (every task)
 
