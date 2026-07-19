@@ -386,6 +386,32 @@ carefully-verified fix (they feed the saturated-grid path, so the naive substitu
 decision: attempt that delicate 2-site pass, or ship with the residual (down from 105→~14 est. on the real
 box, audit passes, Issue 1 green, RealismMask hides off-camera pops) as a documented follow-up.
 
+## SHIP acceptance: NOT green — real-box PROGRESSIVE GRIDLOCK (the teleport count was hiding it)
+
+SumoData's ship-acceptance run correctly rejected it, and the real signal is not the teleport count.
+Hard gates hold — completes, no-cheating audit PASS, Issue 1 residency green, routeLength accumulator
+confirmed fixed. But on the real box SumoSharp **progressively gridlocks**: same vehicles inserted
+(identical `running` each step), yet `halting` climbs monotonically to **~89% of on-lane vehicles at
+t=999 vs vanilla's ~11%** (fair mean rel-speed 0.545 vs 0.838). Only ~36 of ~393 stalled cars ever cross
+`time-to-teleport=120`, so the teleport count (36, unchanged across the last two fix passes) massively
+UNDERSTATES the failure. The `JunctionCycleHold` fix helped the synthetic teleport count (42→17) but did
+**nothing** to the real-box gridlock.
+
+**Correction to the "synthetic has diverged / no witness" conclusion:** the committed
+`scenarios/_repro/synthetic-junction2` DOES reproduce the gridlock — on the **halting curve**, not the
+teleport count. Measured ss halting 79/97/…/35 at t=300/500/…/999 vs vanilla 34/36/…/0 (≈35 of 36 running
+halted at end, mean rel-speed ~0.23). So it remains a valid witness **if gated on halting, not teleports**.
+
+**Root category:** a systematic **junction-throughput / gap-acceptance / yield-release deficit** —
+SumoSharp halts vehicles vanilla keeps moving, and the per-decision lag accumulates into whole-box
+gridlock. This is the P2-G "junction saturation" work (flagged long ago as investigate-then-fix), a
+substantial CORE fix — NOT the "small residual on pathological topologies" earlier accepted. **Decision
+(owner): this is a PRE-MERGE BLOCKER, not a follow-up.** A diagnose-first pass is underway to localize the
+seed-stall mechanism on synthetic-junction2 (which junction/movement, and which of gap-acceptance /
+yield-release / junction-blocking / internal-lane-speed), with the **halting curve** (ss halting → vanilla
+halting) as the gate. Fix follows the diagnosis, gated hard against the saturation stress tests +
+TL/junction goldens.
+
 ## All three gaps landed — definitive acceptance status
 
 GAP-1→GAP-3 are complete and golden-verified against vanilla SUMO 1.20.0. The `sumosharp` binary now
