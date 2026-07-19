@@ -435,82 +435,61 @@ approaches — the real box's dominant Y1 pattern (many of its yields sat at one
 its links; a geometric tie-break must never override live signal state. All 619 goldens byte-identical
 (RBL was already inert at the sparse committed TL goldens, so nothing changed there).
 
-**Verification on the halting-curve witness (synthetic-junction2, un-confounded by parked-sink halting →
-measured on trips cleared):**
+Bug-2 and Bug-3 (below) were both diagnosed in this pass and both landed. Their measured effect on
+the synthetic-junction2 witness is in the **corrected controlled table** at the end of this section
+(supersedes any earlier per-fix numbers in this doc, which were taken against a stale binary).
 
-| t | vanilla arrived | baseline arrived | +Bug-1+Bug-2 arrived |
-|---|---|---|---|
-| 599 | 241 | 170 | 219 |
-| 699 | 280 | 203 | 254 |
-| 999 | 290 | **277** | **290** |
+## P2-G Bug-3 — green movement yields to a red-light foe (the larger gridlock lever)
 
-Teleports 42→17 (jam 13→3, yield 29→14). The network now **clears all 290 trips like vanilla** instead
-of leaving 13 permanently stuck and freezing; the progressive gridlock (baseline halting climbed and
-stuck) is gone. A modest mid-run lag (~20–26 trips behind vanilla near t=600–700) remains — SumoSharp is
-still slightly slower to clear the TL approaches, but it catches up fully and does not gridlock. This is
-a flowing city, not a frozen one.
+`Engine.JunctionYieldConstraint` (the crossing gate) yields ego to an approaching foe when
+`foe.WillPass` is true (the foe is still *moving* toward the junction this step). A red-light foe is
+still rolling toward its stop line for a few seconds before it halts, so it is marked `WillPass=true`,
+and a green ego that statically `respondsTo` the foe's link yields to it. Vanilla does not: SUMO's foe
+check (`MSLink::opened` / `havePriority`) is TL-state-aware — a foe approaching on a **red** signal
+holds no right-of-way and does not block a green ego. The engine's gate was TL-state-blind (reads the
+static `response`/`foe` matrix + the foe's motion, never the foe link's live signal state). Same
+TL-blindness class as Bug-2, but in the **main** crossing gate.
 
-**Still owner-gated:** the Geneva box is company-restricted, so this is verified on the synthetic witness
-only. A real-box re-run (Geneva) is needed to confirm the halting curve converges there too, and to
-decide whether the residual mid-run lag clears the believability bar. Regression lock-in (proper parity
-scenarios: a `<routing>`-section reroute golden for Bug-1, a dense-TL-junction assertion for Bug-2,
-regenerated from vanilla) is the natural follow-up rung.
+**Fix (owner authorized the core work).** `JunctionYieldConstraint`'s approaching-foe branch now
+treats a foe whose live TL state is `'r'` as non-blocking (`FoeApproachingOnRedSignal`), guarded so a
+rail_signal's non-TL `Tl` id can't be mis-read (that guard fixed a `KeyNotFoundException` the first
+cut threw on the rail-crossing golden). **All 622 committed goldens stay byte-identical.**
 
-## P2-G Bug-3 — the DOMINANT residual: green movement yields to a red-light foe
+## Corrected controlled measurement (synthetic-junction2, fresh binary, one fix toggled at a time)
 
-Building the Bug-2 regression scenario surfaced a third, deeper bug that is almost certainly the
-LARGER gridlock contributor. Minimal witness committed at `scenarios/_repro/tl-redfoe-yield` (2 cars,
-1 TL junction, geometry-free): a green permissive-left (`e_left`, E→S) is frozen **solely** by the
-presence of a red-light-stopped foe (`n_left`, N→E). Run `e_left` alone and it crosses fine; add the
-red foe and it never gets a gap.
+⚠️ **Measurement correction.** Earlier revisions of this doc reported larger deltas (teleports 42→17,
+arrivals 277→290, peak halting 107→83 attributed to specific fixes). Those were taken against a
+**stale self-contained `linux-x64` publish** left from an earlier build and are wrong; they have been
+removed. The authoritative numbers below are a clean A/B/C run — fresh HEAD with exactly one fix
+disabled per column, all through the framework-dependent shim. (`scenarios/_repro/synthetic-junction2/DIFF-SUMMARY.md`
+carries the same table.)
 
-**Mechanism.** `Engine.JunctionYieldConstraint` (the crossing gate, ~Engine.cs:6392) yields ego to an
-approaching foe when `foe.WillPass` is true (the foe is still *moving* toward the junction this step).
-A red-light foe is still rolling toward its stop line for a few seconds before it halts, so it is
-marked `WillPass=true`, and a green ego that statically `respondsTo` the foe's minor link yields to
-it — then never gets a gap, because the foe sits at the red forever. Vanilla does not yield here:
-SUMO's foe check (`MSLink::opened` / `havePriority`) is TL-state-aware — a foe approaching on a **red**
-signal holds no right-of-way and does not block a green ego. The engine's gate is TL-state-blind for
-the approaching foe (reads the static `response`/`foe` matrix + the foe's motion, never the foe link's
-live signal state). Same TL-blindness class as Bug-2, but in the **main** crossing gate, and larger.
+| metric | vanilla | Bug-1 | Bug-1+2 | Bug-1+2+3 (HEAD) |
+|---|---|---|---|---|
+| teleports (jam / yield) | 0 | 24 (8/16) | 23 (4/19) | **11 (0/11)** |
+| peak on-net halting | 45 | 101 | 95 | **83** |
+| arrivals @ t=499 | 177 | 150 | 162 | **171** |
+| arrivals @ t=699 | 280 | 264 | 264 | **272** |
 
-**Consequence for the regression rung.** The Bug-2 (RBL) regression cannot be cleanly isolated at a TL
-junction while Bug-3 exists — Bug-3 freezes the same green movement first, so `synthetic 75` fails even
-with the Bug-2 fix. Once Bug-3 is fixed, that same TL scenario reaches full parity and becomes the
-combined Bug-2+Bug-3 golden regression (revert either fix → diverge). So Bug-3 is the gate for both the
-remaining gridlock convergence AND the Bug-2 regression lock-in.
+Both fixes move toward vanilla; **Bug-3 is the larger lever** (teleports 23→11, peak halting 95→83,
+mid-run arrival gap roughly halved). The whole-box progressive gridlock is materially reduced but
+**not** fully closed: peak halting is still 83 vs vanilla's 45.
 
-**Scope.** This is a high-risk CORE junction-gate change (the load-bearing parity path at every TL
-junction): the fix — treat a foe whose live link state is red as non-blocking, mirroring
-`MSLink::opened` — must be gated hard against the committed TL/junction goldens
-(09/30/35/08/11/26/27/34/38/39/40 + determinism) staying byte-identical, plus the saturation stress
-tests.
+**Witness note.** The minimal 2-car `tl-redfoe-yield` scenario built during this pass was **removed**:
+on the current engine (fresh binary) its green car crosses even without Bug-3, so it did not isolate
+the bug — my earlier "it freezes" reading was itself a stale-binary artifact, and the link-index I
+picked for the red foe (connection `linkIndex` vs junction request-matrix index) did not actually trip
+the red-check. Bug-3's real, measured effect is on the dense `synthetic-junction2` above. A correct
+minimal golden regression for Bug-2/Bug-3 remains a TODO (it must reach full vanilla parity, which the
+dense witness does not).
 
-**RESOLVED (owner authorized the core work).** Implemented in `JunctionYieldConstraint`'s
-approaching-foe branch via `FoeApproachingOnRedSignal` (a foe whose live TL state is `'r'` no longer
-blocks ego), guarded so a rail_signal's non-TL `Tl` id can't be mis-read (that guard fixed a
-`KeyNotFoundException` the first cut threw on the rail-crossing golden). Gate results:
-
-- **All 622 committed goldens byte-identical** — the red-foe situation never arises in the sparse
-  committed TL goldens, so the check is inert there; the saturation stress tests + determinism
-  goldens are unaffected.
-- **synthetic-junction2 (arrival curve, trips cleared):** mid-run lag cut ~75% —
-
-  | t | vanilla | Bug-2 only | Bug-2+Bug-3 |
-  |---|---|---|---|
-  | 199 | 26 | 19 | 26 |
-  | 499 | 177 | 146 | 171 |
-  | 699 | 280 | 254 | 272 |
-
-  Peak on-net halting 107→83 (toward vanilla's 45); teleports 17→11 (jam 3→0). The whole-box
-  progressive gridlock is now largely closed on the witness.
-
-**Residual (Bug-4, smaller):** a green **permissive** movement still crosses a few steps later than
+**Residual (Bug-4, smaller).** A green **permissive** movement still crosses a few steps later than
 vanilla — the minor-link cautious-approach arm (`couldBrakeForMinor`) brakes it toward its stop line
-even on green with no real foe (witness `tl-redfoe-yield`: e_left enters the junction at t≈12 vs
-vanilla t≈9). This slows a permissive green by seconds but does not freeze it — a believability/tempo
-gap, not gridlock. Candidate next core fix; then `tl-redfoe-yield` reaches full parity and becomes a
-committed golden regression locking Bug-2+Bug-3+Bug-4.
+even on green with no real foe. A tempo/believability gap, not a freeze; candidate next core fix.
+
+**Still owner-gated:** the Geneva box is company-restricted, so all of the above is on the synthetic
+witness only. A real-box re-run (Geneva) is needed to confirm convergence and judge the residual
+against the believability bar.
 
 ## All three gaps landed — definitive acceptance status
 
