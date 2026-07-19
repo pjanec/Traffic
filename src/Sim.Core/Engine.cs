@@ -2130,6 +2130,30 @@ public sealed partial class Engine : IEngine
             : TrafficLightState.GetLinkState(tlLogic, linkIndex, evalTime);
     }
 
+    // SUMO MSLink::havePriority(): a TL-controlled link has right-of-way iff its LIVE signal state
+    // char is a major green 'G' (uppercase == priority, the SAME uppercase/minor split
+    // ClassifyTeleportKind already uses). SUMO gates its whole minor-link yield family
+    // (couldBrakeForMinor / blockedByFoe / the sameTarget arrival-time yield) on `!havePriority()`;
+    // the engine's priority-junction arms instead infer "minor" from the STATIC netconvert <request>
+    // response matrix, which is correct for an UNSIGNALIZED junction but TL-BLIND -- so a protected-
+    // green vehicle would wrongly yield to a junction foe and freeze at the stop line until
+    // time-to-teleport (docs/SUMOSHARP-LOWDENSITY-TELEPORT-DESIGN.md mechanism A). This restores the
+    // signal's authority: on a major green the vehicle yields to no one. Sampled at time+dt to agree
+    // with RedLightConstraint's own timing (see its comment). Returns false for an uncontrolled link
+    // (Tl null) and for a rail signal (tl= present but no <tlLogic>) -> the static-matrix behaviour is
+    // unchanged there, byte-identical for every non-TL committed golden.
+    private bool EgoLinkHasSignalPriority(JunctionLink egoLink, double evalTime)
+    {
+        var conn = egoLink.Connection;
+        if (conn.Tl is not { } tl || conn.LinkIndex is null || !_network!.TlLogicsById.ContainsKey(tl))
+        {
+            return false;
+        }
+
+        var state = TlLinkStateChar(tl, conn.LinkIndex.Value, evalTime);
+        return state is >= 'A' and <= 'Z';
+    }
+
     // DR2 (issue #3, re-scoped per the NuGet reply): a lane vehicle's dead-reckoning regime for the
     // current published frame. A VEHICLE is NEVER FreeKinematic -- even mid-swerve it stays LaneArc,
     // because LaneArc extrapolates `pos` along the (possibly curved) lane polyline whereas FreeKinematic
@@ -6096,6 +6120,18 @@ public sealed partial class Engine : IEngine
             : null;
         var egoOnInternal = v.LaneId == egoInternalLaneId;
 
+        // Low-density teleport fix (docs/SUMOSHARP-LOWDENSITY-TELEPORT-DESIGN.md mechanism A): does
+        // ego's junction link hold a protected-green traffic signal (SUMO havePriority())? When it
+        // does, ego has absolute right-of-way and must NOT take any of the priority-junction yield
+        // arms below (cautious-approach, approaching-foe crossing yield, sameTarget arrival-time
+        // yield) -- those infer "minor" from the TL-blind static <request> matrix. Sampled at time+dt
+        // to agree with RedLightConstraint. False (inert, unchanged) for every uncontrolled link, so
+        // byte-identical for non-TL scenarios. The on-junction AdaptToJunctionLeader (rear-end
+        // following of a foe already on the junction) and merge PHASE 1 (following a merger on its
+        // internal lane) are NOT gated -- those are car-following safety, which SUMO applies
+        // regardless of priority (checkLinkLeader), not the minor-link yield.
+        var egoHasSignalPriority = EgoLinkHasSignalPriority(egoLink, time + dt);
+
         // C4-vii-a (cont-turn) fix, extended to the MERGE arm: the true distance from ego's front to
         // its junction-link internal lane (egoInternalLaneId). For an ORDINARY turn `approachLane` is
         // the normal lane immediately before that internal lane and ego is on it, so this reduces to
@@ -6194,8 +6230,11 @@ public sealed partial class Engine : IEngine
         //
         // "ego's link is minor" == its <request> row yields to at least one foe link
         // (Response has any set bit) -- equivalent to SUMO's `!(*link)->havePriority()` for a
-        // priority junction (this rung's scope): a major link's Response row is all-zero.
-        if (!egoOnInternal && approachLane is not null && request.Response.Contains('1'))
+        // priority junction (this rung's scope): a major link's Response row is all-zero. For a
+        // TL-controlled link the static matrix is NOT the RoW authority -- a protected-green ('G')
+        // link IS major (havePriority) regardless of geometric conflicts, so `egoHasSignalPriority`
+        // suppresses this minor cautious-approach exactly as SUMO's `!havePriority()` gate does.
+        if (!egoOnInternal && approachLane is not null && request.Response.Contains('1') && !egoHasSignalPriority)
         {
             // NLHandler.cpp:1413: a link with no explicit `visibility` attribute defaults its
             // foe-visibility distance to 4.5 (for non-ZIPPER links) -- this net specifies none.
@@ -6283,7 +6322,7 @@ public sealed partial class Engine : IEngine
                     constraint,
                     SameTargetMergeConstraint(
                         v, junction, egoLink, egoInternalLaneId, egoOnInternal, approachLane, egoDistToEntry,
-                        j, allVehicles, dt, time, actionStepLengthSecs, laneVehicleMaxSpeed));
+                        j, allVehicles, dt, time, actionStepLengthSecs, laneVehicleMaxSpeed, egoHasSignalPriority));
                 continue;
             }
 
@@ -6404,7 +6443,11 @@ public sealed partial class Engine : IEngine
                 // is unset for a vehicle stopping at a red). That subsumes -- and, unlike -- the earlier
                 // ad-hoc single-lane red check, also reaches a cont (internal-junction) turn foe, whose
                 // request-matrix lane is the internal continuation rather than the red entry lane.
-                var takesCrossingYield = !(egoOnInternal || foeWillNotPass || foeNotApproaching || foeYieldsThisStep || ignoresFoe);
+                // egoHasSignalPriority: a protected-green ('G') ego holds SUMO havePriority() and does
+                // NOT stop-line-yield to an approaching foe (the signal already resolved the conflict --
+                // the foe on the conflicting movement is red). Only the APPROACHING stop-line yield is
+                // gated; the on-junction AdaptToJunctionLeader branch above is car-following, untouched.
+                var takesCrossingYield = !(egoOnInternal || foeWillNotPass || foeNotApproaching || foeYieldsThisStep || ignoresFoe || egoHasSignalPriority);
                 // Perf (willPass/plan fusion): a finite approaching-foe crossing yield taken in the
                 // pre-pass is the ONLY thing the real pass can relax (via `!foe.WillPass`), so flag it
                 // -- PlanMovements must then RECOMPUTE this vehicle rather than reuse the pre-pass
@@ -6793,7 +6836,7 @@ public sealed partial class Engine : IEngine
     private double SameTargetMergeConstraint(
         VehicleRuntime ego, Junction junction, JunctionLink egoLink, string egoInternalLaneId,
         bool egoOnInternal, Lane? approachLane, double egoDistToEntry, int foeLinkIndex, ActiveVehicleQuery allVehicles,
-        double dt, double time, double actionStepLengthSecs, double laneVehicleMaxSpeed)
+        double dt, double time, double actionStepLengthSecs, double laneVehicleMaxSpeed, bool egoHasSignalPriority = false)
     {
         if (approachLane is null && !egoOnInternal)
         {
@@ -6847,7 +6890,12 @@ public sealed partial class Engine : IEngine
         // circulating traffic that has not yet reached the ring node -- while NOT over-yielding to a
         // far foe (scenario 19's distant mainline lands in blockedByFoe's "ego leader" arm and does
         // not block). Once ego is on its internal lane it is committed and no longer gated.
+        // egoHasSignalPriority: a protected-green ('G') ego has SUMO havePriority() and does NOT take
+        // this arrival-time stop-line yield -- the signal already resolved the merge conflict (the
+        // conflicting merger is red). Only PHASE 0 (the stop-line yield) is gated; PHASE 1 below
+        // (following a foe already on its merging internal lane) is car-following and stays active.
         if (!egoOnInternal
+            && !egoHasSignalPriority
             && foeMerging is not null
             && foeMerging.LaneId != foeInternalLaneId
             && IndexOfLaneHandle(foeMerging, foeInternalLaneHandle) > foeMerging.LaneSeqIndex)

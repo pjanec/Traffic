@@ -96,27 +96,43 @@ match or improve them. This must be *verified*, not assumed: the full `dotnet te
 
 ## Tasks (success conditions are measurable)
 
-- **T1 — havePriority-aware junction yield.** Add `EgoHasSignalPriority`; gate arms A1/A2/A3 on it.
-  **Success:** `scenarios/_repro/synthetic-junction2` SumoSharp teleports drop from 10 to ≤5 (the TL
-  half eliminated: no remaining teleport has `nextLinkState ∈ {G,g,y,r}` at a TL junction while the ego
-  had a green that cycle); **all 627 committed goldens byte-identical**; `WillPassSaturationDiagTests`
-  and `RungHDp2g2*` still green.
-- **T2 — RedLightConstraint routed-movement link.** Resolve the TL link by the vehicle's next routed
-  edge. **Success:** a new unit test (a shared lane with straight-green + left-red) gates each movement
-  by its OWN signal; all goldens byte-identical.
-- **T3 — priority-junction on-junction wedge (mechanism B).** Separate, later stage; design TBD after
-  T1/T2 land and the repro is re-measured. **Success:** synthetic-junction2 teleports → ~0 and the
-  pop%↔density curve is monotone within noise, with the full suite green.
-- **T4 — regression guard.** A committed offline test asserting SumoSharp teleports ≈ vanilla (0) at a
-  low density on a small TL scenario (no SUMO at test time — a committed golden statistic), so this
-  residual cannot silently return.
+- **T1 — havePriority-aware junction yield. DONE.** Added `EgoLinkHasSignalPriority` (Engine.cs, near
+  `TlLinkStateChar`) and wired it into the three priority-junction yield arms: the minor-link
+  cautious-approach gate, the approaching-foe `takesCrossingYield`, and `SameTargetMergeConstraint`'s
+  PHASE 0 arrival-time yield (PHASE 1 / on-junction `AdaptToJunctionLeader` following are left intact —
+  they are car-following safety, applied regardless of priority, exactly as SUMO's checkLinkLeader).
+  Sampled at `time+dt` to agree with `RedLightConstraint`.
+  **Result (verified this session):** `scenarios/_repro/synthetic-junction2` SumoSharp teleports **10 →
+  5** (the TLS half eliminated); **all 627 committed goldens byte-identical** (`dotnet test` green,
+  incl. `WillPassSaturationDiagTests` / `RungHDp2g2*`).
+- **T2 — RedLightConstraint routed-movement link. INVESTIGATED, DEFERRED (not landed).** A routed-
+  movement resolver (`TryGetRoutedTlConnection`) was implemented and tested: it kept all 627 goldens
+  byte-identical, BUT it moved the repro the WRONG way (5 → 6) — reading a vehicle's true movement
+  signal correctly stops it at a red the old first-connection proxy wrongly treated as green, which just
+  exposes a *different* freeze rather than helping the ask. It is a genuine latent bug (a shared
+  approach lane whose movements carry different signal states — e.g. straight-green + protected-left-red
+  — is mis-gated), but it is (a) not needed for this ask, (b) counterproductive to the target metric,
+  and (c) a semantics change that warrants its own purpose-built shared-lane test before landing. Held
+  out of this change; revisit with a dedicated test + re-measurement.
+- **T3 — priority-junction on-junction wedge (mechanism B).** The 5 residual teleports are all at a
+  priority (uncontrolled, state `'M'`) junction — four vehicles wedging on the same internal lane
+  `:2436_0_1`, plus one red case — the pre-existing on-junction minor-turner / cascade residual
+  (`ISSUE2-JUNCTION-TELEPORT-DESIGN.md` §4-CORRECTION), NOT TLS-related. Separate, later stage; prior
+  attempts on these arms regressed `WillPassSaturationDiagTests`, so treat with care.
+  **Success:** synthetic-junction2 teleports → ~0 and the pop%↔density curve monotone within noise,
+  full suite green.
+- **T4 — regression guard. DONE (partial).** `tests/Sim.ParityTests/LowDensityTeleportTests.cs` runs
+  the committed synthetic-junction2 through the in-process `SumoShim` path (engine-only, no SUMO) and
+  asserts teleports ≤ 5 — locking the T1 (mechanism-A) fix against regression toward 10. The bound
+  tightens toward vanilla's 0 when T3 lands.
 
 ## Tracker
 
-- [ ] T1 — havePriority-aware junction yield (TL half)
-- [ ] T2 — RedLightConstraint routed-movement link
-- [ ] T3 — priority-junction on-junction wedge (mechanism B)
-- [ ] T4 — committed low-density-teleport regression guard
+- [x] T1 — havePriority-aware junction yield (TLS half): 10 → 5, goldens byte-identical
+- [~] T2 — RedLightConstraint routed-movement link: investigated, byte-identical on goldens but worsens
+      the repro (5→6) and needs a dedicated shared-lane test — DEFERRED, not landed
+- [ ] T3 — priority-junction on-junction wedge (mechanism B): the 5 residual teleports
+- [x] T4 — committed low-density-teleport regression guard (teleports ≤ 5)
 
 ## Notes for the implementor
 
