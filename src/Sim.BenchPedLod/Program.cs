@@ -158,16 +158,18 @@ internal static class Program
             var scenario = churn ? "B/churn" : "A/stable";
             Console.WriteLine(
                 $"{n,8} | {scenario,8} | {serial.ActualHigh,10} | {serial.SwitchesPerStep,13:F2} | " +
-                $"{serial.MsPerStep,15:F3} | {parallel.MsPerStep,17:F3} | {speedup,7:F2}x");
+                $"{serial.MsPerStep,15:F3} | {parallel.MsPerStep,17:F3} | {speedup,7:F2}x | " +
+                $"slotHighWater={serial.SlotHighWater} (live={serial.ActualHigh}, bloat={serial.SlotHighWater - serial.ActualHigh})");
         }
         else
         {
             Console.WriteLine(
-                $"{label,-28} | {serial.ActualHigh,10} | {serial.MsPerStep,15:F3} | {parallel.MsPerStep,17:F3} | {speedup,7:F2}x");
+                $"{label,-28} | {serial.ActualHigh,10} | {serial.MsPerStep,15:F3} | {parallel.MsPerStep,17:F3} | {speedup,7:F2}x | " +
+                $"slotHighWater={serial.SlotHighWater}");
         }
     }
 
-    private readonly record struct Measurement(double MsPerStep, int ActualHigh, double SwitchesPerStep);
+    private readonly record struct Measurement(double MsPerStep, int ActualHigh, double SwitchesPerStep, int SlotHighWater);
 
     private static Measurement Measure(
         int n, double highFraction, double spacing, int perSourceTarget, bool churn,
@@ -243,7 +245,8 @@ internal static class Program
         return new Measurement(
             MsPerStep: sw.Elapsed.TotalMilliseconds / steps,
             ActualHigh: manager.HighPowerCount,
-            SwitchesPerStep: switchesTotal / (double)steps);
+            SwitchesPerStep: switchesTotal / (double)steps,
+            SlotHighWater: manager.HighCrowdSlotHighWater);
     }
 
     // Scenario B: each interest source sweeps back and forth along X around its home anchor, amplitude

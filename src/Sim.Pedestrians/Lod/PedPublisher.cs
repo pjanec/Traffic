@@ -18,6 +18,12 @@ public sealed record PathArcRecord(int Id, double Time, IReadOnlyList<Vec2> Path
 // its Time: before it the ped is reconstructed under `From`, from it onward under `To`.
 public sealed record DrSwitchEvent(int Id, double Time, PedDrModel From, PedDrModel To) : PedEvent(Id, Time);
 
+// LIVE-POC-1 (docs/PEDESTRIAN-LIVELINESS-DESIGN.md §1, §12): the ActivityTimeline analogue of
+// PathArcRecord -- broadcast ONCE (on spawn, or again on a re-plan after a mid-activity promotion/
+// demotion, §10), never repeated per step. The IG stores the whole timeline and reconstructs pose +
+// animation + visibility by calling the exact same ActivityTimeline.PoseAt the server calls.
+public sealed record ActivityTimelineRecord(int Id, double Time, ActivityTimeline Timeline) : PedEvent(Id, Time);
+
 // One high-power position/velocity sample, streamed every step a ped is FreeKinematic. POC-3 success
 // condition 4 only requires this to be silent while low-power; a publish-on-predicted-error gate (the
 // car stack's DrErrorPublishPolicy) is explicitly optional polish here, so every high-power step emits
@@ -37,6 +43,7 @@ public sealed class PedPublisher
     private readonly Dictionary<int, double> _lastHeartbeatAt = new();
     private readonly Dictionary<int, int> _freeKinematicSamplesSent = new();
     private readonly Dictionary<int, int> _pathArcRecordsSent = new();
+    private readonly Dictionary<int, int> _activityTimelineRecordsSent = new();
     private readonly Dictionary<int, int> _heartbeatsSent = new();
 
     public PedPublisher(double heartbeatInterval = 3.0)
@@ -50,6 +57,7 @@ public sealed class PedPublisher
 
     public IReadOnlyDictionary<int, int> FreeKinematicSamplesSent => _freeKinematicSamplesSent;
     public IReadOnlyDictionary<int, int> PathArcRecordsSent => _pathArcRecordsSent;
+    public IReadOnlyDictionary<int, int> ActivityTimelineRecordsSent => _activityTimelineRecordsSent;
     public IReadOnlyDictionary<int, int> HeartbeatsSent => _heartbeatsSent;
 
     public void PublishPathArc(int id, IReadOnlyList<Vec2> path, double startTime, double speed, double time)
@@ -61,6 +69,14 @@ public sealed class PedPublisher
     public void PublishSwitch(int id, PedDrModel from, PedDrModel to, double time)
     {
         _events.Add(new DrSwitchEvent(id, time, from, to));
+    }
+
+    // Broadcast-once (LIVE-POC-1): sends the whole ActivityTimeline exactly once, mirroring
+    // PublishPathArc's "path sent once" discipline.
+    public void PublishActivityTimeline(int id, ActivityTimeline timeline, double time)
+    {
+        _events.Add(new ActivityTimelineRecord(id, time, timeline));
+        Increment(_activityTimelineRecordsSent, id);
     }
 
     public void PublishSample(int id, double time, Vec2 pos, Vec2 vel)

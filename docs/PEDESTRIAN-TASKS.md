@@ -84,13 +84,29 @@ Design ref: `PEDESTRIAN-DESIGN.md` §3(d), `PEDESTRIAN-POC7C-FINDINGS.md` Q2.
   any promote-radius, demotes correctly with hysteresis (no flap), and the per-step interest scan is
   sub-linear in ped count (measured: adding sources or peds does not blow up the stable-scenario ms/step).
 
-### P1-2 — API surface + packaging
+### P1-2 — API surface + packaging *(scheduled BEFORE P5 — evac (P5-B) consumes it)*
 - **Design ref:** §10. **Files:** `src/Sim.Pedestrians/*`, new `README.md`, `.csproj` packaging. **Deps:** P1-1.
-- Consolidate the POC namespaces (`Lod`/`Navigation`/`Crossing`/`Obstacles`/`Parking`) into a coherent,
-  documented public API; make `Sim.Pedestrians` a packable NuGet library (like `SumoSharp.Evac`), with the
-  DotRecast provider staying in its own optional package.
-- **Success conditions:** the package builds/packs; a short sample app drives a pedestrian scenario through
-  the public API only (no internals); README documents the seams; hermetic `dotnet test` unaffected.
+- A coherent `PedestrianWorld` **facade** over the common wiring (`PedLodManager` + `InterestField` +
+  `PedPublisher`): `AddWalker`/`AddLivelyWalker`, `SetForcedHighPower(id,on)` (the panic/pin control),
+  `AddInterestSource`/`MoveInterestSource`/`RemoveInterestSource`, `SetExternalObstacles`, `Step(now,dt)`,
+  `PositionOf`/`ModelOf`/`Remove`/`LiveIds` — so a consumer never hand-wires the internals. Add
+  `PedLodManager.SetForcedHighPower` (a pinned ped promotes immediately and never demotes while pinned;
+  default off → bit-identical). Make `Sim.Pedestrians` a packable library (packaging metadata on the
+  `.csproj`); DotRecast provider stays its own optional package.
+- **Success conditions:** the package builds/packs; a short sample drives a scenario through the facade
+  only (no internals); `SetForcedHighPower` promotes a ped regardless of interest field and holds it high;
+  the unpinned path stays bit-identical (existing ped tests unchanged); README documents the seams;
+  hermetic `dotnet test` unaffected.
+
+### P5-PRE — Synthetic pedestrian evac district (walkable net) *(prerequisite for P5-B)*
+- **Design ref:** §4 (bake), §6. **Files:** new `scenarios/_ped/evac-district/` (`*.net.xml` +
+  `walkable.add.xml` + safe-zone anchors). **Deps:** P2-1.
+- Author/generate a synthetic SUMO net with real pedestrian infrastructure (sidewalks + crossings +
+  walkingareas) over a few blocks, an incident-able interior, and **safe-zone anchor points** at the
+  fringe (the flee destinations). It must bake cleanly through `SumoNavMesh`/`WalkablePolygonBaker`.
+- **Success conditions:** `SumoNavMesh` bakes a connected walkable graph; `FindPath(interiorPoint,
+  safeZone)` returns a route along sidewalks/crossings (not a straight line through buildings); committed
+  as a reusable evac scenario.
 
 ---
 
@@ -126,15 +142,25 @@ Design ref: `PEDESTRIAN-DESIGN.md` §3(d), `PEDESTRIAN-POC7C-FINDINGS.md` Q2.
 
 ## Stage P3 — Networking productionization (DDS multicast, end-to-end)
 
-### P3-1 — Crowd + PathArc DDS topics
-- **Design ref:** §7 (multicast, one stream); POC-7b. **Files:** `src/Sim.Replication.Dds/`,
-  `src/Sim.Replication/`. **Deps:** none (records landed in POC-7b).
-- Wire the quantized `PedFreeKinematicRecord` onto a **multicast crowd topic** and the `PathArcRecord` onto a
-  **durable/transient-local** topic (path sent once), plus **regime lifecycle events** (promote/demote,
-  board/alight, park) on the keyed lifecycle topic. Extend `DdsReplicationSink`/`DdsSubscriber`.
-- **Success conditions:** a **loopback multicast round-trip test** (CycloneDDS, as `Replication.Dds` already
-  supports) publishes a crowd frame + a PathArc record + a promote lifecycle event and a subscriber
-  reconstructs them; `git`-hermetic gate unaffected (DDS stays out of `Traffic.sln`, per its convention).
+### P3-1 — Pedestrian wire codec + transport-neutral replication surface (hermetic)
+- **Design ref:** §7 (multicast, one stream); POC-7b; the vehicle `IReplicationSink`/`Source` +
+  `InMemoryReplicationBus` pattern. **Files:** `src/Sim.Replication/` (Records, FrameCodec, a ped
+  replication surface + InMemory binding). **Deps:** none (POC-7b landed `PedFreeKinematicRecord` + wire
+  `PathArcRecord`); LIVE-POC-1 added `ActivityTimeline`.
+- Add the missing pedestrian wire records: an **`ActivityTimeline` codec** (T0 + segment list: Walk/Pause/
+  Dwell/Interact, each length-prefixed, anim tags as length-prefixed UTF-8) and a **ped lifecycle record**
+  (spawn/despawn + DR-model switch promote/demote). Build a **transport-neutral `IPedReplicationSink`/
+  `IPedReplicationSource`** (mirroring the vehicle pair) with an **InMemory binding** so the hermetic
+  `dotnet test` loop can round-trip the whole stream with NO DDS. The real CycloneDDS binding is a
+  separate, out-of-`Traffic.sln` concern (like the existing vehicle DDS binding) — NOT part of this task's
+  hermetic gate.
+- **Success conditions:** a round-trip test runs a real `PedLodManager` population (low-power PathArc +
+  lively `ActivityTimeline` + a promoted `FreeKinematic` ped), serializes the full `PedEvent` stream through
+  the InMemory ped bus, and reconstructs on the receiver: **server==IG EXACT** for low-power (path/timeline
+  sent once as doubles, reconstructed by the same `PoseAt`/`PathArcMotion`) and **within cm quantization
+  tolerance** for high-power (`PedFreeKinematicRecord` int32-cm); a DR-switch on the wire flips the receiver's
+  reconstruction model at the right time; every byte-level codec round-trips (encode→decode identity for
+  each record type); `dotnet test` stays hermetic (no DDS, no network) and parity is untouched.
 
 ### P3-2 — Publisher + global bandwidth governor
 - **Design ref:** §7. **Files:** `src/Sim.Replication/PublishPolicy.cs` (+ a ped publisher). **Deps:** P3-1, P0-3.
@@ -173,13 +199,54 @@ Design ref: `PEDESTRIAN-DESIGN.md` §3(d), `PEDESTRIAN-POC7C-FINDINGS.md` Q2.
 
 ## Stage P5 — Evac generalization
 
-### P5-1 — `Sim.Evac` consumes `Sim.Pedestrians`
-- **Design ref:** §6 (evac = specialization). **Files:** `src/Sim.Evac/*`. **Deps:** P1-2, P2-3.
-- Refactor evac so panic = a **forced high-power promotion** + the flee param override, and destination =
-  nearest safe zone via `IPedNavigation` — replacing `FleeGoalFor` radial steering and `ExitsFarthestFirst`.
-  `FearField`/`LineOfSight`/`BlockedDetector` are reused unchanged.
-- **Success conditions:** existing evac demos/tests (`EvacOrganicDemoTests`, etc.) still pass (or are updated
-  with justified new goldens); evac now routes peds to safe zones along real walkable space, not radially.
+### P5-1 (B) — `Sim.Evac` consumes `Sim.Pedestrians` on a real walkable net
+- **Design ref:** §6 (evac = specialization). **Files:** `src/Sim.Evac/*` (a new evac scenario on the P5-PRE
+  net). **Deps:** P1-2 (the facade + `SetForcedHighPower`), P5-PRE (the synthetic walkable net), P2-3.
+- Rebuild the pedestrian side of evac on the `PedestrianWorld` facade over the P5-PRE walkable net: panic =
+  `SetForcedHighPower` (forced promotion to reactive ORCA) + the flee param override; the fleeing ped's
+  destination = the **nearest safe zone routed via `IPedNavigation`** (`SumoNavMesh`) along real sidewalks/
+  crossings, replacing `FleeGoalFor` radial steering (and, for the ped side, the fake-navmesh band). Abandoned
+  cars feed in as external obstacles (`SetExternalObstacles`). `FearField`/`LineOfSight`/`BlockedDetector`
+  reused unchanged. Keep the legacy `FakeNavMesh`/radial path available for the existing (netless) evac
+  scenarios so their aggregate-property tests stay green; the NEW walkable-net evac scenario exercises the
+  routed flee.
+- **Success conditions:** a new evac-district scenario runs end-to-end; panicked peds route to the nearest
+  safe zone **along walkable space** (a ped's path bends around a block, not straight through it) and reach
+  it (escaped); existing evac demo tests (aggregate-property) still pass; a `--evac-district`/Sim.Viz demo
+  shows the routed foot-exodus; hermetic `dotnet test` unaffected.
+
+---
+
+## Stage LIVE-PROD — Graduate liveliness into the demand path
+
+The LIVE-POCs proved the mechanisms in isolation (`ActivityTimeline`, `SocialPlanner`, `WaiterScenario`);
+this stage makes the *routed ambient crowd* actually lively. Design refs: `PEDESTRIAN-LIVELINESS-DESIGN.md`
+§4 (schedule generator extends `PedDemand`) + §10 (LOD integration). Iron rule: strictly additive — with
+liveliness disabled the population is **bit-identical** to today's PathArc behaviour.
+
+### LIVE-PROD-1a — `PedLodManager` low-power `ActivityTimeline` path
+- **Design ref:** liveliness §10; `PedLodManager.cs`, `ActivityTimeline.cs`. **Deps:** LIVE-POC-1.
+- A low-power ped may carry an `ActivityTimeline` (`Model = PedDrModel.ActivityTimeline`) instead of a bare
+  PathArc leg: `AddPedLively(id, timeline, radius, now)` publishes `ActivityTimelineRecord` + the switch;
+  `PositionOf` evaluates `PoseAt`; promotion carries the timeline's pose+velocity forward into the crowd
+  (add `ActivityTimeline.VelocityAt`); demotion returns to a plain PathArc walk-to-destination. Low-power =
+  PathArc **or** ActivityTimeline throughout the promote/demote state machine.
+- **Success conditions:** every existing `PedLodManager`/`PedDemand` test stays **bit-identical** (null
+  timeline path unchanged); a new test drives a lively low-power ped through a `PedPublisher`→`HeadlessIg`
+  round-trip and asserts exact server==IG over a sweep, and asserts a lively ped inside a promote radius
+  promotes to FreeKinematic and demotes back; serial==parallel; 589 parity green.
+
+### LIVE-PROD-1b — `PedDemand` schedule generator + lively-crowd demo
+- **Design ref:** liveliness §4, §8; `PedDemand.cs`. **Deps:** LIVE-PROD-1a.
+- `PedDemandConfig` gains an optional liveliness block (per-ped probability of a Pause/Dwell beat, a POI/
+  dwell-spot set, seeded from `config.Seed`+id). `TrySpawnOne` builds an `ActivityTimeline` = the route as
+  Walk segments with occasional deterministic Pause("sip"/"phone")/Dwell(at a nearby POI) inserted, and
+  calls `AddPedLively`. A `--ped-lively-crowd` Sim.Viz scene shows the routed crowd sipping/sitting/dwelling
+  as it moves.
+- **Success conditions:** determinism (same seed → identical spawn/pose stream); with the liveliness block
+  omitted the demand is bit-identical to today's `PedDemand`; the demo visibly shows lively beats along
+  real routes; arrivals still despawn at destination (a dwelling ped does not despawn mid-route); ped tests
+  green.
 
 ---
 
@@ -250,6 +317,77 @@ paths**. Design ref: §7 (DR / multicast), §5 (regime rendering); precedent: `s
 
 ---
 
+## Stage P8 — Subarea integration (SumoData compatibility)
+
+Realizes the 7 compatibility requirements in `SUBAREA-FOR-PEDESTRIAN-SESSION.md` §3. The design consequences
+are in `PEDESTRIAN-LIVELINESS-DESIGN.md` §11; the full per-requirement mapping + serve-path touchpoint is in
+`COORDINATION-pedestrian-x-subarea.md`. Standing invariant: all of P8 is **additive and inert by default** —
+an empty camera visible set → fully permissive → every existing pedestrian scenario/golden unchanged
+(mirrors the engine's null-`RealismMask` default).
+
+### P8-1 — Verify the bake against a real cropped sub-area net
+- **Design ref:** coord §1 req 1. **Files:** test-only (a cropped box `net.xml` fixture under
+  `scenarios/_ped/`), `SumoNavMesh` (read-only verification, fix only if a crop breaks it). **Deps:** P2-1;
+  needs a real cropped box `net.xml` from the SumoData pipeline.
+- Run the SUMO-geometry bake on an actual cropped box (crossings/walkingAreas cut by the boundary produce
+  dangling "fringe" stubs) and confirm the walkable graph is sane (fringe edges identified, no spurious
+  adjacency across the cut, coordinate frame matches the vehicle net).
+- **Success conditions:** bake of a cropped net produces a connected walkable graph whose fringe edge set
+  equals the boundary-cut walkable edges; a golden-style assertion pins the fringe set for the fixture; no
+  change to any existing (uncropped) scenario.
+
+### P8-2 — Appearance-legitimacy layer (the no-cheating gate) — CORE
+- **Design ref:** coord §1 req 2+4, coord §2, liveliness §11. **Files:** new
+  `src/Sim.Pedestrians/Legitimacy/PedSpawnPolicy.cs` (+ a visible-walkable-edge set type), wiring in
+  `PedDemand` (spawn) and `PedLodManager` (despawn/end-of-route). **Deps:** P1-1 (camera interest source),
+  P2-3 (`PedDemand`), P8-1 (fringe set).
+- Add the axis the earlier design conflated with sim-LOD: `MaySpawnOrDespawn(ped, walkableEdge) = isFringe(e)
+  OR hostsLegitimateSink(e, ped) OR isOffCamera(e)`, where `isOffCamera` reads the **same** host camera
+  signal the vehicle side uses (analogue of `RealismMask.MayPop`) mapped to the visible **walkable**-edge
+  set; `hostsLegitimateSink` = a building-entrance / transit / parking board-alight POI the ped is using
+  (liveliness §6/§8). A denied on-camera despawn routes the ped to the nearest sink/fringe or holds it
+  low-power until off-camera; a denied on-camera spawn defers. Camera remains a sim-LOD interest source
+  (unchanged); it *additionally* drives this gate. Pure function of (seed, ped, edge, visible set); visible
+  set captured once per host tick.
+- **Success conditions:** with a visible-edge set active, a deterministic scenario produces **zero**
+  ped appear/despawn events on a visible walkable edge that is not a fringe/sink (assert over the event log);
+  with an empty visible set the run is **bit-identical** to the pre-P8-2 baseline (inert-default gate);
+  serial == parallel; 585 parity + ped tests green.
+
+### P8-3 — Auto-deduced pedestrian demand
+- **Design ref:** coord §1 req 3, liveliness §4+§8. **Files:** `PedDemand` (deduction pass), POI ingest for
+  the liveliness §8 schema. **Deps:** P8-1, P8-2, P2-3.
+- Deduce O→D + liveliness POIs from walkable-space + land-use/POI net-data (sidewalk density, building
+  entrances, transit/parking, plazas), mirroring the vehicle side's topology deduction (their
+  `deduce_weights.py` as a template). Spawns land at fringe/doors per the P8-2 gate. Hand-authored
+  `personFlows` remain the stopgap until this lands.
+- **Success conditions:** on the cropped fixture, deduced demand yields fringe/door-legitimate O→D with a
+  reproducible per-(seed, box) distribution; a probe run is deterministic across repeats; no on-camera pops
+  (via P8-2).
+
+### P8-4 — Pedestrian density knob + crossing-throughput guard
+- **Design ref:** coord §1 req 5, liveliness §11. **Files:** `PedDemand` (density target),
+  `Crossing/CrossingGate` (occupancy cap). **Deps:** P8-3.
+- Expose a pedestrian density knob (peds/area or peds/sidewalk-m) analogous to the vehicle density level and
+  document its safe range; cap crossing occupancy so crowds never deadlock a signalized crossing hard enough
+  to gridlock the (separately calibrated) cars.
+- **Success conditions:** the knob linearly targets measured density within a documented range; a
+  crossing-saturation scenario shows crossings drain (no permanent deadlock) and the coupled cars keep
+  flowing; documented safe range committed.
+
+### P8-5 — Scenario/manifest slot-in + shared-replay contract
+- **Design ref:** coord §1 req 6, coord §3. **Files:** ped demand emitter (references/attaches to
+  `scenario.sumocfg` + `manifest.json`), `Sim.Viz` (shared FCD-style ped stream — already renders discs,
+  P7-0). **Deps:** P8-3.
+- Emit pedestrian demand as **additional** route/person input referenced by (or alongside) the produced
+  `scenario.sumocfg`, record the ped-density knob + safe range in the manifest, and confirm one replay can
+  render cars and peds from the same trajectory stream.
+- **Success conditions:** a produced `scenario.sumocfg` + `manifest.json` round-trips with ped inputs
+  attached; a single Sim.Viz replay shows vehicles and pedestrians together from one stream; outputs stay
+  self-contained/offline.
+
+---
+
 ## Sequencing summary
 
 **P0 first (Add/Remove — the priority).** Then P1 (API/interest-source) and P2 (navigation) can proceed in
@@ -257,5 +395,7 @@ parallel; P3 (networking) depends on P0-3; **P7 (visualization) follows its data
 after P1, P7-2/P7-3 remote after P3-1/P3-3** (it is the payoff that makes the whole system watchable, so
 schedule P7-1 early for a visible in-process demo); P4 (Engine TLS seam) is scheduled with the lane-engine
 session whenever convenient; P5 (evac) waits on P1–P2; P6 (on-target scale) waits on P0 and closes the loop
-with the real hardware numbers. The design is fixed; any P-stage finding that contradicts it updates
-`PEDESTRIAN-DESIGN.md` before that stage closes.
+with the real hardware numbers. **P8 (subarea integration) waits on P2-3 + P1-1 and a real cropped box
+`net.xml` from the SumoData pipeline; P8-1 (crop verification) is cheap and can run the moment a crop is
+available, P8-2 (the appearance-legitimacy gate) is the load-bearing new piece.** The design is fixed; any
+P-stage finding that contradicts it updates `PEDESTRIAN-DESIGN.md` before that stage closes.

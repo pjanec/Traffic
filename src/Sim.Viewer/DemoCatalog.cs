@@ -7,9 +7,11 @@ namespace Sim.Viewer;
 // generic packaged viewer -- it lives in Sim.Viewer (the exe/sample), not Sim.Viewer.Core.
 public enum DemoKind
 {
-    Scenario, // a committed scenario dir (net + rou + sumocfg) -- EngineHost auto-detects scenario mode.
-    Sandbox,  // a bare net.net.xml (no demand) -- EngineHost's runtime random-traffic spawner fills it.
-    Evac,     // a live Sim.Evac scenario, wired through EngineHost.CreateCustom + an EvacOverlay.
+    Scenario,   // a committed scenario dir (net + rou + sumocfg) -- EngineHost auto-detects scenario mode.
+    Sandbox,    // a bare net.net.xml (no demand) -- EngineHost's runtime random-traffic spawner fills it.
+    Evac,       // a live Sim.Evac scenario, wired through EngineHost.CreateCustom + an EvacOverlay.
+    Pedestrian, // P7-1: a live Sim.Pedestrians-only population (no vehicles), wired through
+                // EngineHost.CreateCustom + a PedOverlay -- see PedKind for the concrete demo.
 }
 
 public enum DemoCategory
@@ -21,6 +23,7 @@ public enum DemoCategory
     CityScale,
     Sandbox,
     Evacuation,
+    Pedestrians,
 }
 
 // PathRelToRepo convention (picked here, applied consistently everywhere in `All`): for Scenario/Sandbox
@@ -38,7 +41,8 @@ public sealed record DemoEntry(
     DemoKind Kind,
     string PathRelToRepo,
     string? EvacKind = null,
-    int SandboxFleet = 0);
+    int SandboxFleet = 0,
+    string? PedKind = null); // only when Kind == Pedestrian ("evac-district", mirrors EvacKind's convention)
 
 public static class DemoCatalog
 {
@@ -129,6 +133,32 @@ public static class DemoCatalog
         new DemoEntry("Evacuation (city, 10k-class)",
             "10k-vehicle-class city net: large-scale live panic evacuation and local foot exodus.",
             DemoCategory.Evacuation, DemoKind.Evac, "", EvacKind: "city"),
+
+        // -- Pedestrians (live Sim.Pedestrians-only populations -- no vehicles -- via EngineHost.CreateCustom
+        // + PedOverlay) ---------------------------------------------------------------------------------
+        new DemoEntry("Pedestrian evac (district)",
+            "Routed foot-exodus over a real walkable district: ambient walkers panic near an incident and " +
+            "flee along the sidewalk grid to the nearest safe corner -- regime-aware (low-power ambient vs " +
+            "high-power fleeing).",
+            DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "evac-district"),
+        new DemoEntry("Pedestrian remote (over the wire)",
+            "The crowd is reconstructed PURELY from the DR-error-gated multicast replication stream, not " +
+            "read from the sim: a swept interest source promotes nearby low-power walkers to high-power, and " +
+            "the reconstructed (IG) discs render coincident with the server ground-truth rings -- server == " +
+            "IG, no promotion pop.",
+            DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "lod-remote"),
+        new DemoEntry("Pedestrian remote (DDS multicast)",
+            "The same reconstruct-from-the-wire crowd as 'Pedestrian remote (over the wire)', but the " +
+            "replication stream rides the LIVE CycloneDDS transport (DdsPedReplicationSink/Source) instead " +
+            "of the in-process byte loopback -- the real one-server-to-many-IG multicast path. Requires a " +
+            "build with native DDS available; server == IG holds over the real wire.",
+            DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "lod-remote-dds"),
+        new DemoEntry("Pedestrian remote (DDS subscribe)",
+            "A PURE remote IG: this process runs NO ped sim -- it subscribes to a separate " +
+            "'--mode ped-publish' process's live CycloneDDS ped stream and renders the reconstructed crowd " +
+            "alone (no server ground-truth rings). The genuine two-process, cross-process multicast topology " +
+            "of Requirement 7. Start a ped publisher first; requires a build with native DDS.",
+            DemoCategory.Pedestrians, DemoKind.Pedestrian, "", PedKind: "lod-remote-dds-sub"),
     };
 
     // Only the entries whose backing path actually exists under `repoRoot` -- so a trimmed checkout
@@ -164,12 +194,35 @@ public static class DemoCatalog
             nameof(evacKind)),
     };
 
+    // The net path a Pedestrian entry's PedKind resolves to -- MUST match PedOverlay's own ResolveNetPath
+    // exactly (scenarios/_ped/evac-district), for the same reason EvacNetPath mirrors EvacOverlay.NetPath:
+    // this is purely a pre-flight existence check for the same file the overlay's Build reads.
+    public static string PedNetPath(string pedKind, string repoRoot) => pedKind switch
+    {
+        "evac-district" => Path.Combine(repoRoot, "scenarios", "_ped", "evac-district", "net.net.xml"),
+        // Every remote demo (in-process byte loopback, live DDS single-process, and DDS subscribe-only)
+        // reconstructs the SAME crossing-plaza net.
+        "lod-remote" or "lod-remote-dds" or "lod-remote-dds-sub" =>
+            Path.Combine(repoRoot, "scenarios", "_ped", "poc0-crossing-plaza", "net.net.xml"),
+        _ => throw new ArgumentException(
+            $"Unknown pedestrian kind '{pedKind}' (expected \"evac-district\", \"lod-remote\", \"lod-remote-dds\", or \"lod-remote-dds-sub\").",
+            nameof(pedKind)),
+    };
+
     private static bool IsUsable(DemoEntry entry, string repoRoot, out string missingPath)
     {
         if (entry.Kind == DemoKind.Evac)
         {
             var netPath = EvacNetPath(entry.EvacKind ?? throw new InvalidOperationException(
                 $"Demo '{entry.Name}' has Kind.Evac but no EvacKind."), repoRoot);
+            missingPath = netPath;
+            return File.Exists(netPath);
+        }
+
+        if (entry.Kind == DemoKind.Pedestrian)
+        {
+            var netPath = PedNetPath(entry.PedKind ?? throw new InvalidOperationException(
+                $"Demo '{entry.Name}' has Kind.Pedestrian but no PedKind."), repoRoot);
             missingPath = netPath;
             return File.Exists(netPath);
         }

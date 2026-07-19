@@ -18,4 +18,14 @@ public static class DdsTopicNames
     // Forward status: the publisher publishes its engine state (mode/paused/speed/step/time/count) here so a
     // remote can reflect real state and disable inapplicable controls. See DdsViewerStatus.
     public const string Status = "sumo/status";
+
+    // Pedestrian wire (docs/PEDESTRIAN-DDS-TRANSPORT-DESIGN.md §4) -- a SEPARATE topic set from the vehicle
+    // stream so an IG can subscribe to peds independently. PedCrowd carries the high-rate DdsWireFrame blob
+    // (Kind = FrameCodec.KindPedFreeKinematic); PedPathArc/PedActivity carry the durable per-ped DdsPedLeg
+    // (same struct, distinct topic names); PedLifecycle carries the keyed DdsPedLifecycle. Additive: the
+    // vehicle names above are unchanged.
+    public const string PedCrowd = "sumo/ped-crowd";
+    public const string PedPathArc = "sumo/ped-patharc";
+    public const string PedActivity = "sumo/ped-activity";
+    public const string PedLifecycle = "sumo/ped-lifecycle";
 }

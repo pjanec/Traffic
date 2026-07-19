@@ -3,7 +3,14 @@
 Status: **done**. This is the networking half of POC-7 (`docs/PEDESTRIAN-POC-PLAN.md` POC-7;
 `docs/PEDESTRIAN-DESIGN.md` §7). It adds a compact quantized pedestrian `FreeKinematic` record and a
 `PathArc` wire record to `Sim.Replication.FrameCodec`, and measures the **real encoded bytes** for the
-target population against the owner's single-multicast-stream budget. `Sim.Replication`/`Sim.Core` are
+target population against the owner's single-multicast-stream budget.
+
+> **On-target confirmation (P6-1):** re-run on the 24-core Core Ultra 9 275HX target box, `Sim.BenchPedNet`
+> is **byte-identical across 3 runs and identical to the figures below** — 36.75 / 182.4 / 294.4 Mbit/s
+> (typical / worst-case spike / naive), all under the 500 Mbit/s budget. This is byte-counting through the
+> real `FrameCodec`, so it is machine-independent by construction; the on-target run confirms it on the
+> target toolchain. The *live* CycloneDDS transport binding does not exist yet (dev-session work); this is
+> the single-stream codec figure, which is the one that matters. See `docs/PEDESTRIAN-P6-1-RESULTS.md`. `Sim.Replication`/`Sim.Core` are
 parity-exempt per `CLAUDE.md`; this task touched neither the lane engine, `Sim.Ingest`, `OrcaCrowd`, nor
 `MixedTrafficCrowd`.
 

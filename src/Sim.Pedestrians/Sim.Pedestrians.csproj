@@ -9,13 +9,27 @@
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
 
-    <IsPackable>false</IsPackable>
+    <!-- NuGet (P1-2, docs/PEDESTRIAN-DESIGN.md §10): a packable library layered on Sim.Core exactly
+         like Sim.Evac: drives Core through public seams, Core stays parity-inert. The DotRecast
+         navigation provider is deliberately its OWN package (Sim.Pedestrians.Nav.DotRecast.csproj)
+         so its dependency never lands on a consumer who only wants the SUMO-geometry-bake provider. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>SumoSharp.Pedestrians</PackageId>
+    <Description>SumoSharp — pedestrian crowd subsystem for the SumoSharp traffic engine: an ORCA-backed pedestrian crowd with sim-LOD promotion/demotion, strategic navigation over a SUMO-geometry-baked walkable network, and a networking-ready wire-event stream, built on SumoSharp.Core's frozen seams. Behavioral-parity lane (not golden-FCD) validated. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Reuse Sim.Core's Vec2 (Sim.Core.Orca.Vec2) for all geometry so downstream navmesh/ORCA
          code shares one point type. Do not define a new point struct here. -->
     <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <!-- P3-1 (docs/PEDESTRIAN-TASKS.md): the pedestrian wire-record bridge (PedReplicationPublisher /
+         PedReplicationReceiver) needs Sim.Replication's transport-neutral IPedReplicationSink/Source +
+         FrameCodec. Sim.Replication itself stays free of a reverse reference to Sim.Pedestrians. -->
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" Condition="Exists('README.md')" />
   </ItemGroup>
 
 </Project>

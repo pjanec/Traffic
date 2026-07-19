@@ -1,4 +1,6 @@
 using Sim.Ingest;
+using Sim.Pedestrians;
+using Sim.Pedestrians.Crossing;
 
 namespace Sim.Viz;
 
@@ -26,11 +28,32 @@ internal sealed record TlLogicPayload(string Id, double Offset, TlPhasePayload[]
 
 internal sealed record SignalHeadPayload(string Tl, int LinkIndex, double X, double Y, double Angle);
 
+// A pedestrian crossing's drawable geometry (fix "draw crosswalks"): Outline is the crossing lane's
+// flat closed polygon (the zebra's footprint), Center its flat centerline (used to derive the zebra
+// bar direction/spacing), Width the crossing's real width in metres.
+internal sealed record CrossingPayload(string Id, double[] Outline, double[] Center, double Width);
+
+// A pedestrian (crossing) signal head -- rendered distinctly (small square) from vehicle
+// SignalHeadPayload dots (fix "distinguish crosswalk TLs from vehicle TLs"). One per curb endpoint
+// of a signalized crossing's centerline.
+internal sealed record PedSignalPayload(string Tl, int LinkIndex, double X, double Y);
+
 internal sealed record NetworkPayload(
     LanePayload[] Lanes,
     JunctionPayload[] Junctions,
     TlLogicPayload[] Tls,
-    SignalHeadPayload[] Signals);
+    SignalHeadPayload[] Signals,
+    CrossingPayload[] Crossings,
+    PedSignalPayload[] PedSignals)
+{
+    // Back-compat constructor: every pre-existing call site (BuildNetwork and the two hand-built
+    // laneless-junction networks in SceneGen.cs) constructs with just the original four fields --
+    // they get no crosswalks/ped-signals (correct: they have no PedNetwork to draw from).
+    internal NetworkPayload(LanePayload[] lanes, JunctionPayload[] junctions, TlLogicPayload[] tls, SignalHeadPayload[] signals)
+        : this(lanes, junctions, tls, signals, Array.Empty<CrossingPayload>(), Array.Empty<PedSignalPayload>())
+    {
+    }
+}
 
 // One timestep of a scene.
 //   v = vehicles as oriented boxes: each entry is [x, y, angleDeg] (front-centre reference point,
@@ -136,5 +159,65 @@ internal static class PayloadBuilder
         }
 
         return new NetworkPayload(lanes, junctions.ToArray(), tls, signals.ToArray());
+    }
+
+    // Additive derivation for scenes that also loaded a Sim.Pedestrians PedNetwork (BuildOdRouting /
+    // BuildCrossingGate / BuildLodPromotion / BuildDodgeReroute): returns a NEW NetworkPayload with
+    // `Crossings` (the zebra footprints) and `PedSignals` (crossing signal heads, rendered as small
+    // squares distinct from vehicle SignalHeadPayload dots) populated from the ped network's own
+    // crossing geometry. `netPath` is re-read (via CrossingTlReader, the same "second independent
+    // read" pattern CrossingGate/CrossingSignalFactory already use) to resolve each crossing's gating
+    // <connection tl=".." linkIndex="..">, if any -- an unsignalized crossing still gets its zebra,
+    // just no ped-signal marker.
+    internal static NetworkPayload WithCrossings(NetworkPayload net, PedNetwork pedNetwork, string netPath)
+    {
+        var crossings = new CrossingPayload[pedNetwork.Crossings.Count];
+        var pedSignals = new List<PedSignalPayload>();
+
+        for (var i = 0; i < pedNetwork.Crossings.Count; i++)
+        {
+            var c = pedNetwork.Crossings[i];
+
+            var outline = new double[c.Outline.Count * 2];
+            for (var p = 0; p < c.Outline.Count; p++)
+            {
+                outline[p * 2] = R(c.Outline[p].X);
+                outline[p * 2 + 1] = R(c.Outline[p].Y);
+            }
+
+            var center = new double[c.Shape.Count * 2];
+            for (var p = 0; p < c.Shape.Count; p++)
+            {
+                center[p * 2] = R(c.Shape[p].X);
+                center[p * 2 + 1] = R(c.Shape[p].Y);
+            }
+
+            crossings[i] = new CrossingPayload(c.Id, outline, center, c.Width);
+
+            CrossingLink? link = null;
+            foreach (var edgeId in c.CrossingEdges)
+            {
+                link = CrossingTlReader.FindCrossingLink(netPath, edgeId);
+                if (link is not null)
+                {
+                    break;
+                }
+            }
+
+            if (link is null || c.Shape.Count == 0)
+            {
+                continue;
+            }
+
+            var first = c.Shape[0];
+            var last = c.Shape[^1];
+            pedSignals.Add(new PedSignalPayload(link.TlId, link.LinkIndex, R(first.X), R(first.Y)));
+            if (c.Shape.Count > 1)
+            {
+                pedSignals.Add(new PedSignalPayload(link.TlId, link.LinkIndex, R(last.X), R(last.Y)));
+            }
+        }
+
+        return net with { Crossings = crossings, PedSignals = pedSignals.ToArray() };
     }
 }

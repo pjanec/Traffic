@@ -37,6 +37,13 @@
          generic viewer, so it is the right place for a domain feature's dependency to live. Sim.Evac is
          OUT of Traffic.sln, same as this project, so this reference does not touch the parity gate. -->
     <ProjectReference Include="..\Sim.Evac\Sim.Evac.csproj" />
+    <!-- P7-1: the demo tool's own reference to Sim.Pedestrians, for the new PedOverlay (a pedestrian-only
+         demo, with no Sim.Evac cascade, can be built without ever routing through the evac layer). Already
+         flows in transitively via Sim.Evac to Sim.Pedestrians; declared explicitly since PedOverlay.cs
+         names Sim.Pedestrians types directly. Sim.Pedestrians is IN Traffic.sln; this reference is the
+         allowed direction (an out-of-sln project referencing an in-sln one), same as Sim.Evac's own
+         reference to it. -->
+    <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
   </ItemGroup>
 
 </Project>

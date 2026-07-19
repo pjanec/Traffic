@@ -18,6 +18,7 @@ public sealed class HeadlessIg
         public Vec2 LastPos;
         public Vec2 LastVel;
         public double LastSampleTime;
+        public ActivityTimeline? Timeline; // LIVE-POC-1: set once from the one-time ActivityTimelineRecord
     }
 
     private readonly Dictionary<int, PedState> _peds = new();
@@ -32,6 +33,10 @@ public sealed class HeadlessIg
                 state.Path = r.Path;
                 state.PathStartTime = r.StartTime;
                 state.Speed = r.Speed;
+                break;
+
+            case ActivityTimelineRecord a:
+                state.Timeline = a.Timeline;
                 break;
 
             case DrSwitchEvent s:
@@ -69,8 +74,29 @@ public sealed class HeadlessIg
                 : PathArcMotion.PositionAt(state.Path, state.PathStartTime, state.Speed, now),
             PedDrModel.FreeKinematic => state.LastPos + (state.LastVel * (now - state.LastSampleTime)),
             PedDrModel.Stationary => state.LastPos,
+            PedDrModel.ActivityTimeline => state.Timeline is null ? Vec2.Zero : state.Timeline.PoseAt(now).Pos,
             _ => Vec2.Zero,
         };
+    }
+
+    // LIVE-POC-1: the ActivityTimeline model carries more than a position -- heading, animation tag,
+    // and visibility -- so this is a PARALLEL method rather than a change to Reconstruct's signature
+    // (per docs/PEDESTRIAN-LIVELINESS-DESIGN.md §12, keeping every existing Reconstruct call site
+    // unchanged). For the ActivityTimeline model this calls the exact same ActivityTimeline.PoseAt the
+    // server calls -- the server==IG identity extended to animation state. Other models fall back to a
+    // minimal (position-only, always-visible, Idle) sample built from Reconstruct, so this stays total
+    // over every PedDrModel.
+    public PoseSample ReconstructSample(int id, double now)
+    {
+        var state = _peds[id];
+        if (state.Model == PedDrModel.ActivityTimeline)
+        {
+            return state.Timeline is null
+                ? new PoseSample(Vec2.Zero, Vec2.Zero, ActivityTimeline.IdleAnimTag, true)
+                : state.Timeline.PoseAt(now);
+        }
+
+        return new PoseSample(Reconstruct(id, now), Vec2.Zero, ActivityTimeline.IdleAnimTag, true);
     }
 
     // The IG's current belief about id's DR model (asserting a promotion/demotion was actually

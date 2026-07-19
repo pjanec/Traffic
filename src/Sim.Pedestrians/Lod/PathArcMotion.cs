@@ -32,6 +32,29 @@ public static class PathArcMotion
     private static double ArcLength(double startTime, double speed, double now) =>
         speed * Math.Max(0.0, now - startTime);
 
+    // Total arc-length of `path` -- the sum of segment lengths, skipping degenerate (duplicate-point)
+    // segments exactly like Walk does. ActivityTimeline (docs/PEDESTRIAN-LIVELINESS-DESIGN.md §2) uses
+    // this to size a Walk segment's duration (pathLength / speed) without duplicating this walk.
+    public static double PathLength(IReadOnlyList<Vec2> path)
+    {
+        if (path.Count < 2)
+        {
+            return 0.0;
+        }
+
+        var total = 0.0;
+        for (var i = 0; i + 1 < path.Count; i++)
+        {
+            var len = (path[i + 1] - path[i]).Abs;
+            if (len > 1e-12)
+            {
+                total += len;
+            }
+        }
+
+        return total;
+    }
+
     // Walks `path` to arc-length `s`, returning the world point and (via `direction`) the unit
     // direction of the segment it landed on. `direction` is Vec2.Zero once `s` reaches or exceeds the
     // path's total length (clamped at the final vertex -- no more motion).

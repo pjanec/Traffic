@@ -60,8 +60,24 @@
     5: "#34d399", // escaped pedestrian (panic evac)
     6: "#b91c1c", // abandoned car (panic evac)
     8: "#fb923c", // car pushing onto the shoulder / abandoning the lane (panic evac, phase 3)
+    9: "#94a3b8",  // low-power (PathArc) pedestrian, sim-LOD demo
+    10: "#f97316", // promoted (full-ORCA) pedestrian, sim-LOD demo
+    11: "#facc15", // sim-LOD interest source marker
+    12: "#78716c", // static/dynamic box obstacle
+    13: "#4f8ef7", // the one maneuvering car in the parking demo
+    14: "#eab308", // paused/idle liveliness pedestrian (ActivityTimeline Pause / idle clamp)
+    15: "#22d3ee", // dwelling/seated liveliness pedestrian (ActivityTimeline Dwell, visible)
+    16: "#f472b6", // pre-scheduled two-ped interaction (ActivityTimeline Interact, "talk")
+    17: "#fbbf24", // LIVE-POC-3 waiter micro-scenario actor
+    18: "#22c55e", // evac-district safe-zone (corner) marker
   };
-  var DISC_LABELS = { 0: "stream / agent A", 1: "stream / agent B", 2: "pedestrian" };
+  var DISC_LABELS = {
+    0: "stream / agent A", 1: "stream / agent B", 2: "pedestrian", 3: "pedestrian (rerouting)",
+    9: "pedestrian (low-power / PathArc)", 10: "pedestrian (promoted / full ORCA)",
+    11: "interest source", 12: "obstacle", 13: "maneuvering car",
+    14: "pedestrian (paused / idle)", 15: "pedestrian (dwelling / seated)",
+    16: "pedestrian (talking)", 17: "pedestrian (waiter)", 18: "safe zone (corner)",
+  };
 
   // Speed heatmap: cold (slow) -> hot (fast), 0..cap m/s.
   var SPEED_COLOR_CAP = 20.0;
@@ -118,6 +134,7 @@
   var stepSize = 1.0;      // scene.dt
   var simStart = 0, simEnd = 0, simTime = 0;
   var lanesById = {}, lanesByEdge = {}, laneMarkings = [], tlsById = {};
+  var crossings = [], pedSignals = [];
 
   // Set once the user manually zooms/pans, so auto-fit stops fighting them.
   var userAdjusted = false;
@@ -176,7 +193,14 @@
     lanesByEdge = {};
     laneMarkings = [];
     tlsById = {};
+    crossings = [];
+    pedSignals = [];
     if (!network) return;
+
+    // Additive: older/vehicle-only scenes (and BuildNetwork's own default) carry no crossing
+    // geometry, so these fall back to empty arrays cleanly rather than throwing.
+    crossings = network.crossings || [];
+    pedSignals = network.pedSignals || [];
 
     network.lanes.forEach(function (lane) {
       lanesById[lane.id] = lane;
@@ -572,6 +596,89 @@
     });
   }
 
+  // Crosswalk zebra (fix "crossings aren't rendered at all"): a slightly-lighter-than-junction fill
+  // for the crossing's own polygon footprint, then a run of white bars perpendicular to the
+  // centreline's local travel direction, spanning the crossing's real width, evenly spaced along the
+  // (possibly multi-segment) centreline. World-unit geometry mapped through worldToScreen per corner
+  // (like drawShaped) so the camera y-flip/pan/zoom is handled uniformly.
+  var ZEBRA_BAR_LEN = 0.5;     // metres, along the direction of travel
+  var ZEBRA_PERIOD = 1.0;      // metres, bar-start to next bar-start (~0.5 m gap between bars)
+  function drawCrossings() {
+    if (!crossings.length) return;
+    crossings.forEach(function (c) {
+      if (c.outline && c.outline.length >= 6) {
+        drawPolygon(c.outline, "#3d414c");
+      }
+
+      var center = c.center;
+      if (!center || center.length < 4) return;
+      var halfWidth = (c.width || 2.0) / 2.0;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      var travelled = 0;
+      var nSeg = center.length / 2 - 1;
+      for (var s = 0; s < nSeg; s++) {
+        var x1 = center[s * 2], y1 = center[s * 2 + 1];
+        var x2 = center[(s + 1) * 2], y2 = center[(s + 1) * 2 + 1];
+        var dx = x2 - x1, dy = y2 - y1;
+        var segLen = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        var ux = dx / segLen, uy = dy / segLen;   // unit vector along travel
+        var px = -uy, py = ux;                    // unit vector perpendicular (crossing width)
+
+        // First bar CENTRE offset within this segment, continuing the period across segment joins,
+        // but never less than half a bar length in (else the bar's leading half would poke out
+        // before the segment/crossing outline even starts).
+        var firstOffset = ZEBRA_PERIOD - (travelled % ZEBRA_PERIOD);
+        if (firstOffset >= ZEBRA_PERIOD - 1e-9) firstOffset -= ZEBRA_PERIOD;
+        if (firstOffset < ZEBRA_BAR_LEN / 2) firstOffset += ZEBRA_PERIOD;
+
+        for (var d = firstOffset; d + ZEBRA_BAR_LEN / 2 <= segLen; d += ZEBRA_PERIOD) {
+          var bx = x1 + ux * d, by = y1 + uy * d;
+          var half = ZEBRA_BAR_LEN / 2;
+          var corners = [
+            [bx - ux * half + px * halfWidth, by - uy * half + py * halfWidth],
+            [bx + ux * half + px * halfWidth, by + uy * half + py * halfWidth],
+            [bx + ux * half - px * halfWidth, by + uy * half - py * halfWidth],
+            [bx - ux * half - px * halfWidth, by - uy * half - py * halfWidth],
+          ];
+          ctx.beginPath();
+          for (var i = 0; i < corners.length; i++) {
+            var sp = worldToScreen(corners[i][0], corners[i][1]);
+            if (i === 0) ctx.moveTo(sp[0], sp[1]); else ctx.lineTo(sp[0], sp[1]);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        travelled += segLen;
+      }
+      ctx.restore();
+    });
+  }
+
+  // Pedestrian (crossing) signal heads (fix "can't tell crosswalk TLs from vehicle TLs"): drawn as
+  // SMALL SQUARES, deliberately smaller than drawSignals' round vehicle-signal dots (side ~=
+  // 1.1*scale px vs. the vehicle dot's 0.9*scale RADIUS -- half a square side is ~0.55*scale, well
+  // under the circle's radius) with a thin white outline so it reads as a distinct pedestrian head.
+  function drawPedSignals(simT) {
+    if (!pedSignals.length) return;
+    var side = Math.max(4, 1.1 * camera.scale);
+    pedSignals.forEach(function (sig) {
+      var tl = tlsById[sig.tl];
+      if (!tl) return;
+      var state = tlLinkState(tl, sig.linkIndex, simT);
+      var p = worldToScreen(sig.x, sig.y);
+      ctx.beginPath();
+      ctx.rect(p[0] - side / 2, p[1] - side / 2, side, side);
+      ctx.fillStyle = colorForSignalState(state);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.stroke();
+    });
+  }
+
   // Oriented vehicle box (same geometry as the original single-scenario drawVehicle): (x,y) is the
   // FRONT-CENTRE reference point; the box extends BACK by `length` along the heading. naviDegree
   // 0 = up-screen (+Y world), increasing clockwise -> ctx.rotate(angleRad - PI/2).
@@ -658,12 +765,22 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // 1..4 Network layers (skipped cleanly for pure-crowd scenes).
+    // 1..6 Network layers (skipped cleanly for pure-crowd scenes). Draw order: junctions -> lane
+    // bands -> lane markings -> crossing zebra -> round vehicle signals -> square ped signals.
+    // NOTE: crossings are deliberately drawn AFTER the lane bands/markings, not before them --
+    // a crossing's footprint geometrically coincides with the vehicle roadway it crosses (that's
+    // the whole point of a crosswalk), so drawing the zebra UNDER the lane band made it fully
+    // painted over and invisible (verified empirically: a canvas-fill instrumentation trace showed
+    // the zebra fillStyle firing every frame, yet the rendered pixels never showed it, because
+    // drawLaneBand's opaque stroke -- true lane width, floored to ~2.5px -- was drawn on top and
+    // covered the exact same world-space footprint). Signals stay last so they're never occluded.
     if (network) {
       (network.junctions || []).forEach(function (j) { drawPolygon(j.shape, "#33363f"); });
       network.lanes.forEach(function (lane) { drawLaneBand(lane); });
       drawLaneMarkings();
+      drawCrossings();
       drawSignals(simT);
+      drawPedSignals(simT);
     }
 
     // Panic-evac overlays (S6): the known-world hard edge and the incident danger/safe rings. Additive
@@ -671,11 +788,11 @@
     if (scene.boundary) drawBoundary(scene.boundary);
     if (scene.incident) drawIncident(scene.incident, simT);
 
-    // 5. Discs (crowd/pedestrian agents).
+    // 7. Discs (crowd/pedestrian agents).
     var discs = interpolatedDiscs(simT);
     discs.forEach(drawDisc);
 
-    // 6. Vehicles (oriented boxes).
+    // 8. Vehicles (oriented boxes).
     var vehicles = interpolatedVehicles(simT);
     var vehCount = 0;
     for (var i = 0; i < vehicles.length; i++) {

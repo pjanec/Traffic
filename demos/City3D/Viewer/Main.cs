@@ -70,6 +70,31 @@ public partial class Main : Node3D
     // Design "Cars": "height a believable constant (~1.4 m for cars)" -- CityLib.CarTransform.DefaultHeightMeters.
     private const float CarHeightMeters = CityLib.CarTransform.DefaultHeightMeters;
 
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- wall-clock seconds consumed per one 0.2s ped-sim
+    // Tick(). The ped path reuses the SAME sim-cadence accumulator pattern the vehicle path uses (fixed
+    // increments off `delta`), just with a ped-appropriate threshold: 0.025s wall per 0.2s ped-tick runs the
+    // ped sim ~8x real time so the swept crowd (spawns every 4s ped-time, 70s sweep period) populates and
+    // promotes within a short `--shot-delay` window instead of needing tens of real seconds.
+    private const double PedTickWallSeconds = 0.025;
+
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)": "slate low-power ... cyan high-power ... visibly
+    // distinct". The per-instance MultiMesh colour each ped avatar is tinted by, keyed off its regime.
+    private static readonly Color PedLowPowerColor = new(0.58f, 0.64f, 0.72f);   // slate  -- low-power PathArc
+    private static readonly Color PedHighPowerColor = new(0.22f, 0.74f, 0.97f);  // cyan   -- high-power FreeKinematic
+
+    // Viewer-only LEGIBILITY render scale for the ped avatars (docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians
+    // (P7-3)"): the tested CityLib.PedTransform keeps the true ~0.5x1.8 m avatar, but at plaza camera range a
+    // 0.5 m figure is barely a pixel, so the Viewer draws a scaled-up slim avatar purely for on-screen
+    // legibility -- the exact same idea src/Sim.Viewer/RemotePedOverlay.cs uses (it renders peds at a 1.2 m
+    // disc vs the 0.3 m physical radius). Proportions stay slim/upright so it still reads as a pedestrian.
+    private const float PedRenderHeightMeters = 3.2f;
+    private const float PedRenderWidthMeters = 1.1f;
+
+    // The ped camera frames a tight box around the crossing plaza (peds only ever cross the central ~40 m;
+    // the road arms extend ~240 m, so framing the whole road bbox -- as the vehicle path does -- would leave
+    // the crowd sub-pixel). A fixed half-extent around the road bbox centre gives a legible plaza view.
+    private const float PedFrameHalfExtentMeters = 26f;
+
     // How far above/behind the network's centre (as a multiple of its largest XZ extent) the framing
     // camera sits -- an "angled bird's-eye" per design "Buildings"/"Roads" desktop-check framing. Raised
     // a bit from the roads-only T1.3 values (task T1.4: "you may raise the camera a bit so buildings are
@@ -140,6 +165,11 @@ public partial class Main : Node3D
     private DdsParticipant? _ddsParticipant;
     private DdsSubscriber? _ddsSource;
     private bool _remoteSceneBuilt;
+    // D3b (docs/PEDESTRIAN-DDS-TRANSPORT-TASKS.md): the live-DDS ped source for `--transport=dds --peds` --
+    // fed by a separate `--mode ped-publish` process (Sim.Viewer), reconstructed by _pedReconstructor. The
+    // server clock is wire-authoritative (newest crowd-frame time), kept monotonic across frames.
+    private DdsPedReplicationSource? _ddsPedSource;
+    private double _pedRemoteServerTime;
 #endif
 
     // Task T1.6 Part B -- built LAZILY on the first _Process frame `sim.Source.TlStateByLane` is
@@ -157,9 +187,21 @@ public partial class Main : Node3D
     // count frame to frame.
     private MultiMesh? _carMultiMesh;
 
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- the `--peds` LOCAL ped path. When set, the
+    // viewer skips the vehicle SimSource entirely and instead hosts CityLib.PedSimSource (the ped server sim
+    // + byte-loopback wire) reconstructed each frame by CityLib.PedReconstructor into ONE ped
+    // MultiMeshInstance3D, built once and updated per frame exactly like the car MultiMesh. All ped types
+    // live in CityLib (Godot-free); this class only turns PedInstance structs into Transform3D + regime
+    // colour. Off unless `--peds` is passed -- the non-ped path is byte-identical.
+    private bool _peds;
+    private PedSimSource? _pedSim;
+    private PedReconstructor? _pedReconstructor;
+    private MultiMesh? _pedMultiMesh;
+
     public override void _Ready()
     {
         _transport = ParseTransportArg();
+        _peds = ParsePedsArg();
 
         switch (_transport)
         {
@@ -169,7 +211,29 @@ public partial class Main : Node3D
 
             case "dds":
 #if CITY3D_REMOTE
-                ReadyRemote();
+                // D3b: `--peds` over live DDS reuses the ped scene setup (local plaza net for the backdrop)
+                // but swaps the local byte-loopback ped-sim for a DdsPedReplicationSource fed by a separate
+                // `--mode ped-publish` process; the vehicle remote path (ReadyRemote) is unchanged.
+                if (_peds)
+                {
+                    string pedRepoRoot;
+                    try
+                    {
+                        pedRepoRoot = FindRepoRoot();
+                    }
+                    catch (Exception ex)
+                    {
+                        GD.PrintErr($"Main: could not locate repo root (searched upward for Traffic.sln): {ex.Message}");
+                        GetTree().Quit(1);
+                        return;
+                    }
+
+                    ReadyPeds(pedRepoRoot);
+                }
+                else
+                {
+                    ReadyRemote();
+                }
 #else
                 GD.PrintErr(
                     "Main: --transport=dds requires a build with DDS support -- rebuild with " +
@@ -202,6 +266,17 @@ public partial class Main : Node3D
         {
             GD.PrintErr($"Main: could not locate repo root (searched upward for Traffic.sln): {ex.Message}");
             GetTree().Quit(1);
+            return;
+        }
+
+        // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)": `--peds` takes a dedicated LOCAL path (its
+        // own poc0-crossing-plaza net for roads + ped server-sim/wire/render), skipping the vehicle
+        // SimSource/buildings/TLs entirely. Parsed here so the vehicle setup below is never even touched in
+        // ped mode.
+        _peds = ParsePedsArg();
+        if (_peds)
+        {
+            ReadyPeds(repoRoot);
             return;
         }
 
@@ -291,6 +366,94 @@ public partial class Main : Node3D
         }
     }
 
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- the `--peds` LOCAL setup. Uses the
+    // poc0-crossing-plaza net for the ROAD context (built exactly like the vehicle path's BuildRoadMeshes,
+    // from a NetworkModel), then hosts the ped server-sim + byte-loopback wire (CityLib.PedSimSource) and its
+    // reconstructor (CityLib.PedReconstructor) plus ONE ped MultiMeshInstance3D. No vehicle SimSource,
+    // buildings or traffic lights (poc0 has no rou/config, and peds are a separate engine). The camera frames
+    // the ped net's bbox.
+    private void ReadyPeds(string repoRoot)
+    {
+        var pedNetPath = Path.Combine(repoRoot, "scenarios", "_ped", "poc0-crossing-plaza", "net.net.xml");
+        if (!File.Exists(pedNetPath))
+        {
+            GD.PrintErr($"Main: --peds requested but ped net not found at '{pedNetPath}'.");
+            GetTree().Quit(1);
+            return;
+        }
+
+        NetworkModel pedNetwork;
+        try
+        {
+            // Roads-only context for the plaza: the SAME NetworkParser + RoadMeshBuilder path the vehicle
+            // viewer uses. (The walkable ped nav is parsed independently INSIDE PedSimSource.)
+            pedNetwork = NetworkParser.Parse(pedNetPath);
+#if CITY3D_REMOTE
+            if (_transport == "dds")
+            {
+                // D3b: no local ped-sim -- subscribe to a separate `--mode ped-publish` process's live DDS
+                // ped stream. The plaza net (backdrop) is still loaded LOCALLY above, so only ped poses cross
+                // the wire. _pedReconstructor (below) consumes this IPedReplicationSource transport-neutrally.
+                _ddsParticipant ??= new DdsParticipant();
+                _ddsPedSource = new DdsPedReplicationSource(_ddsParticipant);
+            }
+            else
+#endif
+            {
+                _pedSim = new PedSimSource(repoRoot);
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"Main: failed to build the ped subsystem: {ex}");
+            GetTree().Quit(1);
+            return;
+        }
+
+        _pedReconstructor = new PedReconstructor();
+        _cameraMode = ParseCameraArg();
+
+        var roadBbox = BuildRoadMeshes(pedNetwork);
+        _sceneBbox = roadBbox;
+
+        // Frame a tight box centred on the road bbox (the crossing plaza centre) so the ~40 m crowd fills the
+        // shot rather than being lost in the ~240 m road arms.
+        var roadCenter = new Vector3(
+            (roadBbox.Min.X + roadBbox.Max.X) / 2f, 0f, (roadBbox.Min.Z + roadBbox.Max.Z) / 2f);
+        var h = PedFrameHalfExtentMeters;
+        var pedBbox = (
+            Min: roadCenter - new Vector3(h, 0f, h),
+            Max: roadCenter + new Vector3(h, 8f, h));
+        BuildCameraAndLight(pedBbox, makeCurrent: _cameraMode != "close");
+
+        if (_cameraMode == "close")
+        {
+            _closeCamera = new Camera3D { Name = "CloseCamera", Current = true, Far = 2000f };
+            AddChild(_closeCamera);
+            UpdateCloseCameraFraming(_closeCamera, null);
+        }
+
+        _pedMultiMesh = BuildPedMultiMesh();
+        var pedTransportDesc = "transport=local, byte loopback";
+#if CITY3D_REMOTE
+        if (_ddsPedSource is not null)
+        {
+            pedTransportDesc = "transport=dds, live CycloneDDS (needs a running `--mode ped-publish` process)";
+        }
+#endif
+        GD.Print($"Main: --peds active; crossing-plaza render ({pedTransportDesc}).");
+
+        _shotPath = ParseShotArg();
+        if (_shotPath is not null)
+        {
+            var shotDelaySeconds = ParseShotDelayArg();
+            GD.Print(
+                $"Main: --shot requested, will capture to '{_shotPath}' " +
+                $"(shot-delay={shotDelaySeconds:F1}s real wall-clock before capture).");
+            CaptureScreenshotAsync(_shotPath, shotDelaySeconds);
+        }
+    }
+
 #if CITY3D_REMOTE
     // docs/DEMO-CITY3D-DESIGN.md "Data path -> Remote mode" / task T2.2b -- the REMOTE half. No
     // SimSource/Engine is ever created here (design: "do NOT create a SimSource/engine"); the only source
@@ -357,6 +520,12 @@ public partial class Main : Node3D
 
     public override void _Process(double delta)
     {
+        if (_peds)
+        {
+            ProcessPeds(delta);
+            return;
+        }
+
         if (_reconstructor is null || _source is null)
         {
             // _Ready already reported the error (or the wrong-build --transport=dds guard already
@@ -417,6 +586,77 @@ public partial class Main : Node3D
         {
             _sim!.Tick();
             _accumulator -= SimStepSeconds;
+        }
+    }
+
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- the per-frame ped body: advance the ped sim on
+    // the sim-cadence accumulator (fixed 0.2s ped-Tick increments off `delta`, threshold PedTickWallSeconds),
+    // reconstruct the crowd from the wire, and rewrite the ped MultiMesh transforms + regime colours. Mirrors
+    // the vehicle AdvanceLocalSim + RenderFrame/UpdateCars split, one entity-type over.
+    private void ProcessPeds(double delta)
+    {
+        if (_pedReconstructor is null)
+        {
+            return; // _Ready already reported the error.
+        }
+
+        Sim.Replication.IPedReplicationSource pedSource;
+        double serverTime;
+#if CITY3D_REMOTE
+        if (_ddsPedSource is not null)
+        {
+            // Remote: no local sim to tick. Drive the reconstructor off the WIRE clock (newest crowd-frame
+            // sim-time), kept monotonic so a quiet low-power spell never rewinds playout. Reconstruct() pumps
+            // the DDS source internally.
+            _pedRemoteServerTime = Math.Max(_pedRemoteServerTime, _ddsPedSource.LatestCrowdTime);
+            pedSource = _ddsPedSource;
+            serverTime = _pedRemoteServerTime;
+        }
+        else
+#endif
+        {
+            if (_pedSim is null)
+            {
+                return;
+            }
+
+            _accumulator += delta;
+            while (_accumulator >= PedTickWallSeconds)
+            {
+                _pedSim.Tick();
+                _accumulator -= PedTickWallSeconds;
+            }
+
+            pedSource = _pedSim.Source;
+            serverTime = _pedSim.Time;
+        }
+
+        var peds = _pedReconstructor.Reconstruct(pedSource, serverTime);
+        UpdatePeds(peds);
+
+        if (_closeCamera is not null)
+        {
+            UpdateCloseCameraFraming(_closeCamera, null);
+        }
+
+        var highPower = 0;
+        foreach (var p in peds)
+        {
+            if (p.IsHighPower)
+            {
+                highPower++;
+            }
+        }
+
+        GD.Print($"Main: frame={_frame} pedTime={serverTime:F2} peds={peds.Count} highPower={highPower}");
+
+        _frame++;
+
+        if (_frame >= QuitAfterFrames && _shotPath is null)
+        {
+            GD.Print($"Main: reached {QuitAfterFrames} frames, quitting.");
+            DisposeSources();
+            GetTree().Quit();
         }
     }
 
@@ -496,7 +736,11 @@ public partial class Main : Node3D
     {
         _sim?.Dispose();
         _sim = null;
+        _pedSim?.Dispose();
+        _pedSim = null;
 #if CITY3D_REMOTE
+        _ddsPedSource?.Dispose();
+        _ddsPedSource = null;
         _ddsSource?.Dispose();
         _ddsSource = null;
         _ddsParticipant?.Dispose();
@@ -762,6 +1006,69 @@ public partial class Main : Node3D
 
             var paletteIndex = (int)(v.Handle.Index % (uint)CarPalette.Length);
             _carMultiMesh.SetInstanceColor(i, CarPalette[paletteIndex]);
+        }
+    }
+
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- ONE ped MultiMeshInstance3D, the ped analog of
+    // BuildCarMultiMesh: built once as an EMPTY MultiMesh (no peds at load), a unit BoxMesh scaled per
+    // instance by CityLib.PedTransform into a slim upright avatar; UpdatePeds (below) writes the live
+    // transforms + regime colours each frame.
+    private MultiMesh BuildPedMultiMesh()
+    {
+        var material = new StandardMaterial3D
+        {
+            VertexColorUseAsAlbedo = true, // per-instance MultiMesh colours (regime slate/cyan) modulate albedo
+            Roughness = 0.7f,
+        };
+
+        var multiMesh = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = true,
+            Mesh = new BoxMesh { Size = Vector3.One }, // unit box; per-instance transform scales it to the slim avatar dims
+            InstanceCount = 0,
+        };
+
+        var instance = new MultiMeshInstance3D
+        {
+            Multimesh = multiMesh,
+            Name = "Pedestrians",
+            MaterialOverride = material,
+        };
+        AddChild(instance);
+
+        GD.Print("Main: built ped MultiMesh (0 instances at load).");
+        return multiMesh;
+    }
+
+    // Called once per ped frame from ProcessPeds, right after Reconstruct. Same build-once/grow-only/
+    // VisibleInstanceCount discipline as UpdateCars. CityLib.PedTransform does the pure avatar math (no Godot
+    // type); this method only turns each PedInstance into a Transform3D + its regime colour (slate low-power,
+    // cyan high-power -- visibly distinct per the design).
+    private void UpdatePeds(IReadOnlyList<CityLib.ReconstructedPed> peds)
+    {
+        if (_pedMultiMesh is null)
+        {
+            return;
+        }
+
+        if (peds.Count > _pedMultiMesh.InstanceCount)
+        {
+            _pedMultiMesh.InstanceCount = peds.Count;
+        }
+
+        _pedMultiMesh.VisibleInstanceCount = peds.Count;
+
+        for (var i = 0; i < peds.Count; i++)
+        {
+            var inst = CityLib.PedTransform.ForPed(peds[i], PedRenderHeightMeters, PedRenderWidthMeters);
+
+            // No yaw needed (a slim upright avatar reads fine without heading, per design) -- an axis-aligned
+            // scaled box.
+            var basis = Basis.Identity.Scaled(new Vector3(inst.ScaleX, inst.ScaleY, inst.ScaleZ));
+            var origin = new Vector3(inst.PosX, inst.PosY, inst.PosZ);
+            _pedMultiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+            _pedMultiMesh.SetInstanceColor(i, inst.IsHighPower ? PedHighPowerColor : PedLowPowerColor);
         }
     }
 
@@ -1053,6 +1360,23 @@ public partial class Main : Node3D
         }
 
         return "09-traffic-light";
+    }
+
+    // docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians (P7-3)" -- the `--peds` USER flag (a bare flag, no `=`),
+    // parsed via the same OS.GetCmdlineUserArgs() mechanism as --scenario/--camera/--shot. When present the
+    // viewer takes the dedicated ped path (poc0-crossing-plaza roads + ped server-sim/wire/render), skipping
+    // the vehicle SimSource entirely; absent, behaviour is byte-identical to before.
+    private static bool ParsePedsArg()
+    {
+        foreach (var arg in OS.GetCmdlineUserArgs())
+        {
+            if (arg == "--peds")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // `--transport=<local|dds>` USER cmdline arg (task T2.2b): default "local" (today's in-process

@@ -1,0 +1,13 @@
+<nodes>
+    <!-- 3x3 grid, 100 m spacing. Center n11 = incident epicentre; the four corners
+         (n00, n20, n02, n22) are the fringe SAFE ZONES a fleeing ped routes to. -->
+    <node id="n00" x="0"   y="0"   type="priority"/>
+    <node id="n10" x="100" y="0"   type="priority"/>
+    <node id="n20" x="200" y="0"   type="priority"/>
+    <node id="n01" x="0"   y="100" type="priority"/>
+    <node id="n11" x="100" y="100" type="priority"/>
+    <node id="n21" x="200" y="100" type="priority"/>
+    <node id="n02" x="0"   y="200" type="priority"/>
+    <node id="n12" x="100" y="200" type="priority"/>
+    <node id="n22" x="200" y="200" type="priority"/>
+</nodes>

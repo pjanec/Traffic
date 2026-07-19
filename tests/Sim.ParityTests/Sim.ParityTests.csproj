@@ -25,6 +25,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sim.Core\Sim.Core.csproj" />
     <ProjectReference Include="..\..\src\Sim.Evac\Sim.Evac.csproj" />
+    <!-- P5-1(B): EvacDistrictDemoTests drives Sim.Pedestrians' PedNetworkParser/WalkablePolygonBaker/
+         SumoNavMesh directly to build the P5-PRE evac-district nav mesh EvacDistrictDirector routes
+         over. Sim.Evac already brings this in transitively; explicit for clarity. -->
+    <ProjectReference Include="..\..\src\Sim.Pedestrians\Sim.Pedestrians.csproj" />
     <ProjectReference Include="..\..\src\Sim.Harness\Sim.Harness.csproj" />
     <!-- GAP-1: reference the sumo-compatible CLI shim so its exact flag contract is exercised
          in-process (SumoShim.Run) and the CLI-produced FCD is parity-checked against the golden. -->

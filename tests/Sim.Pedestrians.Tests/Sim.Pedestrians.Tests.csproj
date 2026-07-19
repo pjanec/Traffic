@@ -33,6 +33,11 @@
       <Link>Fixtures\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- P5-PRE evac-district: the synthetic pedestrian walkable net evac (P5-B) routes over. -->
+    <None Include="..\..\scenarios\_ped\evac-district\net.net.xml">
+      <Link>Fixtures\evac-district\net.net.xml</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

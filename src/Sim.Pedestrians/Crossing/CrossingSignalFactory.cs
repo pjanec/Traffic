@@ -29,11 +29,7 @@ public static class CrossingSignalFactory
             return AlwaysWalkSignal.Instance;
         }
 
-        var crossingEdgeId = CrossingEdgeId(crossing);
-        var link = CrossingTlReader.FindCrossingLink(netPath, crossingEdgeId)
-            ?? throw new InvalidOperationException(
-                $"crossing '{crossing.Id}' (edge '{crossingEdgeId}') has TlLogicId '{crossing.TlLogicId}' " +
-                "but no tl-controlled entry <connection> was found.");
+        var link = ResolveLink(netPath, crossing);
 
         var programs = CrossingTlReader.LoadPrograms(netPath);
         if (!programs.TryGetValue(link.TlId, out var program))
@@ -42,6 +38,37 @@ public static class CrossingSignalFactory
         }
 
         return new TlProgramCrossingSignal(program, link.LinkIndex);
+    }
+
+    // P4-1 (docs/PEDESTRIAN-TASKS.md §P4-1): bind the crossing to a LIVE signal reader (e.g.
+    // Engine.TryGetTlLinkState) instead of the net-XML phase re-derivation ForCrossing does. Resolves the
+    // crossing's (tlId, linkIndex) from the SAME net data, then reads the live char through `readLive` on
+    // every query -- so the gate follows the Engine's actual signal, including an actuated program the XML
+    // re-derivation cannot represent. `readLive(tlId, linkIndex)` is supplied by the caller (who owns the
+    // Engine), keeping this factory + Sim.Pedestrians free of any Engine/Sim.Ingest reference. Unsignalized
+    // crossings stay AlwaysWalk, exactly as ForCrossing.
+    public static ICrossingSignal ForCrossingLive(string netPath, PedCrossing crossing, Func<string, int, char> readLive)
+    {
+        if (crossing.TlLogicId is null)
+        {
+            return AlwaysWalkSignal.Instance;
+        }
+
+        var link = ResolveLink(netPath, crossing);
+        return new LiveCrossingSignal(_ => readLive(link.TlId, link.LinkIndex));
+    }
+
+    // The crossing's tl-controlled entry link (tlId, linkIndex), shared by ForCrossing (XML re-derivation)
+    // and ForCrossingLive (live Engine read) so both bind to exactly the same link. Throws for a signalized
+    // crossing whose gating <connection> is missing (a malformed net) -- the caller has already ruled out
+    // the unsignalized (TlLogicId == null) case.
+    private static CrossingLink ResolveLink(string netPath, PedCrossing crossing)
+    {
+        var crossingEdgeId = CrossingEdgeId(crossing);
+        return CrossingTlReader.FindCrossingLink(netPath, crossingEdgeId)
+            ?? throw new InvalidOperationException(
+                $"crossing '{crossing.Id}' (edge '{crossingEdgeId}') has TlLogicId '{crossing.TlLogicId}' " +
+                "but no tl-controlled entry <connection> was found.");
     }
 
     // PedCrossing.Id is the crossing LANE id (e.g. ":c_c0_0"); SUMO's internal-edge convention for a

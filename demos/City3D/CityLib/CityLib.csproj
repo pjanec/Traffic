@@ -22,6 +22,7 @@
     <PackageReference Include="SumoSharp.Replication" Version="0.1.0" />
     <PackageReference Include="SumoSharp.Viewer.Motion" Version="0.1.0" />
     <PackageReference Include="SumoSharp.Host" Version="0.1.0" />
+    <PackageReference Include="SumoSharp.Pedestrians" Version="0.1.0" />
   </ItemGroup>
 
 </Project>

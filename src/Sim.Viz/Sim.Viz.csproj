@@ -12,6 +12,7 @@
     <ProjectReference Include="..\Sim.Ingest\Sim.Ingest.csproj" />
     <ProjectReference Include="..\Sim.Harness\Sim.Harness.csproj" />
     <ProjectReference Include="..\Sim.Evac\Sim.Evac.csproj" />
+    <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
   </ItemGroup>
 
   <ItemGroup>

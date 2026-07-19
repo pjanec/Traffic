@@ -1,0 +1,28 @@
+<edges>
+    <!-- horizontal streets (both directions) -->
+    <edge id="e_00_10" from="n00" to="n10" numLanes="1" speed="13.89"/>
+    <edge id="e_10_00" from="n10" to="n00" numLanes="1" speed="13.89"/>
+    <edge id="e_10_20" from="n10" to="n20" numLanes="1" speed="13.89"/>
+    <edge id="e_20_10" from="n20" to="n10" numLanes="1" speed="13.89"/>
+    <edge id="e_01_11" from="n01" to="n11" numLanes="1" speed="13.89"/>
+    <edge id="e_11_01" from="n11" to="n01" numLanes="1" speed="13.89"/>
+    <edge id="e_11_21" from="n11" to="n21" numLanes="1" speed="13.89"/>
+    <edge id="e_21_11" from="n21" to="n11" numLanes="1" speed="13.89"/>
+    <edge id="e_02_12" from="n02" to="n12" numLanes="1" speed="13.89"/>
+    <edge id="e_12_02" from="n12" to="n02" numLanes="1" speed="13.89"/>
+    <edge id="e_12_22" from="n12" to="n22" numLanes="1" speed="13.89"/>
+    <edge id="e_22_12" from="n22" to="n12" numLanes="1" speed="13.89"/>
+    <!-- vertical streets (both directions) -->
+    <edge id="e_00_01" from="n00" to="n01" numLanes="1" speed="13.89"/>
+    <edge id="e_01_00" from="n01" to="n00" numLanes="1" speed="13.89"/>
+    <edge id="e_01_02" from="n01" to="n02" numLanes="1" speed="13.89"/>
+    <edge id="e_02_01" from="n02" to="n01" numLanes="1" speed="13.89"/>
+    <edge id="e_10_11" from="n10" to="n11" numLanes="1" speed="13.89"/>
+    <edge id="e_11_10" from="n11" to="n10" numLanes="1" speed="13.89"/>
+    <edge id="e_11_12" from="n11" to="n12" numLanes="1" speed="13.89"/>
+    <edge id="e_12_11" from="n12" to="n11" numLanes="1" speed="13.89"/>
+    <edge id="e_20_21" from="n20" to="n21" numLanes="1" speed="13.89"/>
+    <edge id="e_21_20" from="n21" to="n20" numLanes="1" speed="13.89"/>
+    <edge id="e_21_22" from="n21" to="n22" numLanes="1" speed="13.89"/>
+    <edge id="e_22_21" from="n22" to="n21" numLanes="1" speed="13.89"/>
+</edges>

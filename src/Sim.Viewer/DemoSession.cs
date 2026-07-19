@@ -146,6 +146,28 @@ public sealed class DemoSession : IDisposable
                 var host = EngineHost.CreateCustom(overlay.NetPath, overlay.Build);
                 overlay.Bind(host);
                 return (host, overlay);
+            case DemoKind.Pedestrian:
+                // P7-1: mirrors the Evac case above, minus Bind() -- PedOverlay has no HandlesWorldClick
+                // seam (no incident-placement/click behaviour is defined for a pedestrian-only demo yet),
+                // so it never needs a host reference back.
+                var pedKind = entry.PedKind
+                    ?? throw new InvalidOperationException($"Demo '{entry.Name}' has Kind.Pedestrian but no PedKind.");
+                // P7-2: pick the overlay by pedKind -- "lod-remote" reconstructs its crowd from the wire
+                // (RemotePedOverlay), every other kind is the in-process PedOverlay. Both implement
+                // IPedDemoOverlay, so the host is built uniformly through that seam.
+                IPedDemoOverlay pedOverlay = pedKind switch
+                {
+                    "lod-remote" => new RemotePedOverlay(repoRoot),
+                    // D3a: same reconstruct-from-the-wire overlay, but over the live CycloneDDS transport
+                    // (server + subscriber on one participant, in this process).
+                    "lod-remote-dds" => new RemotePedOverlay(repoRoot, PedWireTransport.Dds),
+                    // D3b: PURE remote IG -- no local sim; subscribe to a separate `--mode ped-publish`
+                    // process's live DDS ped stream and render it (the two-process, cross-process topology).
+                    "lod-remote-dds-sub" => new RemotePedOverlay(repoRoot, PedWireTransport.DdsSubscribeOnly),
+                    _ => new PedOverlay(pedKind, repoRoot),
+                };
+                var pedHost = EngineHost.CreateCustom(pedOverlay.NetPath, pedOverlay.Build);
+                return (pedHost, pedOverlay);
             case DemoKind.Sandbox:
                 return (new EngineHost(
                     ResolveNetPath(Path.Combine(repoRoot, entry.PathRelToRepo)),

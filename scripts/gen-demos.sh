@@ -143,6 +143,23 @@ demo_evac() {
   run src/Sim.Viz --evac-organic "$SITE/$slug.html"
 }
 
+# demo_evac_district <slug>
+# P5-1(B): Sim.Viz's dedicated --evac-district mode (pedestrian panic evac routed onto
+# Sim.Pedestrians over the P5-PRE walkable net) writes straight to the site dir; no scenario dir,
+# no vehicles.
+demo_evac_district() {
+  local slug="$1"
+  run src/Sim.Viz --evac-district "$SITE/$slug.html"
+}
+
+# demo_ped <mode> <slug>
+# Sim.Viz's dedicated --ped-<mode> modes build a self-contained pedestrian showcase (crowd + LOD +
+# routing + parking) straight to the site dir; no scenario-dir round-trip, no external SUMO run.
+demo_ped() {
+  local mode="$1" slug="$2"
+  run src/Sim.Viz "--ped-$mode" "$SITE/$slug.html"
+}
+
 # --- the curated set: category | slug | title | description | scenario dir | pattern ---------
 # One row per feature. Categories are emitted as section headings on the gallery index in this
 # same order; demos within a category keep this order too.
@@ -251,6 +268,44 @@ try external-agents "External non-SUMO agents (5 reactions)" \
 try evac-organic "Panic evacuation (organic town)" \
   "A realistic organic town under panic evacuation: congestion plus a large local foot exodus." \
   "Panic evacuation" demo_evac evac-organic
+try evac-district "Panic evacuation (district, routed on foot)" \
+  "Panicked pedestrians on a synthetic sidewalk district route to their nearest safe-zone corner ALONG the real sidewalk grid -- bending around the blocks, never radially through them -- forced high-power (reactive full-ORCA) via the Sim.Pedestrians PedestrianWorld facade (EvacDistrictDirector, P5-1(B))." \
+  "Panic evacuation" demo_evac_district evac-district
+
+# Pedestrians
+try ped-crossing-gate "Crossing gate (car stops for pedestrian)" \
+  "Pedestrians queue at a signalized crosswalk while the light is red, then surge across on the real walk phase; a car crossing the junction on its own green halts for a pedestrian in its lane -- emergent ORCA vehicle/pedestrian avoidance, not a scripted stop (CrossingGate + Engine.CrowdSource)." \
+  "Pedestrians" demo_ped crossing-gate ped-crossing-gate
+try ped-lod-promotion "Sim-LOD promotion (low-power to full ORCA)" \
+  "Low-power PathArc pedestrians walk fixed sidewalk routes at O(1) cost; a moving interest source promotes any it nears to reactive full-ORCA high-power agents and demotes them once it passes (PedLodManager + InterestField)." \
+  "Pedestrians" demo_ped lod-promotion ped-lod-promotion
+try ped-od-routing "Origin-destination routed crowd" \
+  "PedDemand spawns pedestrians on a Poisson process, each routed origin-to-destination across the junction's real sidewalks, crossings, and walkingareas via SumoNavMesh, then despawned on arrival (PedDemand + PedLodManager)." \
+  "Pedestrians" demo_ped od-routing ped-od-routing
+try ped-dodge "Obstacle dodge" \
+  "A bidirectional pedestrian stream is routed through the clear corridor beside a static box obstacle by an off-line waypoint, while ORCA keeps each ped clear of the box and of oncoming peds -- the stream arcs around the box and re-forms past it (OrcaCrowd BoxObstacle + PedRouteController)." \
+  "Pedestrians" demo_ped dodge ped-dodge
+try ped-reroute "Crossing reroute" \
+  "A pedestrian pair walks a signalized crossing back and forth; a blocker box appears over the crossing partway through and RerouteDriver recomputes a detour through the walkingarea ring for exactly the affected pedestrian, then the blocker clears (PedRouteController + BlockerRegistry + RerouteDriver)." \
+  "Pedestrians" demo_ped reroute ped-reroute
+try ped-parking "Parking lot (car/pedestrian mutual avoidance)" \
+  "A non-holonomic car maneuvers into a parking slot among static parked cars while pedestrians weave the drive aisle; one walker boards the car once it parks, another alights once it returns to the exit (LotCoupling)." \
+  "Pedestrians" demo_ped parking ped-parking
+try ped-liveliness "Liveliness (activity timeline replay)" \
+  "Low-power pedestrians walk, pause to sip a drink, sit at a table, then vanish into a building and re-emerge -- every pose and animation tag is a pure deterministic function of (ActivityTimeline, now), so server and IG replay identically (LIVE-POC-1, ActivityTimeline.PoseAt)." \
+  "Pedestrians" demo_ped liveliness ped-liveliness
+try ped-social "Meet & talk (pre-scheduled two-ped interaction)" \
+  "Pairs of walkers on converging approaches are paired up front by SocialPlanner: both step aside to opposite sides of the flow, face each other, and talk for a shared time window, then resume their own onward route -- authored together at schedule time with no runtime negotiation, so it stays exactly as low-power and IG-reproducible as a solo walker (LIVE-POC-2, ActivityTimeline Interact)." \
+  "Pedestrians" demo_ped social ped-social
+try ped-waiter "Waiter (micro-scenario actor)" \
+  "A waiter emerges from a restaurant's service door, walks to a table in a seed-varied rotation, dwells to serve it, walks back, and dwells inside (no disc) before the next round -- a single templated, looping ActivityTimeline, so the scripted actor stays exactly as low-power and server==IG-reconstructable as a solo walker (LIVE-POC-3, WaiterScenario)." \
+  "Pedestrians" demo_ped waiter ped-waiter
+try ped-lively-crowd "Lively crowd (routed + activity timelines)" \
+  "The same Poisson-demand O-D crowd as the plain OD-routing demo, now graduated to LIVE-PROD-1b: PedDemand seeds Pause (\"sip\") beats into each spawn's route as an ActivityTimeline, so the routed crowd occasionally stops in place mid-transit -- still low-power, still server==IG, still routed across the junction's real sidewalks/crossings/walkingareas (PedDemand + PedLodManager.AddPedLively)." \
+  "Pedestrians" demo_ped lively-crowd ped-lively-crowd
+try ped-remote "Remote (over the wire)" \
+  "The same sweeping-interest-source LOD promotion demo, but every disc is drawn from a PedRemoteReconstructor fed by the real DR-error-gated PedReplicationPublisher over an InMemoryPedReplicationBus -- each path is sent once, high-power positions are gated onto the wire only when dead-reckoning would drift out of tolerance, and a playout-delay render clock plus capped-correction smoothing reconstruct every pose (including the promotion/demotion DR-switch) with no visible pop: this crowd is literally reconstructed from the one multicast stream, not the sim (P3-3)." \
+  "Pedestrians" demo_ped remote ped-remote
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \

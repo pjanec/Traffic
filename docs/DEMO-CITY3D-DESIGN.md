@@ -278,6 +278,47 @@ Smoothness is entirely the `Viewer.Motion` story; the `MultiMesh` just draws whe
 One draw call lets `city-mixed-1k` (~1k) and the ladder to 15k render at interactive rates. Believable
 scale throughout (cars ~4.5×1.8 m, true lane widths, buildings tens of metres).
 
+#### Pedestrians (P7-3)
+Pedestrians are a **separate engine** from the lane-parity core (`docs/PEDESTRIAN-DESIGN.md` §0), with
+their **own** replication path — a distinct wire (`IPedReplicationSource`, topics
+CrowdFrame/PathArc/ActivityTimeline/Lifecycle) and a distinct reconstructor
+(`Sim.Pedestrians.Lod.PedRemoteReconstructor`), not the vehicle `DrClock`/`PoseResolver`/`DrPoseSmoother`
+stack. So the City3D ped render mirrors the **Cars** shape one entity-type over, but off the ped stack:
+
+- **`CityLib.PedSimSource`** (mirrors `SimSource`): hosts the ped **server** sim — a `PedLodManager` over a
+  `SumoNavMesh`, a swept `InterestField` promoting/demoting nearby walkers, peds spawned and cycled — and
+  publishes each tick through the gated `PedReplicationPublisher` → `InMemoryPedReplicationBus` (a true
+  byte loopback). This is the same server+wire the P3-3 HTML "remote" scene and the P7-2 native
+  `RemotePedOverlay` drive; CityLib owns its own copy of the driver exactly as it owns `SimSource` for
+  vehicles. Exposes the transport-neutral `IPedReplicationSource` (never the concrete bus), so a future DDS
+  ped source swaps in without touching reconstruction/render.
+- **`CityLib.PedReconstructor`** (mirrors `Reconstructor`): wraps `PedRemoteReconstructor` — `Pump(now)`
+  once per render frame, then for each `KnownId` `TryGetRenderPose` → apply the one fixed
+  `CoordinateTransform.SumoToGodot` → a `ReconstructedPed` (Godot X/Y/Z, regime from `Ig.ModelOf`:
+  `FreeKinematic`→high-power else low-power, plus `Visible`). All DR/playout-delay/capped-correction
+  smoothing already lives inside `PedRemoteReconstructor` (the "no promotion pop" story), so this layer is
+  thin — the ped analog of the vehicle `Reconstructor` being where the DR lives.
+- **`CityLib.PedTransform` / `PedInstance`** (mirror `CarTransform`/`CarInstance`): pure per-ped avatar
+  placement — a slim upright capsule/box, center raised half its height so it stands ON the ground point,
+  no yaw needed at demo scale (a disc-ish avatar reads fine; heading is optional polish). Regime rides the
+  struct so the Viewer palette colours low-power vs high-power distinctly.
+- **`Viewer/Main.cs`**: one ped `MultiMeshInstance3D` (a unit capsule/box), built once, its per-instance
+  transforms + regime colours rewritten each `_Process` from `PedReconstructor` output — the same
+  build-once/update-per-frame split cars use. Wired into the **local** (`ReadyLocal`/`AdvanceLocalSim`)
+  path.
+
+**Scope / transport.** The in-process `InMemoryPedReplicationBus` path *is* a full server→wire→IG→render
+loop (byte loopback), so it already delivers the P7-3 deliverable: **peds reconstructed from the wire,
+rendered in 3D, server==IG, no promotion pop**. A **DDS** ped transport does not exist yet
+(`Sim.Replication.Dds` carries only the vehicle/TL/command topics — no ped topics), so the DDS-ped remote
+path is **deferred** to a follow-up that adds a ped DDS binding, exactly as the vehicle path was staged
+(local in T1, DDS in T2.2b). This is a real staging decision, recorded here rather than half-built.
+
+**Verification.** `CityLib.Tests` pins the pure ped math (coordinate transform of a known ped pose; regime
+mapping; avatar center/height) with no Godot dependency, same as `CarTransformTests`. The 3D render is
+proven by the `screenshot.sh` recipe (Xvfb + Mesa llvmpipe software GL) on a ped-bearing scenario: the PNG
+shows capsule avatars on the walkable net with low-power vs high-power colours visibly distinct.
+
 #### Determinism & scale
 No unseeded randomness (repo rule): every "random" footprint/height/material comes from a hash of stable
 ids + a single scene seed — reproducible and independent of thread order. Static geometry is built once,

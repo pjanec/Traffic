@@ -158,6 +158,43 @@ public class RungB22ReplicationCodecTests
         }
     }
 
+    // P3-1 (docs/PEDESTRIAN-TASKS.md) -- PedLifecycleRecord has no fixed-size FrameCodec entry of its own
+    // (mirroring the vehicle stack's own LifecycleRecord, which likewise isn't put through FrameCodec);
+    // its wire packing lives in InMemoryPedReplicationBus (PedReplication.cs). This proves the byte-level
+    // round trip through that bus: every field (handle index/generation, Kind, Time) survives Publish ->
+    // Pump identically, for every PedLifecycleKind value (including the double Time field's full
+    // precision, via the same Int64-bit-cast trick FrameCodec uses for netstandard2.1 compatibility).
+    [Fact]
+    public void PedLifecycleRecord_RoundTrips_ThroughTheInMemoryPedReplicationBus_ForEveryKind()
+    {
+        var bus = new InMemoryPedReplicationBus();
+        var recs = new[]
+        {
+            new PedLifecycleRecord(new VehicleHandle(1, 7), PedLifecycleKind.Spawn, time: 0.0),
+            new PedLifecycleRecord(new VehicleHandle(2, 3), PedLifecycleKind.Despawn, time: 12.375),
+            new PedLifecycleRecord(new VehicleHandle(3, 0), PedLifecycleKind.PromoteToFreeKinematic, time: 5.5),
+            new PedLifecycleRecord(new VehicleHandle(4, 1), PedLifecycleKind.DemoteToPathArc, time: 9.125),
+            new PedLifecycleRecord(new VehicleHandle(5, 2), PedLifecycleKind.DemoteToActivityTimeline, time: -3.0625),
+        };
+
+        foreach (var r in recs)
+        {
+            bus.Sink.PublishPedLifecycle(r);
+        }
+
+        bus.Source.Pump();
+
+        Assert.Equal(recs.Length, bus.Source.Lifecycles.Count);
+        for (var i = 0; i < recs.Length; i++)
+        {
+            var got = bus.Source.Lifecycles[i];
+            Assert.Equal(recs[i].Handle.Index, got.Handle.Index);
+            Assert.Equal(recs[i].Handle.Generation, got.Handle.Generation);
+            Assert.Equal(recs[i].Kind, got.Kind);
+            Assert.Equal(recs[i].Time, got.Time); // exact -- full double precision (Int64-bit-cast wire form)
+        }
+    }
+
     [Fact]
     public void WriteVehicleFrame_TooSmall_Throws_And_PartialRead_Clamps()
     {

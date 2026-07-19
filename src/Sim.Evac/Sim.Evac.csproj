@@ -19,6 +19,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <!-- P5-1(B) (docs/PEDESTRIAN-TASKS.md; docs/PEDESTRIAN-DESIGN.md §6 "evac = specialization"):
+         EvacDistrictDirector drives the pedestrian side of evac entirely through the Sim.Pedestrians
+         PedestrianWorld facade (AddWalker/Remove/SetForcedHighPower) instead of the legacy
+         FakeNavMesh/radial OrcaCrowd EvacDirector uses. No cycle: Sim.Pedestrians never references
+         Sim.Evac. -->
+    <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
     <None Include="README.md" Pack="true" PackagePath="/" Condition="Exists('README.md')" />
   </ItemGroup>
 

@@ -7,6 +7,7 @@ using Raylib_cs;
 using rlImGui_cs;
 using ImGuiNET;
 using Sim.Core;
+using Sim.Pedestrians.Lod;
 using Sim.Replication;
 using Sim.Replication.Dds;
 using Sim.Viewer;
@@ -163,6 +164,16 @@ if (selftestPath is not null)
 if (mode == "remote")
 {
     return RunRemote(screenshotPath, frames, delaySeconds);
+}
+
+// D3b (docs/PEDESTRIAN-DDS-TRANSPORT-TASKS.md): the pedestrian analog of `--mode publish` -- a headless
+// process (no window) that runs the crossing-plaza ped server-sim (RemotePedServer) and publishes its
+// wire over the LIVE CycloneDDS ped binding (DdsPedReplicationSink). A separate `--mode local --demo
+// "Pedestrian remote (DDS subscribe)"` process (or a Godot `--transport=dds --peds`) reconstructs + renders
+// it. No scenario arg -- the plaza net is fixed -- so dispatch before the inputPath guard.
+if (mode == "ped-publish")
+{
+    return RunPedPublish(secondsCap);
 }
 
 // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `--mode local --demo "<name>"` needs NO <path> at all --
@@ -646,6 +657,61 @@ static int RunPublish(string netPath, double? secondsCap, int? fleet, double? st
     }
 
     Console.WriteLine("Sim.Viewer: publish loop stopped.");
+    return 0;
+}
+
+// D3b (docs/PEDESTRIAN-DDS-TRANSPORT-TASKS.md): the headless PEDESTRIAN publisher process. Runs the
+// crossing-plaza ped server-sim (RemotePedServer) and publishes its DR-error-gated wire over the live
+// CycloneDDS ped binding (DdsPedReplicationSink) at the ped-sim cadence. A separate subscriber process --
+// the native `--demo "Pedestrian remote (DDS subscribe)"` viewer, or a Godot `--transport=dds --peds`
+// client -- reconstructs + renders the crowd purely from this stream (server == IG over the real wire).
+// No window; capped by `--seconds` or Ctrl-C, mirroring RunPublish's shape.
+static int RunPedPublish(double? secondsCap)
+{
+    var repoRoot = DemoCatalog.RepoRoot();
+
+    using var participant = new DdsParticipant();
+    using var sink = new DdsPedReplicationSink(participant);
+    var meter = new PedBandwidthMeter();
+    var scheduler = new PedPublishScheduler(new PedDrErrorPublishPolicy());
+    var governor = new PedBandwidthGovernor(scheduler, meter, maxMbitPerSecond: 500.0);
+    var wirePublisher = new PedReplicationPublisher(sink, scheduler, governor, meter, stepDt: RemotePedServer.Dt);
+    var server = new RemotePedServer(repoRoot);
+
+    // DDS discovery is async -- settle before the first publish. Durable topics (patharc/activity/lifecycle)
+    // are TRANSIENT_LOCAL, so a subscriber that starts later still gets each ped's latest leg regardless.
+    Thread.Sleep(500);
+
+    var stopRequested = false;
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        stopRequested = true;
+    };
+
+    Console.WriteLine("Sim.Viewer: publishing pedestrians headless over DDS (Ctrl-C to stop" +
+        (secondsCap is { } cap ? $"; capped at {cap:F0}s" : "") + ").");
+
+    var startWall = Stopwatch.StartNew();
+    var publishedSteps = 0;
+    while (!stopRequested)
+    {
+        var events = server.Step();
+        wirePublisher.Publish(events);
+        publishedSteps++;
+
+        if (secondsCap is { } capSeconds && startWall.Elapsed.TotalSeconds >= capSeconds)
+        {
+            break;
+        }
+
+        // ~2x real-time publish cadence (Dt = 0.2 s): fast enough to feed a smooth render, slow enough not to
+        // spin. Correctness does not depend on it -- durable legs guarantee delivery, crowd is latest-wins.
+        Thread.Sleep(100);
+    }
+
+    Console.WriteLine($"Sim.Viewer: ped publish loop stopped after {publishedSteps} steps " +
+        $"({sink.CrowdBytesPublished + sink.PathArcBytesPublished + sink.ActivityBytesPublished + sink.LifecycleBytesPublished} wire bytes).");
     return 0;
 }
 

@@ -36,6 +36,7 @@ PACKAGES=(
   "src/Sim.Replication/Sim.Replication.csproj"
   "src/Sim.Viewer.Motion/Sim.Viewer.Motion.csproj"
   "src/Sim.Host/Sim.Host.csproj"
+  "src/Sim.Pedestrians/Sim.Pedestrians.csproj"
 )
 # The remote/DDS path additionally needs the native transport binding.
 if [[ "$REMOTE" == "1" ]]; then

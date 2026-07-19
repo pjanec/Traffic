@@ -124,7 +124,19 @@ public sealed class LotCoupling
 
     public LotCoupling(OrcaCrowd? peds = null)
     {
-        _peds = peds ?? new OrcaCrowd();
+        // P0-4 (docs/PEDESTRIAN-POC7C-FINDINGS.md follow-up; docs/PEDESTRIAN-DESIGN.md §9): both
+        // crowds here were constructed bare (spatial hash off -> brute-force O(n^2) neighbour gather).
+        // UseSpatialHash is a proven bit-identical pre-filter on both OrcaCrowd (OrcaSpatialHashTests)
+        // and MixedTrafficCrowd (mirrors the same pattern) -- turning it on changes only candidate
+        // discovery, never the neighbour SET or its order, so every trajectory is unchanged. The ped
+        // crowd also carries static parked-car-box obstacles (AddParkedCarBox -> _peds.AddObstacle), so
+        // UseObstacleSpatialIndex (P2-1, also bit-identical) is turned on for it too -- there is a real
+        // static-obstacle index for it to accelerate, unlike PedLodManager's high crowd.
+        //
+        // NOTE: a caller-supplied `peds` (the `peds` parameter) is used AS-IS and not mutated here --
+        // only the crowd THIS constructor creates gets the flag, matching "configure what you own, not
+        // what a caller handed you" convention elsewhere in this codebase.
+        _peds = peds ?? new OrcaCrowd { UseSpatialHash = true, UseObstacleSpatialIndex = true };
         _carCrowd = new MixedTrafficCrowd
         {
             Nonholonomic = true,
@@ -132,6 +144,7 @@ public sealed class LotCoupling
             TimeHorizon = CarTimeHorizon,
             MaxNeighbours = CarMaxNeighbours,
             CreepSpeed = CarCreepSpeed,
+            UseSpatialHash = true,
         };
     }
 

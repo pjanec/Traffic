@@ -19,4 +19,10 @@ public enum PedDrModel
     // Parked / not moving (not exercised by POC-3; reserved for the regime machine's Parked/Riding
     // states, docs/PEDESTRIAN-DESIGN.md §2).
     Stationary = 2,
+
+    // LIVE-POC-1 (docs/PEDESTRIAN-LIVELINESS-DESIGN.md §1, §2, §10 "Scheduled"): pose+animation is a
+    // pure function of (ActivityTimeline, now) via ActivityTimeline.PoseAt -- the PathArc trick
+    // generalized to a richer Walk/Pause/Dwell schedule. Same low-power story: no neighbour
+    // reactivity, IG-reconstructable from the one-time ActivityTimelineRecord broadcast.
+    ActivityTimeline = 3,
 }

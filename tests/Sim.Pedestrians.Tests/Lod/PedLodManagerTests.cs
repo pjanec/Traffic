@@ -397,4 +397,148 @@ public class PedLodManagerTests
                 throw new InvalidOperationException($"unhandled PedEvent type {a.GetType()}");
         }
     }
+
+    // ---- LIVE-PROD-1a: lively low-power (ActivityTimeline) peds -----------------------------------
+
+    // A lively low-power ped walks its route with a Pause beat in the middle. Builds a Walk -> Pause ->
+    // Walk timeline over a real navmesh path, splitting it at its own midpoint waypoint.
+    private static ActivityTimeline BuildLivelyTimeline(IReadOnlyList<Vec2> path, double t0, double speed)
+    {
+        var mid = path.Count / 2;
+        var first = new List<Vec2>();
+        for (var i = 0; i <= mid; i++) first.Add(path[i]);
+        var second = new List<Vec2>();
+        for (var i = mid; i < path.Count; i++) second.Add(path[i]);
+
+        return new ActivityTimeline(t0, new ActivitySegment[]
+        {
+            new WalkSegment(first, speed),
+            new PauseSegment(2.0, "sip"),
+            new WalkSegment(second, speed),
+        });
+    }
+
+    [Fact]
+    public void LivelyLowPower_ServerPoseMatchesHeadlessIgReconstruction_OverSweep_AndStaysSilentLowPower()
+    {
+        var nav = BuildNav();
+        var path = nav.FindPath(WestNorthArm, EastNorthArm);
+        Assert.NotNull(path);
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, ArriveRadius, DwellSeconds);
+        var timeline = BuildLivelyTimeline(path!, t0: 0.0, MaxSpeed);
+        manager.AddPedLively(id: 1, timeline, MaxSpeed, Radius, now: 0.0);
+
+        // No interest source anywhere near -> stays a lively ActivityTimeline ped the whole run.
+        var field = new InterestField();
+        field.Register(new InterestSource(new Vec2(-10_000, -10_000), promoteRadius: 1.0, demoteRadius: 2.0));
+        var noEntities = Array.Empty<WorldDisc>();
+
+        var now = 0.0;
+        var steps = (int)((timeline.EndTime + 1.0) / Dt);
+        for (var i = 0; i < steps; i++)
+        {
+            manager.Step(now, Dt, field, noEntities);
+            now += Dt;
+        }
+
+        Assert.Equal(PedDrModel.ActivityTimeline, manager.ModelOf(1));
+
+        // The IG learns the whole timeline from the ONE spawn-time ActivityTimelineRecord + the switch;
+        // it reconstructs pose via the SAME ActivityTimeline.PoseAt, so server==IG is exact.
+        var ig = new HeadlessIg();
+        ig.ApplyAll(publisher.Events);
+        Assert.Equal(PedDrModel.ActivityTimeline, ig.ModelOf(1));
+
+        var maxError = 0.0;
+        for (var t = 0.0; t <= now; t += Dt / 3.0)
+        {
+            var serverPos = manager.PositionOf(1, t);
+            var igPos = ig.ReconstructSample(1, t).Pos;
+            maxError = Math.Max(maxError, (serverPos - igPos).Abs);
+            // exact, not tolerance
+            Assert.Equal(serverPos.X, igPos.X);
+            Assert.Equal(serverPos.Y, igPos.Y);
+        }
+
+        _output.WriteLine($"[LIVE-PROD-1a measured] server-vs-IG max position error (lively low-power): {maxError:E3} m");
+        Assert.True(maxError < 1e-12, $"max server-vs-IG error {maxError:E3} exceeded 1e-12");
+
+        // Silent low-power: no per-step FreeKinematic samples, one timeline record, heartbeats flowing.
+        Assert.False(publisher.FreeKinematicSamplesSent.ContainsKey(1) && publisher.FreeKinematicSamplesSent[1] > 0);
+        Assert.Equal(1, publisher.ActivityTimelineRecordsSent[1]);
+        Assert.True(publisher.HeartbeatsSent.TryGetValue(1, out var hb) && hb > 0, "expected heartbeats over a lively low-power run");
+    }
+
+    [Fact]
+    public void LivelyLowPowerPed_PromotesToFreeKinematic_WhenAnInterestSourceIsPresent()
+    {
+        var nav = BuildNav();
+        var path = nav.FindPath(WestNorthArm, EastNorthArm);
+        Assert.NotNull(path);
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, ArriveRadius, DwellSeconds);
+        var timeline = BuildLivelyTimeline(path!, t0: 0.0, MaxSpeed);
+        manager.AddPedLively(id: 1, timeline, MaxSpeed, Radius, now: 0.0);
+        Assert.Equal(PedDrModel.ActivityTimeline, manager.ModelOf(1));
+
+        // A source sitting on the ped's start promotes the lively ped exactly like it would a PathArc one.
+        var field = new InterestField();
+        field.Register(new InterestSource(WestNorthArm, PromoteRadius, DemoteRadius), InterestSourceKind.EntityAttached);
+        var entity = new[] { new WorldDisc(WestNorthArm.X, WestNorthArm.Y, 0, 0, 0.3) };
+
+        var everPromoted = false;
+        var now = 0.0;
+        for (var i = 0; i < 60 && !everPromoted; i++)
+        {
+            manager.Step(now, Dt, field, entity);
+            now += Dt;
+            if (manager.ModelOf(1) == PedDrModel.FreeKinematic) everPromoted = true;
+        }
+
+        Assert.True(everPromoted, "a lively low-power ped inside a promote radius must promote to FreeKinematic");
+    }
+
+    // ---- P1-2: forced high-power (evac panic pin) -----------------------------------------------
+
+    [Fact]
+    public void SetForcedHighPower_PromotesWithNoInterestSource_AndHoldsHigh_ThenDemotesWhenCleared()
+    {
+        var nav = BuildNav();
+        var path = nav.FindPath(WestNorthArm, EastNorthArm);
+        Assert.NotNull(path);
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, ArriveRadius, DwellSeconds);
+        manager.AddPed(id: 1, path!, MaxSpeed, Radius, now: 0.0);
+
+        // An interest field with its ONE source parked far away -> nothing would ever promote by proximity.
+        var field = new InterestField();
+        field.Register(new InterestSource(new Vec2(-10_000, -10_000), promoteRadius: 1.0, demoteRadius: 2.0));
+        var noEntities = Array.Empty<WorldDisc>();
+
+        // Pin it high-power (evac panic). It must promote on the next step despite no source nearby.
+        manager.SetForcedHighPower(1, true);
+        var now = 0.0;
+        manager.Step(now, Dt, field, noEntities); now += Dt;
+        Assert.Equal(PedDrModel.FreeKinematic, manager.ModelOf(1));
+
+        // And it must STAY high across many steps while pinned (never demotes, even far from any source).
+        for (var i = 0; i < 100; i++) { manager.Step(now, Dt, field, noEntities); now += Dt; }
+        Assert.Equal(PedDrModel.FreeKinematic, manager.ModelOf(1));
+
+        // Unpin -> it demotes back to low-power once past the dwell/hysteresis (it is far from every
+        // demote radius, so the countdown runs immediately).
+        manager.SetForcedHighPower(1, false);
+        var demoted = false;
+        for (var i = 0; i < 100 && !demoted; i++)
+        {
+            manager.Step(now, Dt, field, noEntities); now += Dt;
+            if (manager.ModelOf(1) == PedDrModel.PathArc) demoted = true;
+        }
+
+        Assert.True(demoted, "an unpinned ped far from every source must demote back to low-power");
+    }
 }

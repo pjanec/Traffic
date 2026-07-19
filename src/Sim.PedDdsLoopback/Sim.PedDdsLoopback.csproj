@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Live CycloneDDS loopback proof for the pedestrian wire (docs/PEDESTRIAN-DDS-TRANSPORT-DESIGN.md section 6).
+    The ped mirror of src/Sim.Viewer/LoopbackSelfTest.cs: drives a real PedLodManager population through
+    PedReplicationPublisher, DdsPedReplicationSink, CycloneDDS, DdsPedReplicationSource, and
+    PedReplicationReceiver, asserting server == IG over the LIVE transport (not the in-process byte bus the
+    hermetic PedReplicationRoundTripTests uses).
+
+    DELIBERATELY OUT OF Traffic.sln: it references Sim.Replication.Dds (external CycloneDDS.NET plus a native
+    DDS library), so the hermetic offline parity gate (dotnet test Traffic.sln, no network / no native DDS on
+    a fresh VM) never touches it. Run it explicitly with dotnet run against this project.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
+    <ProjectReference Include="..\Sim.Replication.Dds\Sim.Replication.Dds.csproj" />
+  </ItemGroup>
+
+</Project>

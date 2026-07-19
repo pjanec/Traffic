@@ -26,6 +26,13 @@ OUT="${1:-/tmp/city3d-roads.png}"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
 
+# Any args after the output path are passed straight through as Godot USER args (after the `--`), so a
+# caller can drive a non-default demo without editing this script, e.g. the P7-3 pedestrian render:
+#   demos/City3D/screenshot.sh /tmp/city3d-peds.png --peds --shot-delay=10
+# (the ped crowd needs a --shot-delay so enough sim ticks pass for peds to spread + some to promote).
+shift || true
+EXTRA_ARGS=("$@")
+
 echo "==> [1/4] packing the local NuGet feed"
 bash "$DEMO/build.sh" --pack-only
 
@@ -43,7 +50,7 @@ trap 'rm -f "$LOG"' EXIT
 set +e
 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe xvfb-run -a -s "-screen 0 1600x900x24" \
   "$GODOT_BIN" --path "$VIEWER" --rendering-driver opengl3 --resolution 1600x900 \
-  -- --shot="$OUT" > "$LOG" 2>&1
+  -- --shot="$OUT" "${EXTRA_ARGS[@]}" > "$LOG" 2>&1
 STATUS=$?
 set -e
 
