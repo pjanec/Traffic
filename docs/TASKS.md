@@ -393,6 +393,31 @@ buffer absorb them); neither is a rewrite. Order within each group respects the 
     909605E965BFFE59 unchanged. parity-reviewer ACCEPT. **A3 give-way arc COMPLETE.**
     "priority *road*" right-of-way is rung 9b, not this.
 
+- **A-impatience. Junction-yield IMPATIENCE / arrival-time gap acceptance. DEFERRED — take when the
+  low-density teleport residual (mechanism B) or a saturated-junction throughput gap becomes blocking.**
+  Full diagnosis + fix spec already written: `docs/SUMOSHARP-LOWDENSITY-TELEPORT-DESIGN.md` §T3 (do NOT
+  re-derive — it has the oracle evidence and code anchors). Summary: the engine hardcodes
+  `impatience == 0`, so at a saturated junction a vehicle waits for a perfect gap that never comes,
+  whereas SUMO's growing impatience makes it accept a tighter gap and break the deadlock. Result: on
+  `scenarios/_repro/synthetic-junction2` vanilla drains the queue into TL junction 2336 (15 through, 0
+  stuck by t~500) while SumoSharp never drains it (3 permanently stuck, 10 through) — the standing jam
+  feeds ~5 spurious teleports. The `havePriority` fix (committed, see the design doc T1) already removed
+  the TLS half (10→5); this is the remaining half.
+  - **Port from:** `/sumo/src/microsim/MSLink.cpp` `blockedByFoe` (lines ~947-965 — the impatience
+    blend of the foe arrival window toward ego's braking-arrival), `MSVehicle::getImpatience`, and the
+    `--time-to-impatience` default (180; `MSFrame.cpp:481`). Grows with accumulated `getWaitingTime`.
+  - **Target C#:** `src/Sim.Core/Engine.cs` — the junction-yield arms (`JunctionYieldConstraint`'s
+    approaching-foe crossing yield and `SameTargetMergeConstraint`'s PHASE-0 arrival-time RoW). A prior
+    session already proved a byte-identical impatience port is possible (goldens unaffected).
+  - **THE HARD PART / why it is not a patch:** applying impatience to the approach arm naively
+    regressed `WillPassSaturationDiagTests` (0→15 stuck). The open design question is *where/how* to
+    apply the blend faithfully without re-breaking that saturated-grid stress test. Needs its own
+    design cycle, not a tweak.
+  - **Done-condition:** `synthetic-junction2` SumoSharp teleports → ~0 (matching vanilla) and the
+    pop%↔density curve monotone within noise; **all committed goldens byte-identical**; AND
+    `WillPassSaturationDiagTests` + `RungHDp2g2*` still green. Tighten `LowDensityTeleportTests`'s
+    `<= 5` bound toward 0 when it lands.
+
 ### Group B — beyond parity: live external-obstacle reactivity
 
 **Framing (read before briefing any B task).** These react to obstacles injected from OUTSIDE the
