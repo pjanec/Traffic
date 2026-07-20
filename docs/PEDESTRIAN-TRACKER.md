@@ -297,9 +297,31 @@ existing goldens, gate green (649 parity / 168 ped / 2 DotRecast). What's NOT ye
 
 ---
 
+## Realism issues (open)
+
+- [ ] **PED-REALISM-1** Low-power pedestrians pass through each other / ride the sidewalk centerline
+      (**HIGH priority**). With thousands of low-power (`PathArcMotion`) peds, opposite-direction walkers
+      interpenetrate — low-power pose is a pure function of the route centerline with no neighbour state, and
+      ORCA avoidance is high-power-only (does not scale to the whole crowd). Needs a fix **in the low-power
+      path** that prevents pass-throughs to a reachable, performant degree while preserving the server==IG
+      pure-function identity (no neighbour-reactive nudging). Problem + candidate directions (recommended:
+      deterministic direction-based lateral offset / lane slotting) in
+      `docs/PEDESTRIAN-LOWPOWER-AVOIDANCE-DESIGN.md`. *The most user-visible realism gap; needs a design then
+      implementation.*
+
+---
+
+## Handoff
+
+`docs/PEDESTRIAN-SESSION-HANDOFF.md` — state of the pedestrian subsystem for a fresh session (what's landed,
+what's parked, key files, build/test/run, invariants, coordination).
+
+---
+
 ## Standing invariants (must stay true every task)
 
-- [x] SUMO parity core untouched — hash `909605E965BFFE59`, `Sim.ParityTests` green *(holds through POC phase)*
+- [x] SUMO parity core untouched — engine determinism hash gated in CI (`AA6143E74072CD4C`; refreshed from
+      `909605E965BFFE59` after vehicle-side work moved it), `Sim.ParityTests` green
 - [x] Perf/parallel changes bit-identical to serial (or gated fast-mode) *(POC-7a gate style)*
 - [ ] Coordinate all `Engine.cs`/routing touches (P4) with the parallel lane-engine session
 - [ ] Subarea: appearance-legitimacy (P8-2) inert by default — empty visible set leaves every ped golden
