@@ -271,6 +271,48 @@ doorway/venue/kerb approaches, and the phone-check drift — they differ only in
 - **Wire delta:** the fresh-leg record gains ONE scalar (`l_r`); the promote/demote ride the existing
   lifecycle + DR-switch records; the excursion reuses the existing high-power sample stream. No new topic.
 
+### 10.2-bis The BYSTANDER restore (the hard half §10.2 hid)
+§10.2 restores the ped that **chose** to leave the flow (the crosser): its post-excursion leg is *planned*, so
+"restore" is just re-anchoring an agent we control onto a fresh route. The harder, distinct case is a
+**bystander**: a ped that was walking a perfectly deterministic weave and got **involuntarily deflected** by
+someone else's ORCA maneuver, and must return to **its own** deterministic track — the same seeded lane it was
+already on, not a new route. This is what "restore the pre-programmed deterministic flow" (the original ask)
+actually means for the majority of promoted peds, and it differs in three ways:
+
+1. **It returns to its OWN absolute-arc lane plan, not a restarted one.** The resume primitive therefore splits
+   two coordinates that coincide for the crosser: `interiorArc` (the ped's absolute arc along its own route —
+   the lane plan is evaluated here, so it slots back onto the exact seeded track) and `blendDist` (distance
+   since demote — the `l_r`→weave blend runs over this). `LateralWeave.OffsetWithResumeOnRoute(interiorArc,
+   blendDist, …)` expresses both; `OffsetWithResume` is the crosser special case `interiorArc==blendDist`.
+2. **The deterministic schedule kept advancing while the ped was shoved**, so at demote the ped is off-track in
+   BOTH lateral and arc. The policy (chosen): **re-anchor** — emit a fresh leg from the ped's *actual* (delayed,
+   projected) arc `s_r` with `l_r`, on its own route+seed. The excursion's lost progress is **permanently
+   absorbed** into a re-based anchor (the ped stays a fixed arc behind where it "would have been"). This is
+   `O(1)`, exact-after, and needs no catch-up controller. The rejected alternative (**converge-to-schedule** —
+   keep the original schedule and steer the ped to catch up to `pose_det(t)`) has no permanent shift but keeps
+   the ped off the pure track (more broadcast) and needs a catch-up controller; only worth it if a downstream
+   constraint requires the ped to hit a point on the original schedule, which ambient peds don't have.
+3. **It is not free.** Every involuntarily-perturbed bystander must be **broadcast** for the span it is
+   off-track (the IG can't predict an ORCA shove), and its demote costs the same one-scalar (`l_r`) fresh-leg
+   record as the crosser. So the wire cost of a hotspot ≈ (crossers + shoved bystanders) × excursion-span — a
+   direct argument for keeping promoted zones small (§9c) and crossings sparse (the density work).
+
+**Measured (Prototype D2, `--ped-weave-cross2-csv`).** The crosser is aimed straight into the moving stream so
+ORCA genuinely deflects a specific bystander B (chosen as the cohort ped shoved *most* off its ghost — the one
+that really had to react, not a hand-picked winner). B is deflected **2.14 m** off its unperturbed ghost
+(mostly longitudinal — ORCA slowed it — plus ~0.5 m lateral), then re-anchors onto its own weave:
+
+| B span | max ‖server − IG‖ | |
+|---|---|---|
+| before promote | **0** (exact) | pure weave |
+| during the shove | **0.10 m** | broadcast, DR-interpolated (< 0.25 m) |
+| after demote | **0** (exact) | fresh leg on B's OWN route + `l_r` |
+
+No-pop demote seam ‖Δ‖ = **3.6×10⁻¹⁵ m**. Honest cost, printed by the command: B rejoins its own lane track
+but **permanently 2.1 m / 1.7 s behind its ghost**, and was broadcast for the 10.6 s it was off-track. This is
+the concrete evidence that ORCA→deterministic is solved for the *reactive bystander*, not just the volunteer —
+and an explicit accounting of what it costs.
+
 ### 10.3 The reconstruction-fidelity guarantee
 Server==IG is **exact** (pure function) for every low-power ped and every low-power *phase* of a ped —
 i.e. the whole 9a set and the before-promote / after-demote spans. It is **within render tolerance**

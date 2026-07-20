@@ -136,19 +136,39 @@ public static class LateralWeave
     public static double OffsetWithResume(
         double sPrime, double routeLength, ulong seed, double halfWidth,
         double resumeLateral, double leadInMeters, in WeaveParams p)
+        // Crosser case: the fresh leg is a NEW route, so the lane-plan arc and the blend distance are the same
+        // coordinate (both start at 0 at the demote). Delegates to the general form.
+        => OffsetWithResumeOnRoute(sPrime, sPrime, routeLength, seed, halfWidth, resumeLateral, leadInMeters, p);
+
+    // The GENERAL demote-restore, needed for the BYSTANDER case (Prototype D2 / design §10.2-bis): a ped that was
+    // NOT choosing to leave the flow but got INVOLUNTARILY deflected by someone else's ORCA maneuver, then returns
+    // to ITS OWN deterministic weave -- the same seeded lane track it was already on, NOT a fresh route. The two
+    // coordinates are therefore distinct:
+    //   `interiorArc`  -- the ped's ABSOLUTE arc-length along its own route; the lane plan is evaluated here, so
+    //                     the ped slots back onto the exact seeded track it would have been on (continuity of the
+    //                     lane sequence, not a restarted one). For a bystander that kept walking, this advances as
+    //                     s_r + (distance since demote); the excursion's delay is absorbed into a re-based anchor.
+    //   `blendDist`    -- distance travelled SINCE the demote; the l_r->weave blend runs over this, so at the
+    //                     demote instant (blendDist==0) the pose is EXACTLY l_r (no pop) regardless of interiorArc.
+    // Pure + deterministic => server==IG exact again from the demote instant (the IG recomputes from the fresh-leg
+    // record: route + seed + s_r + startTime + the one l_r scalar). Arrival end still tapers on the ABSOLUTE arc.
+    public static double OffsetWithResumeOnRoute(
+        double interiorArc, double blendDist, double routeLength, ulong seed, double halfWidth,
+        double resumeLateral, double leadInMeters, in WeaveParams p)
     {
         if (routeLength <= 0.0)
         {
             return 0.0;
         }
 
-        var s0 = sPrime < 0.0 ? 0.0 : (sPrime > routeLength ? routeLength : sPrime);
-        var lane = halfWidth <= 0.0 ? 0.0 : OffsetInterior(s0, seed, halfWidth, p);
+        var arc = interiorArc < 0.0 ? 0.0 : (interiorArc > routeLength ? routeLength : interiorArc);
+        var lane = halfWidth <= 0.0 ? 0.0 : OffsetInterior(arc, seed, halfWidth, p);
 
         double blended;
-        if (leadInMeters > 1e-6 && s0 < leadInMeters)
+        if (leadInMeters > 1e-6 && blendDist < leadInMeters)
         {
-            var u = SmoothStep(s0 / leadInMeters); // 0 at demote -> 1 after the lead-in
+            var bd = blendDist < 0.0 ? 0.0 : blendDist;
+            var u = SmoothStep(bd / leadInMeters); // 0 at demote -> 1 after the lead-in
             blended = resumeLateral + ((lane - resumeLateral) * u);
         }
         else
@@ -157,7 +177,7 @@ public static class LateralWeave
         }
 
         // Only the ARRIVAL end tapers (converge to the true endpoint); the demote seam does not.
-        return blended * ArrivalTaper(s0, routeLength, p.EndpointTaperMeters);
+        return blended * ArrivalTaper(arc, routeLength, p.EndpointTaperMeters);
     }
 
     // The SHARED, moving interface between two counterflowing streams (PED-REALISM-1: "the crowd has a moving

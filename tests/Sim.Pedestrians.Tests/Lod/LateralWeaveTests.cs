@@ -146,6 +146,35 @@ public class LateralWeaveTests
     }
 
     [Fact]
+    public void OffsetWithResumeOnRoute_BystanderReturnsToItsOwnAbsoluteTrack()
+    {
+        // The BYSTANDER restore (Prototype D2, §10.2-bis): a ped deflected mid-route must re-join the SAME seeded
+        // lane track it was on -- so once the blend completes, the resume pose must equal the ORIGINAL pure weave
+        // evaluated at the ABSOLUTE arc (not a restarted arc). Demote at absolute arc s_r; blend over leadIn.
+        const double sr = 22.0, leadIn = 6.0, lr = 1.4;
+        for (var bd = leadIn + 1.0; bd <= 20.0; bd += 0.5)
+        {
+            var absArc = sr + bd;
+            if (absArc > RouteLen - 10.0) break; // stay in the interior (away from the arrival taper)
+            var resume = LateralWeave.OffsetWithResumeOnRoute(absArc, bd, RouteLen, seed: 77, HalfWidth, lr, leadIn, P);
+            var ownTrack = LateralWeave.Offset(absArc, RouteLen, seed: 77, HalfWidth, P);
+            Assert.Equal(ownTrack, resume, precision: 12);
+        }
+    }
+
+    [Fact]
+    public void OffsetWithResumeOnRoute_NoPop_AtSeam_RegardlessOfAbsoluteArc()
+    {
+        // At the demote instant (blendDist==0) the pose is exactly l_r whatever the absolute arc -- continuity of
+        // position no matter where along its route the ped was deflected.
+        foreach (var sr in new[] { 5.0, 22.0, 40.0 })
+        {
+            var at0 = LateralWeave.OffsetWithResumeOnRoute(sr, 0.0, RouteLen, seed: 77, HalfWidth, resumeLateral: -0.8, leadInMeters: 6.0, P);
+            Assert.Equal(-0.8, at0, precision: 12);
+        }
+    }
+
+    [Fact]
     public void DifferentSeeds_DifferentLaneSequences()
     {
         // Two peds fan into a band: their lane sequences differ, so a same-direction flow is not a single line.

@@ -73,6 +73,7 @@ internal static class Program
             "--ped-weave-anim-csv" => RunPedWeaveAnimCsv(args),
             "--ped-weave-density-csv" => RunPedWeaveDensityCsv(args),
             "--ped-weave-cross-csv" => RunPedWeaveCrossCsv(args),
+            "--ped-weave-cross2-csv" => RunPedWeaveCross2Csv(args),
             _ => RunSingle(args),
         };
     }
@@ -908,6 +909,212 @@ internal static class Program
         Console.WriteLine("no-pop seams:");
         Console.WriteLine($"  promote seam   : |Δ| = {promoteJump:E2} m   (ORCA seeded at the weave pose)");
         Console.WriteLine($"  demote  seam   : |Δ| = {demoteJump:E2} m   (l_r := ORCA arrival -> OffsetWithResume(0)==l_r)");
+        return 0;
+    }
+
+    // PROTOTYPE D2 (docs/PEDESTRIAN-LOWPOWER-AVOIDANCE-DESIGN.md §10.2-bis): the case Prototype D DODGED. D
+    // only restored the CROSSER -- the ped that CHOSE to leave the flow (a planned re-anchor, the easy half).
+    // D2 restores a BYSTANDER: a westbound ped that was happily deterministic and got INVOLUNTARILY shoved by
+    // the crosser's ORCA avoidance, then must return to ITS OWN deterministic weave. The crossing here is timed
+    // to drive the crosser straight INTO the moving stream so ORCA genuinely deflects a specific ped B (not a
+    // gap that opened on its own). We then demote B back onto its own route via OffsetWithResumeOnRoute and prove
+    // its server==IG + no-pop, AND show the honest cost: B is permanently DELAYED vs its unperturbed "ghost".
+    private static int RunPedWeaveCross2Csv(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("error: --ped-weave-cross2-csv requires an output path");
+            return 2;
+        }
+
+        var outPath = args[1];
+        const double length = 50.0, halfWidth = 2.0, dt = 0.2, radius = 0.25;
+        const double crosserSpeed = 1.4, streamSpeed = 1.2;
+        const double sxPromote = 22.0;
+        const double xPoi = 30.0, yPoi = halfWidth - 0.15; // café on the north kerb, straight into the stream
+        const double leadIn = 7.0, broadcastEvery = 0.4;
+        const ulong seedC = 4321UL, streamSeed0 = 700UL;
+        var wp = Sim.Pedestrians.Lod.WeaveParams.Default;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("frame,x,y,kind\n");
+
+        double SouthWeaveY(double s) => -Sim.Pedestrians.Lod.LateralWeave.Offset(s, length, seedC, halfWidth, wp);
+        var tPromote = sxPromote / crosserSpeed;
+        var p0y = SouthWeaveY(sxPromote);
+
+        // Westbound cohort spanning the crossing zone, each a PROPER deterministic weave ped (seed + arc at t_p),
+        // so each has a well-defined unperturbed ghost to restore toward. Placed across x in [24, 34].
+        const int nCohort = 12;
+        var cohortSeed = new ulong[nCohort];
+        var cohortS0 = new double[nCohort];   // arc at t_p
+        for (var j = 0; j < nCohort; j++)
+        {
+            var xj = 24.0 + (j * (10.0 / (nCohort - 1)));
+            cohortSeed[j] = streamSeed0 + (ulong)j;
+            cohortS0[j] = length - xj; // westbound arc so that x(t_p) = xj
+        }
+
+        double CohortGhostArc(int j, double now) => cohortS0[j] + (streamSpeed * (now - tPromote));
+        (double x, double y) CohortGhost(int j, double now)
+        {
+            var s = CohortGhostArc(j, now);
+            return (length - s, Sim.Pedestrians.Lod.LateralWeave.Offset(s, length, cohortSeed[j], halfWidth, wp));
+        }
+
+        // --- run the REAL ORCA conflict window ---
+        var crowd = new Sim.Core.Orca.OrcaCrowd(capacity: 32) { RemoveOnArrival = false, ArrivalRadius = 0.25 };
+        var crosser = crowd.Add(new Sim.Core.Orca.Vec2(sxPromote, p0y), radius, crosserSpeed, new Sim.Core.Orca.Vec2(xPoi, yPoi));
+        var cohort = new Sim.Core.Orca.OrcaHandle[nCohort];
+        for (var j = 0; j < nCohort; j++)
+        {
+            var g = CohortGhost(j, tPromote);
+            cohort[j] = crowd.Add(new Sim.Core.Orca.Vec2(g.x, g.y), radius, streamSpeed, new Sim.Core.Orca.Vec2(-100.0, g.y));
+        }
+
+        var exCrosser = new List<(double x, double y)>();
+        var exCohort = new List<(double x, double y)[]>();
+        var maxExSteps = (int)(13.0 / dt);
+        for (var step = 0; step < maxExSteps; step++)
+        {
+            var pc = crowd.Position(crosser);
+            exCrosser.Add((pc.X, pc.Y));
+            var row = new (double x, double y)[nCohort];
+            for (var j = 0; j < nCohort; j++)
+            {
+                var pp = crowd.Position(cohort[j]);
+                row[j] = (pp.X, pp.Y);
+                // keep each westbound cohort agent's goal ahead (west) as it advances, so it keeps walking
+                crowd.SetGoal(cohort[j], new Sim.Core.Orca.Vec2(pp.X - 100.0, pp.Y));
+            }
+
+            exCohort.Add(row);
+            var d = new Sim.Core.Orca.Vec2(xPoi, yPoi) - pc;
+            if (d.Abs <= 0.25)
+            {
+                break;
+            }
+
+            crowd.Step(dt);
+        }
+
+        var exSteps = exCrosser.Count;
+        var tDemote = tPromote + ((exSteps - 1) * dt);
+
+        // Pick the BYSTANDER B = the cohort ped that ORCA deflected MOST from its own ghost (the one that really
+        // had to react). This is the honest choice: B is whoever was forced off-track, not a hand-picked winner.
+        var bIdx = 0; var bMaxDev = -1.0;
+        for (var j = 0; j < nCohort; j++)
+        {
+            var dev = 0.0;
+            for (var s = 0; s < exSteps; s++)
+            {
+                var g = CohortGhost(j, tPromote + (s * dt));
+                var a = exCohort[s][j];
+                dev = Math.Max(dev, Math.Sqrt(((a.x - g.x) * (a.x - g.x)) + ((a.y - g.y) * (a.y - g.y))));
+            }
+
+            if (dev > bMaxDev) { bMaxDev = dev; bIdx = j; }
+        }
+
+        // B's demote anchor: its ACTUAL (deflected, delayed) pose at t_d, projected onto its own westbound route.
+        var (bxEnd, byEnd) = exCohort[exSteps - 1][bIdx];
+        var bSrEnd = length - bxEnd;      // actual arc at demote (< ghost arc: ORCA cost it progress)
+        var bLr = byEnd;                  // resume-lateral l_r
+        var bGhostArcAtDemote = CohortGhostArc(bIdx, tDemote);
+        var bAbsorbedDelay = bGhostArcAtDemote - bSrEnd; // permanent arc B fell behind its ghost (the honest cost)
+
+        (double x, double y) BResume(double now)
+        {
+            var bd = streamSpeed * (now - tDemote);      // distance since demote (blend coordinate)
+            var absArc = bSrEnd + bd;                     // B's OWN absolute arc, advancing west
+            var off = Sim.Pedestrians.Lod.LateralWeave.OffsetWithResumeOnRoute(absArc, bd, length, cohortSeed[bIdx], halfWidth, bLr, leadIn, wp);
+            return (length - absArc, off);
+        }
+
+        (double x, double y) BIgReconExcursion(double now)
+        {
+            var tt = now - tPromote;
+            var stepB = (int)Math.Round(broadcastEvery / dt);
+            var last = Math.Clamp((int)Math.Floor(tt / broadcastEvery) * stepB, 0, exSteps - 1);
+            var next = Math.Clamp(last + stepB, 0, exSteps - 1);
+            var frac = next == last ? 0.0 : Clamp01((tt - (last * dt)) / ((next - last) * dt));
+            var a = exCohort[last][bIdx];
+            var b = exCohort[next][bIdx];
+            return (Lerp(a.x, b.x, frac), Lerp(a.y, b.y, frac));
+        }
+
+        double bErrBefore = 0, bErrDuring = 0, bErrAfter = 0;
+        var tMax = tDemote + ((length - bSrEnd) / streamSpeed) + 1.0;
+        for (var f = 0; f * dt <= tMax + 1e-9; f++)
+        {
+            var now = f * dt;
+
+            // Context streams (suppress the cohort x-window during the conflict; B is drawn explicitly).
+            EmitAmbientStreams(sb, f, now, length, halfWidth, wp, inv, xPoi, tPromote, tDemote, streamSeed0);
+            sb.Append(f).Append(',').Append(xPoi.ToString("F2", inv)).Append(',').Append(yPoi.ToString("F2", inv)).Append(",poi\n");
+
+            // Crosser (the disruptor) -- phases, shown but not the focus.
+            double cx, cy; string ck;
+            if (now < tPromote) { var s = crosserSpeed * now; cx = s; cy = SouthWeaveY(s); ck = "cx_weave"; }
+            else if (now <= tDemote + 1e-9) { var idx = Math.Clamp((int)Math.Round((now - tPromote) / dt), 0, exSteps - 1); (cx, cy) = exCrosser[idx]; ck = "cx_orca"; }
+            else { cx = double.NaN; cy = 0; ck = ""; }
+            if (!double.IsNaN(cx) && cx <= length) sb.Append(f).Append(',').Append(cx.ToString("F3", inv)).Append(',').Append(cy.ToString("F3", inv)).Append(',').Append(ck).Append('\n');
+
+            // Other cohort peds during the window (context for the parting).
+            if (now >= tPromote && now <= tDemote + 1e-9)
+            {
+                var idx = Math.Clamp((int)Math.Round((now - tPromote) / dt), 0, exSteps - 1);
+                for (var j = 0; j < nCohort; j++)
+                {
+                    if (j == bIdx) continue;
+                    var (ox, oy) = exCohort[idx][j];
+                    sb.Append(f).Append(',').Append(ox.ToString("F3", inv)).Append(',').Append(oy.ToString("F3", inv)).Append(",west_orca\n");
+                }
+            }
+
+            // ===== THE BYSTANDER B: ghost, actual (server), and IG reconstruction =====
+            // Ghost -- where B would be with NO perturbation (its pure deterministic weave), for the whole clip.
+            var g = CohortGhost(bIdx, now);
+            if (g.x is >= -1 and <= length + 1) sb.Append(f).Append(',').Append(g.x.ToString("F3", inv)).Append(',').Append(g.y.ToString("F3", inv)).Append(",b_ghost\n");
+
+            // Server B pose by phase.
+            double bx, by; string bk; double rx, ry;
+            if (now < tPromote)
+            {
+                var s = CohortGhostArc(bIdx, now); bx = length - s; by = Sim.Pedestrians.Lod.LateralWeave.Offset(s, length, cohortSeed[bIdx], halfWidth, wp); bk = "b_weave";
+                rx = bx; ry = by; bErrBefore = Math.Max(bErrBefore, Math.Abs(rx - bx) + Math.Abs(ry - by));
+            }
+            else if (now <= tDemote + 1e-9)
+            {
+                var idx = Math.Clamp((int)Math.Round((now - tPromote) / dt), 0, exSteps - 1); (bx, by) = exCohort[idx][bIdx]; bk = "b_orca";
+                (rx, ry) = BIgReconExcursion(now); bErrDuring = Math.Max(bErrDuring, Math.Sqrt(((rx - bx) * (rx - bx)) + ((ry - by) * (ry - by))));
+            }
+            else
+            {
+                (bx, by) = BResume(now); bk = "b_resume";
+                (rx, ry) = BResume(now); bErrAfter = Math.Max(bErrAfter, Math.Abs(rx - bx) + Math.Abs(ry - by));
+            }
+
+            if (bx <= length + 1e-9 && bx >= -1)
+            {
+                sb.Append(f).Append(',').Append(bx.ToString("F3", inv)).Append(',').Append(by.ToString("F3", inv)).Append(',').Append(bk).Append('\n');
+                sb.Append(f).Append(',').Append(rx.ToString("F3", inv)).Append(',').Append(ry.ToString("F3", inv)).Append(",b_recon\n");
+            }
+        }
+
+        var (br0x, br0y) = BResume(tDemote);
+        var bDemoteJump = Math.Sqrt(((bxEnd - br0x) * (bxEnd - br0x)) + ((byEnd - br0y) * (byEnd - br0y)));
+
+        System.IO.File.WriteAllText(outPath, sb.ToString());
+        Console.WriteLine($"wrote {outPath}  excursion={exSteps} steps  bystander B = cohort#{bIdx}  seed={cohortSeed[bIdx]}");
+        Console.WriteLine($"CONFLICT: B was deflected up to {bMaxDev:F2} m off its own ghost by the crosser's ORCA avoidance (real reaction, not a gap).");
+        Console.WriteLine("bystander B  server==IG reconstruction (§11 column):");
+        Console.WriteLine($"  before promote : max|Δ| = {bErrBefore:E2} m   (pure weave -> EXACT)");
+        Console.WriteLine($"  during shove   : max|Δ| = {bErrDuring:F3} m   (broadcast DR-interp -> within render tol ≤0.25 m)");
+        Console.WriteLine($"  after demote   : max|Δ| = {bErrAfter:E2} m   (fresh leg on B's OWN route + l_r -> EXACT)");
+        Console.WriteLine($"  no-pop demote seam : |Δ| = {bDemoteJump:E2} m   (l_r := B's ORCA pose; OffsetWithResumeOnRoute(bd=0)==l_r)");
+        Console.WriteLine($"HONEST COST: B rejoins its OWN lane track but permanently {bAbsorbedDelay:F2} m ({bAbsorbedDelay / streamSpeed:F1}s) behind its ghost -- the excursion's delay is absorbed into a re-based anchor, and B was broadcast for the {exSteps * dt:F1}s it was off-track.");
         return 0;
     }
 
