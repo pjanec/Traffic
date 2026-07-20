@@ -600,6 +600,26 @@ internal static class Program
 
             // ACTOR 2 -- "enter building" (westbound): drift to a doorway on the building side, then vanish. §9a.
             AppendDoorwayActor(sb, f, now, startT: 1.0, doorArc: 30.0, length, halfWidth, speed, globalSeed, maxShift, wp, inv, Smooth, seed: 515151UL);
+
+            // ACTOR 3 -- ONE scarce "drunk / distracted" ped: the same weave but with an exaggerated micro-sway
+            // (§9b-bis note -- big lateral wander used SPARINGLY adds life; it is NOT the norm). Eastbound.
+            {
+                const double dStart = 6.0;
+                const ulong dSeed = 909090UL;
+                if (now >= dStart)
+                {
+                    var s = 1.1 * (now - dStart); // a slightly slow, meandering walker
+                    if (s <= length)
+                    {
+                        var a = s;
+                        var drunkWp = wp with { MicroAmpMeters = 0.55, MicroWavelengthMeters = 4.0 };
+                        var c = Sim.Pedestrians.Lod.LateralWeave.CenterShift(a, now, length, globalSeed, maxShift, wp);
+                        var y = c - Sim.Pedestrians.Lod.LateralWeave.Offset(s, length, dSeed, c + halfWidth, drunkWp);
+                        sb.Append(f).Append(',').Append(a.ToString("F2", inv)).Append(',')
+                          .Append(y.ToString("F2", inv)).Append(",drunk\n");
+                    }
+                }
+            }
         }
 
         System.IO.File.WriteAllText(outPath, sb.ToString());

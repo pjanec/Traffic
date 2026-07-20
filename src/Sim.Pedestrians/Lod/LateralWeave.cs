@@ -44,16 +44,19 @@ public readonly record struct WeaveParams
 
     public static WeaveParams Default => new()
     {
-        WavelengthMeters = 30.0,
-        TransitionMeters = 5.0,
+        // Calm norm: a ped mostly holds its lane and walks fairly straight; lateral moves should be the
+        // exception, not constant fidgeting (a "drunken ped" look). Rare, gentle lane changes (long
+        // wavelength + long transition) and a barely-perceptible micro-sway.
+        WavelengthMeters = 55.0,   // ~40 s between lane changes at walking pace -> mostly holds a lane
+        TransitionMeters = 9.0,    // a slow, deliberate drift between lanes, not a dart
         // MinFrac = 0 so lane targets fill from the centreline outward -- keep-right is a SOFT bias (each
         // direction stays on its own half, never crosses), not a hard exclusion that leaves a dead empty
         // channel down the middle. Peds brush the centreline; opposing flows meet there but don't interpenetrate.
         MinFrac = 0.0,
         MaxFrac = 0.9,
         EndpointTaperMeters = 4.0,
-        MicroAmpMeters = 0.12,
-        MicroWavelengthMeters = 7.0,
+        MicroAmpMeters = 0.04,     // barely-there sway (was 0.12 -> read as fidgeting in motion)
+        MicroWavelengthMeters = 13.0,
     };
 }
 
