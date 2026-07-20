@@ -479,6 +479,13 @@ internal static class Program
             $"wrote {outPath}  ({size} bytes)  frames={result.Frames} dial={dial} cap={result.PopulationCap} " +
             $"rate={result.SpawnRatePerSecond:F3}/s walkableKm={result.WalkableLengthKm:F3} endpoints={result.Endpoints} " +
             $"peakLive={result.PeakLive} spawns={result.Spawns} arrivals={result.Arrivals}");
+        // P8-1b navmesh-connectivity health (should be a few components + ~0 unreachable skips on a good crop).
+        Console.WriteLine(
+            $"  navmesh: polygons={result.WalkablePolygons} components={result.ConnectedComponents} " +
+            $"unreachableSkips={result.UnreachableSkips}" +
+            (result.ConnectedComponents > 5
+                ? "  [WARN] fragmented navmesh -- crowd will be routing-limited (see docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md)"
+                : string.Empty));
         return 0;
     }
 

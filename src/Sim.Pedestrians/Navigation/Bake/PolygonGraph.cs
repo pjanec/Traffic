@@ -43,6 +43,11 @@ internal sealed class PolygonGraph
     // several metres apart never falsely connect.
     private const double AdjacencyEpsilon = 1e-3;
 
+    // P8-1b (docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md): strict-inside slack for the area-overlap
+    // pass. A real buffered sidewalk/crossing overlaps the junction walkingArea by ~0.05-0.2 m, far more than
+    // this; a shared-corner touch penetrates ~0, so it never reads as an overlap. 1 mm matches AdjacencyEpsilon.
+    private const double OverlapMargin = 1e-3;
+
     private readonly List<PolygonPortal>[] _adjacency;
 
     public PolygonGraph(IReadOnlyList<BakedPolygon> polygons)
@@ -75,6 +80,7 @@ internal sealed class PolygonGraph
         }
 
         AddVertexProximityAdjacency(polygons, adjacency);
+        AddAreaOverlapAdjacency(polygons, adjacency);
 
         // Fixed iteration order per node: sort each neighbour list ascending by neighbour index,
         // so graph traversal (and hence A*) never depends on the O(n^2) build order above.
@@ -182,6 +188,55 @@ internal sealed class PolygonGraph
             adjacency[pj].Add(new PolygonPortal(pi, point));
         }
     }
+
+    // THIRD adjacency pass (P8-1b, docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md): connects polygon
+    // pairs that GENUINELY OVERLAP in 2D area but share no exact edge or coincident vertex -- the abutment
+    // real netconvert geometry has, where independently-buffered sidewalk/crossing strips overlap the
+    // junction walkingArea by a ~0.05-0.2 m sliver. Without this the surface fragments into thousands of
+    // components on real crops (SUMOSHARP-P8-1-REAL-NET-NAVMESH.md); the synthetic grid shares exact edges
+    // so it is unaffected.
+    //
+    // TWO safety properties keep this parity-neutral and invariant-preserving:
+    //  1. AREA-ANCHORED: a portal is added only when at least one polygon is an AREA kind (WalkingArea /
+    //     WalkablePolygon). Junction connectivity in SUMO always runs THROUGH a walkingArea (or plaza), so a
+    //     sidewalk and a crossing are connected via the area, never directly -- this structurally preserves
+    //     the POC-0 no-shortcut invariant (crossing<->sidewalk is never bridged here) and cannot add a
+    //     sidewalk<->crossing / sidewalk<->sidewalk / crossing<->crossing portal.
+    //  2. ADDITIVE + DEDUP: only pairs with no existing portal are considered, so every pair the shared-edge
+    //     / vertex passes already connected (all of the synthetic-grid and POC-0 pairs) is left byte-identical
+    //     -- this pass strictly ADDS the missing sliver-overlap portals that appear only on irregular geometry.
+    // Genuine area overlap (not a corner touch) is required (PolygonGeometry.TryFindOverlapPortal), and the
+    // portal sits inside the overlap region (inside the walkable union), so A* never routes across a
+    // non-walkable notch -- the exact failure the vertex pass's 3-polygon-corner skip guards against.
+    private static void AddAreaOverlapAdjacency(
+        IReadOnlyList<BakedPolygon> polygons, List<PolygonPortal>[] adjacency)
+    {
+        var n = polygons.Count;
+        for (var i = 0; i < n; i++)
+        {
+            for (var j = i + 1; j < n; j++)
+            {
+                if (!IsArea(polygons[i].Kind) && !IsArea(polygons[j].Kind))
+                {
+                    continue; // area-anchored: never bridge two non-area polygons (invariant safety)
+                }
+
+                if (adjacency[i].Exists(p => p.Neighbor == j))
+                {
+                    continue; // already connected by an earlier pass -- edge/vertex portal wins (dedup)
+                }
+
+                if (PolygonGeometry.TryFindOverlapPortal(polygons[i].Vertices, polygons[j].Vertices, OverlapMargin, out var point))
+                {
+                    adjacency[i].Add(new PolygonPortal(j, point));
+                    adjacency[j].Add(new PolygonPortal(i, point));
+                }
+            }
+        }
+    }
+
+    private static bool IsArea(BakedPolygonKind kind) =>
+        kind is BakedPolygonKind.WalkingArea or BakedPolygonKind.WalkablePolygon;
 
     private static Vec2? FindPortal(IReadOnlyList<Vec2> a, IReadOnlyList<Vec2> b)
     {

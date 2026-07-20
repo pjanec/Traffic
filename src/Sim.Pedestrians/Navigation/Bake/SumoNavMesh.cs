@@ -32,6 +32,43 @@ public sealed class SumoNavMesh : IPedNavigation
 
     public IReadOnlyList<Vec2>? FindPath(Vec2 start, Vec2 goal) => FindPath(start, goal, blockedPolygonIndices: null);
 
+    /// P8-1b (docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md): number of connected components in the
+    /// portal-adjacency graph -- a direct diagnostic for the real-geometry fragmentation bug. A well-connected
+    /// crop is 1 (or a few large) components; ~1000 means the surface shattered and O/D routing will fail.
+    /// Deterministic (BFS over the fixed adjacency); offline, not a per-step cost.
+    public int ConnectedComponentCount()
+    {
+        var n = _polygons.Count;
+        var seen = new bool[n];
+        var components = 0;
+        var stack = new Stack<int>();
+        for (var start = 0; start < n; start++)
+        {
+            if (seen[start])
+            {
+                continue;
+            }
+
+            components++;
+            seen[start] = true;
+            stack.Push(start);
+            while (stack.Count > 0)
+            {
+                var cur = stack.Pop();
+                foreach (var portal in _graph.Neighbors(cur))
+                {
+                    if (!seen[portal.Neighbor])
+                    {
+                        seen[portal.Neighbor] = true;
+                        stack.Push(portal.Neighbor);
+                    }
+                }
+            }
+        }
+
+        return components;
+    }
+
     // ADDITIVE (POC-5, docs/PEDESTRIAN-POC-PLAN.md POC-5 "reroute"; docs/PEDESTRIAN-DESIGN.md §6
     // "full occlusion of a portal triggers a strategic reroute"): same A* as the two-argument
     // overload above, but polygons in `blockedPolygonIndices` are excluded from the adjacency graph

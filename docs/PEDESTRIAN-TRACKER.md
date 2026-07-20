@@ -252,13 +252,18 @@ existing goldens, gate green (649 parity / 168 ped / 2 DotRecast). What's NOT ye
       walkable stubs; pin the fringe set) — *done: SumoData handoff box committed at
       `scenarios/_ped/subarea-box/`; `SubareaBoxBakeTests` bakes the crop into a connected pathable navmesh
       and pins all 48 walkable-fringe edges as baked sidewalks. Re-verify vs a real crop later.*
-- [~] **P8-1b** Bake connectivity on REAL (irregular) geometry — *the sub-area session ran the pipeline on a
-      real ~2 km Geneva crop: the bake produces a navmesh but it fragments into ~1000 disconnected
-      components (synthetic grid → 1), so O/D routing fails and the crowd can't populate (peak 3 vs 203).
-      Root cause + ask in `docs/SUMOSHARP-P8-1-REAL-NET-NAVMESH.md`: `AdjacencyEpsilon=1e-3` too tight for
-      buffered strips + the deliberate 3+-polygon-corner skip. Fix design (in progress):
-      `docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md`. Parity bar: POC-0 fixture + all existing ped
-      tests bit-identical.*
+- [~] **P8-1b** Bake connectivity on REAL (irregular) geometry — *fix LANDED (hermetic gate green); real-net
+      end-to-end acceptance pending a fixture. The sub-area session ran the pipeline on a real ~2 km Geneva
+      crop: the bake fragmented into ~1000 components (synthetic → 1), starving routing (peak 3 vs 203). Root
+      cause (`docs/SUMOSHARP-P8-1-REAL-NET-NAVMESH.md`): independently-buffered strips **overlap** the junction
+      walkingArea by a sliver without sharing exact edges/vertices, so neither geometric pass connected them.
+      Fix (`docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md`): an additive, area-anchored **area-overlap**
+      adjacency pass in `PolygonGraph` (`PolygonGeometry.TryFindOverlapPortal`) that bridges only genuine 2D
+      overlaps and only through an area polygon — preserving the POC-0 no-shortcut invariant by construction
+      and leaving every existing bake bit-identical (dedup). Added `SumoNavMesh.ConnectedComponentCount()` +
+      recorder connectivity diagnostics. `NavmeshConnectivityTests` (5) pin the mini-junction → 1 component /
+      routes-through-area / non-area-never-bridged / synthetic box → 1. **P8-1b-5**: awaiting the sub-area
+      session's `netgenerate --rand` irregular box for real-net end-to-end acceptance.*
 - [~] **P8-2** Appearance-legitimacy layer (`PedSpawnPolicy`) — the no-cheating gate, **orthogonal to
       sim-LOD**; spawn/despawn only at fringe/sink/off-camera, reading the same camera visible-edge set as
       the vehicle `RealismMask`; inert-default bit-identical — *the load-bearing new piece*.

@@ -57,7 +57,14 @@ public static class SubareaFcdRecorder
         int PopulationCap,
         double SpawnRatePerSecond,
         double WalkableLengthKm,
-        int Endpoints);
+        int Endpoints,
+        // P8-1b diagnostics (docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md): navmesh connectivity health.
+        // A well-connected crop is `ConnectedComponents` == 1 (or a few); ~1000 means the bake fragmented and
+        // O/D routing will starve the crowd. `UnreachableSkips` is how many spawn draws were rejected as
+        // unroutable (cross-component) -- near 0 on a healthy crop, near the spawn count on a fragmented one.
+        int WalkablePolygons,
+        int ConnectedComponents,
+        int UnreachableSkips);
 
     // Records the person FCD for `boxDir` into `fcdOut`. `boxDir` must contain net.xml, manifest.json,
     // pois.json (the committed handoff layout). The writer is NOT disposed here -- the caller owns it.
@@ -163,6 +170,9 @@ public static class SubareaFcdRecorder
         }
 
         return new Result(
+            WalkablePolygons: polygons.Count,
+            ConnectedComponents: nav.ConnectedComponentCount(),
+            UnreachableSkips: demand.UnreachableSkipCount,
             Frames: emittedFrames,
             PeakLive: peakLive,
             Spawns: demand.SpawnCount,
