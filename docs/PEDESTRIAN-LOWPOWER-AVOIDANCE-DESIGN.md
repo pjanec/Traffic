@@ -128,4 +128,68 @@ the middle at each junction (robotic). Required for production:
 These are the seam requirements for promoting `LateralWeave` from the single-corridor prototype into the
 real low-power motion path (route-arc-length continuity + junction blend + endpoint anchoring). The next
 prototype should be a **multi-segment route with a bend**, showing the offset flow continuously across the
-join and anchor only at the true O/D.
+join and anchor only at the true O/D. *(Built: `--ped-weave-bend-csv`; continuity + hand-off confirmed.)*
+
+## 9. Composing the weave with live-behaviors (talk / enter-exit / restaurant / car / cross-the-stream)
+
+The live-behaviors (`ActivityTimeline`: Walk/Pause/Dwell/Interact, `SocialPlanner`, `LotCoupling`) compose
+with the weave through **one unifying abstraction — the per-ped lateral profile**. Normally the profile is
+the weave's keep-right lane plan; a live-behavior *overrides the profile's lateral target* for the duration
+of an activity, then blends back. The split that matters:
+
+### 9a. Deterministic displacements — STAY LOW-POWER (most behaviors)
+Anything that moves the ped to the **edge / off-stream** on **its own side** deterministically, without
+traversing the counterflow, is a lateral-target override + an activity segment. Pure, O(1), server==IG — no
+ORCA:
+- **Check phone / rest:** Walk → *drift to the kerb edge* (lateral target = ±MaxFrac·halfWidth) → Pause →
+  drift back → Walk. Stepping aside FIRST is what keeps the pauser from being an in-flow obstacle.
+- **Enter / exit building:** Walk → *drift to the doorway lateral position* (a POI on the building side,
+  §8-2 anchoring) → Dwell(hidden) inside / emerge. `ActivityTimeline` already models hidden dwell.
+- **Stop at restaurant / shop on the SAME side:** route detour to the venue POI + Dwell (seated visible or
+  inside hidden). A venue-side lateral target.
+- **Meet & talk:** `SocialPlanner` ALREADY does this low-power + server==IG — both step aside to a bisector
+  spot on their own side, Interact, resume. It is a lateral-target override by another name.
+- **Board / alight a car at the kerb on its own side:** walk to the curbside car POI, Dwell/vanish (board)
+  or appear (alight). `LotCoupling` (POC-6) already handles board/alight; the curbside case is the same with
+  a kerb lateral target.
+
+All of these are **deterministic** (the target is a planned POI/step-aside, not a reaction), so the low-power
+pose stays a pure function of (route, seed, activity plan, weave field, now) — server==IG preserved, zero
+neighbour state.
+
+### 9b. Reactive stream-crossing — TEMPORARY ORCA, then restore (the minority, your instinct)
+**Crossing the counterflow** — a shop/restaurant/car on the FAR side of the sidewalk — cannot be
+deterministic: a planned straight crossing path would pass *through* the oncoming stream. This genuinely
+needs reciprocal avoidance, so it is exactly where a low-power ped **temporarily promotes to ORCA**:
+
+1. **Promote (planned, not reactive):** as the ped approaches its scheduled crossing point it is pinned
+   high-power (`SetForcedHighPower` / an interest source at the crossing). It joins the ORCA crowd and
+   reactively threads through the counterflow; on the wire it becomes a DR-gated high-power stream (P3-2/3-3),
+   which the IG follows — the reconstruction already absorbs the promote with no pop.
+2. **ORCA excursion:** reactive, path-dependent, NOT a pure function -> that is fine *because it is broadcast*
+   as high-power for the duration.
+3. **Restore the deterministic flow (the load-bearing step):** when the ped reaches the far side, **demote by
+   broadcasting a fresh low-power leg** — a new PathArc/route leg + weave seed + startTime, anchored at the
+   ped's current position projected back onto its route, with the weave's lateral profile blended
+   (smoothstep) from the ped's actual arrival lateral position to the lane plan. Because the fresh leg is
+   broadcast, server==IG is **restored** from the demote instant on: the IG stops following samples and
+   resumes the pure-function reconstruction from the new leg. This reuses the existing reroute-leg
+   re-broadcast (P2-2) + the P3-3 demote handling.
+
+### 9c. Synergy with the LOD / density design
+The stream-crossings are precisely the **areas of interest / density hotspots** where ORCA is already
+promoted (`PLANNING-INTENTS` lever 3). Concentrating cross-stream behaviors (and road crossings) in those
+zones means the reactive ORCA and the crossing conflicts share the same small high-power budget, while the
+bulk everywhere else stays low-power weave. So the composition is: **deterministic weave everywhere +
+deterministic activity displacements (still low-power) + temporary ORCA only for the genuinely-reactive
+stream-crossings, ideally inside the already-promoted zones.**
+
+### 9d. Open decisions
+- The lateral-profile override API: how an `ActivityTimeline` segment carries its lateral target + the
+  blend-in/out lengths, and how that composes with `LateralWeave.Offset` (override vs add).
+- The demote re-anchor: projecting the post-ORCA position onto the route + emitting the fresh leg + the
+  resume-lateral blend value (needs a small wire field on the leg).
+- Promote trigger timing for a scheduled crossing (how far ahead), and whether the crossing target is a POI
+  the demand plan assigned.
+- Whether a genuine in-flow stop (no step-aside possible) promotes the LOCAL region so followers avoid it, or
+  is simply disallowed by always stepping aside first.
