@@ -651,7 +651,7 @@ internal static class Program
 
         var network = Sim.Pedestrians.PedNetworkParser.Load(Path.Combine(args[2], "net.xml"));
         var polygons = Sim.Pedestrians.Navigation.Bake.WalkablePolygonBaker.Bake(network);
-        var nav = new Sim.Pedestrians.Navigation.Bake.SumoNavMesh(polygons, new Sim.Pedestrians.Navigation.Bake.SumoWalkableSpace(polygons));
+        var nav = new Sim.Pedestrians.Navigation.Bake.SumoNavMesh(polygons, new Sim.Pedestrians.Navigation.Bake.SumoWalkableSpace(polygons), network.PedConnections);
         var labels = nav.ComponentLabels();
         var inv = System.Globalization.CultureInfo.InvariantCulture;
         var sb = new System.Text.StringBuilder();
@@ -1528,6 +1528,14 @@ internal static class Program
             (result.ConnectedComponents > 5
                 ? "  [WARN] fragmented navmesh -- crowd will be routing-limited (see docs/PEDESTRIAN-P8-1B-NAVMESH-CONNECTIVITY-DESIGN.md)"
                 : string.Empty));
+        if (result.PedIsolatedComponents > 0)
+        {
+            Console.WriteLine(
+                $"  [WARN] {result.PedIsolatedComponents} ped-isolated component(s): no cross-component pedestrian " +
+                "<connection> in the net -> a likely NET-AUTHORING gap (not a baker miss); no stitch can bridge it. " +
+                "See docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md.");
+        }
+
         return 0;
     }
 

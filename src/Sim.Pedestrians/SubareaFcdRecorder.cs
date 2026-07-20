@@ -79,7 +79,13 @@ public static class SubareaFcdRecorder
         // unroutable (cross-component) -- near 0 on a healthy crop, near the spawn count on a fragmented one.
         int WalkablePolygons,
         int ConnectedComponents,
-        int UnreachableSkips);
+        int UnreachableSkips,
+        // R1 / Q3 (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md §8): walkable components (excluding the main
+        // one) that have ZERO cross-component pedestrian <connection>s in the net -- i.e. no declared ped path
+        // in or out. Such a component is almost certainly a NET-AUTHORING gap (the net author forgot the ped
+        // link), NOT a baker miss: the connection-stitch can't bridge it without fabricating a path. This turns
+        // the by-hand connection scan into an automatic net-sanity signal. 0 on a well-authored net.
+        int PedIsolatedComponents = 0);
 
     // Records the person FCD for `boxDir` into `fcdOut`. `boxDir` must contain net.xml, manifest.json,
     // pois.json (the committed handoff layout). The writer is NOT disposed here -- the caller owns it.
@@ -102,7 +108,11 @@ public static class SubareaFcdRecorder
         var manifest = SubareaManifest.Load(Path.Combine(boxDir, "manifest.json"));
 
         var polygons = WalkablePolygonBaker.Bake(network);
-        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons));
+        // R1: stitch navmesh portals from the net's declared pedestrian connectivity, so junctions whose
+        // split walkingArea pieces the geometric pass won't bridge still bake into one component.
+        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons), network.PedConnections);
+
+        var pedIsolatedComponents = CountPedIsolatedComponents(polygons, nav.ComponentLabels(), network.PedConnections);
         var manager = new PedLodManager(nav, new PedPublisher(), arriveRadius: opt.Radius, dwellSeconds: 1.0);
 
         var fringe = SubareaDemand.FringeEndpointsFromNetwork(network, manifest.WalkableFringeEdges);
@@ -215,6 +225,64 @@ public static class SubareaFcdRecorder
             PopulationCap: knob.PopulationCap,
             SpawnRatePerSecond: knob.SpawnRatePerSecond,
             WalkableLengthKm: knob.WalkableLengthKm,
-            Endpoints: demandSet.Count);
+            Endpoints: demandSet.Count,
+            PedIsolatedComponents: pedIsolatedComponents);
+    }
+
+    // Q3 net-sanity diagnostic: how many walkable components (other than the largest/main) have NO cross-
+    // component pedestrian connection in the net. Each such component is a likely net-authoring gap: peds can
+    // never route in or out of it, and no baker stitch can bridge it (there is nothing declared to stitch).
+    private static int CountPedIsolatedComponents(
+        IReadOnlyList<BakedPolygon> polygons, int[] labels, IReadOnlyList<PedConnection> pedConnections)
+    {
+        var idToIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < polygons.Count; i++)
+        {
+            idToIndex[polygons[i].Id] = i;
+        }
+
+        // Component sizes + the main (largest) component.
+        var size = new Dictionary<int, int>();
+        foreach (var lbl in labels)
+        {
+            size[lbl] = size.TryGetValue(lbl, out var c) ? c + 1 : 1;
+        }
+
+        if (size.Count <= 1)
+        {
+            return 0;
+        }
+
+        var main = -1;
+        var best = -1;
+        foreach (var (lbl, c) in size)
+        {
+            if (c > best) { best = c; main = lbl; }
+        }
+
+        // Components touched by at least one CROSS-component ped connection.
+        var linked = new HashSet<int>();
+        foreach (var conn in pedConnections)
+        {
+            if (idToIndex.TryGetValue(conn.AId, out var a) && idToIndex.TryGetValue(conn.BId, out var b))
+            {
+                if (labels[a] != labels[b])
+                {
+                    linked.Add(labels[a]);
+                    linked.Add(labels[b]);
+                }
+            }
+        }
+
+        var isolated = 0;
+        foreach (var (lbl, _) in size)
+        {
+            if (lbl != main && !linked.Contains(lbl))
+            {
+                isolated++;
+            }
+        }
+
+        return isolated;
     }
 }

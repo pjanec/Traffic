@@ -77,13 +77,23 @@ internal sealed class PolygonGraph
     private readonly List<PolygonPortal>[] _adjacency;
 
     public PolygonGraph(IReadOnlyList<BakedPolygon> polygons)
+        : this(polygons, pedConnections: null)
     {
-        _adjacency = BuildAdjacency(polygons);
+    }
+
+    // R1 (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md): `pedConnections` (from PedNetwork) lets the graph
+    // stitch portals the purely-geometric passes conservatively miss -- polygons the NET declares a pedestrian
+    // walks between (split walkingArea pieces, corner-abutting sidewalks). Null / empty == the geometric-only
+    // behaviour, so every existing caller and committed witness is unaffected.
+    public PolygonGraph(IReadOnlyList<BakedPolygon> polygons, IReadOnlyList<Sim.Pedestrians.PedConnection>? pedConnections)
+    {
+        _adjacency = BuildAdjacency(polygons, pedConnections);
     }
 
     public IReadOnlyList<PolygonPortal> Neighbors(int polygonIndex) => _adjacency[polygonIndex];
 
-    private static List<PolygonPortal>[] BuildAdjacency(IReadOnlyList<BakedPolygon> polygons)
+    private static List<PolygonPortal>[] BuildAdjacency(
+        IReadOnlyList<BakedPolygon> polygons, IReadOnlyList<Sim.Pedestrians.PedConnection>? pedConnections)
     {
         var n = polygons.Count;
         var adjacency = new List<PolygonPortal>[n];
@@ -108,6 +118,7 @@ internal sealed class PolygonGraph
         AddVertexProximityAdjacency(polygons, adjacency);
         AddAreaOverlapAdjacency(polygons, adjacency);
         AddSidewalkContinuationAdjacency(polygons, adjacency);
+        AddNetConnectionAdjacency(polygons, pedConnections, adjacency);
 
         // Fixed iteration order per node: sort each neighbour list ascending by neighbour index,
         // so graph traversal (and hence A*) never depends on the O(n^2) build order above.
@@ -117,6 +128,96 @@ internal sealed class PolygonGraph
         }
 
         return adjacency;
+    }
+
+    // R1 pass (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md): stitch portals for polygon pairs the NET
+    // declares a pedestrian walks between (PedNetwork.PedConnections), where the geometric passes above did not
+    // already connect them. Shortcut-SAFE by construction: it only adds an edge the net vouches for, so it can
+    // never manufacture the POC-0 forbidden shortcut (a pair with no declared ped connection stays unlinked).
+    // Portal point = the midpoint of the closest vertex pair between the two polygons (they abut in netconvert
+    // geometry; the geometric pass merely wouldn't COMMIT to their ambiguous corner). A declared connection
+    // whose polygons are implausibly far apart (> a size-RELATIVE threshold -- large roundabout/arterial
+    // walkingAreas are legitimate, an absolute cap would false-positive on them) is skipped as a data smell.
+    private static void AddNetConnectionAdjacency(
+        IReadOnlyList<BakedPolygon> polygons,
+        IReadOnlyList<Sim.Pedestrians.PedConnection>? pedConnections,
+        List<PolygonPortal>[] adjacency)
+    {
+        if (pedConnections is null || pedConnections.Count == 0)
+        {
+            return;
+        }
+
+        var indexOfId = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < polygons.Count; i++)
+        {
+            indexOfId[polygons[i].Id] = i; // baked-polygon ids are lane ids -> unique
+        }
+
+        foreach (var conn in pedConnections)
+        {
+            if (!indexOfId.TryGetValue(conn.AId, out var a) || !indexOfId.TryGetValue(conn.BId, out var b) || a == b)
+            {
+                continue;
+            }
+
+            if (adjacency[a].Any(p => p.Neighbor == b))
+            {
+                continue; // already connected by a geometric pass -- the geometric portal wins
+            }
+
+            var (dist, mid) = ClosestVertexMidpoint(polygons[a].Vertices, polygons[b].Vertices);
+            var extent = Math.Max(BoundingDiagonal(polygons[a].Vertices), BoundingDiagonal(polygons[b].Vertices));
+            var farThreshold = Math.Max(2.0, 0.25 * extent); // size-relative (Q2): generous for large junctions
+            if (dist > farThreshold)
+            {
+                continue; // declared-but-distant -> a data smell, not a real abutment; do not bridge across space
+            }
+
+            adjacency[a].Add(new PolygonPortal(b, mid));
+            adjacency[b].Add(new PolygonPortal(a, mid));
+        }
+    }
+
+    // Closest vertex pair between two polygons -> (distance, midpoint). Sufficient for netconvert output where
+    // connected polygons abut at (near-)shared vertices; O(Vi*Vj), an offline bake cost.
+    private static (double Dist, Vec2 Mid) ClosestVertexMidpoint(IReadOnlyList<Vec2> a, IReadOnlyList<Vec2> b)
+    {
+        var best = double.MaxValue;
+        var mid = Vec2.Zero;
+        foreach (var pa in a)
+        {
+            foreach (var pb in b)
+            {
+                var d = (pa - pb).AbsSq;
+                if (d < best)
+                {
+                    best = d;
+                    mid = new Vec2((pa.X + pb.X) * 0.5, (pa.Y + pb.Y) * 0.5);
+                }
+            }
+        }
+
+        return (Math.Sqrt(best), mid);
+    }
+
+    private static double BoundingDiagonal(IReadOnlyList<Vec2> verts)
+    {
+        if (verts.Count == 0)
+        {
+            return 0.0;
+        }
+
+        double minX = verts[0].X, minY = verts[0].Y, maxX = minX, maxY = minY;
+        foreach (var v in verts)
+        {
+            if (v.X < minX) minX = v.X;
+            if (v.X > maxX) maxX = v.X;
+            if (v.Y < minY) minY = v.Y;
+            if (v.Y > maxY) maxY = v.Y;
+        }
+
+        return new Vec2(maxX - minX, maxY - minY).Abs;
     }
 
     // Second adjacency pass (see class remarks): connects polygon pairs that share ONLY a corner

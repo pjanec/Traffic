@@ -120,7 +120,42 @@ public static class PedNetworkParser
             }
         }
 
-        return new PedNetwork(sidewalks, crossings, walkingAreas, walkablePolygons, accessPoints);
+        // R1 (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md): read the net's declared pedestrian connectivity.
+        // A <connection from="edge" fromLane="i" to="edge2" toLane="j" .../> names EDGE ids + lane indices; the
+        // corresponding lane id is "edge_i" -- the SAME id space as BakedPolygon.Id (all baked polygons are
+        // keyed by their lane id). A connection is PEDESTRIAN iff BOTH resolved lane ids are pedestrian lanes
+        // (in the sidewalk/crossing/walkingArea sets); vehicle-lane connections resolve to non-ped ids and are
+        // dropped here -- which is exactly what correctly leaves a car-only-linked surface (e.g. the demo-city
+        // dining plaza) isolated rather than fabricating a ped path the net does not declare.
+        var pedLaneIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in sidewalks) pedLaneIds.Add(s.Id);
+        foreach (var c in crossings) pedLaneIds.Add(c.Id);
+        foreach (var w in walkingAreas) pedLaneIds.Add(w.Id);
+
+        var pedConnections = new List<PedConnection>();
+        foreach (var conn in root.Elements("connection"))
+        {
+            var from = (string?)conn.Attribute("from");
+            var to = (string?)conn.Attribute("to");
+            var fromLane = (string?)conn.Attribute("fromLane");
+            var toLane = (string?)conn.Attribute("toLane");
+            if (from is null || to is null || fromLane is null || toLane is null)
+            {
+                continue;
+            }
+
+            var aId = from + "_" + fromLane;
+            var bId = to + "_" + toLane;
+            if (aId != bId && pedLaneIds.Contains(aId) && pedLaneIds.Contains(bId))
+            {
+                pedConnections.Add(new PedConnection(aId, bId));
+            }
+        }
+
+        return new PedNetwork(sidewalks, crossings, walkingAreas, walkablePolygons, accessPoints)
+        {
+            PedConnections = pedConnections,
+        };
     }
 
     private static bool AllowsPedestrian(XElement lane)

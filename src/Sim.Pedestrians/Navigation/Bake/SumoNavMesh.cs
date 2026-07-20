@@ -24,9 +24,17 @@ public sealed class SumoNavMesh : IPedNavigation
     // Overload for callers that already built (and want to share) a SumoWalkableSpace over the
     // same polygon set, instead of this constructing its own.
     public SumoNavMesh(IReadOnlyList<BakedPolygon> polygons, SumoWalkableSpace space)
+        : this(polygons, space, pedConnections: null)
+    {
+    }
+
+    // R1 (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md): pass the net's declared pedestrian connectivity
+    // (PedNetwork.PedConnections) so the graph stitches portals the geometric passes miss. Null == geometric
+    // only (unchanged), so every existing caller and committed witness bakes identically.
+    public SumoNavMesh(IReadOnlyList<BakedPolygon> polygons, SumoWalkableSpace space, IReadOnlyList<Sim.Pedestrians.PedConnection>? pedConnections)
     {
         _polygons = polygons;
-        _graph = new PolygonGraph(polygons);
+        _graph = new PolygonGraph(polygons, pedConnections);
         _space = space;
     }
 

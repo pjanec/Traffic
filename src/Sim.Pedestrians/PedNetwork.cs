@@ -14,7 +14,21 @@ public sealed record PedNetwork(
     IReadOnlyList<PedCrossing> Crossings,
     IReadOnlyList<PedWalkingArea> WalkingAreas,
     IReadOnlyList<WalkablePolygon> WalkablePolygons,
-    IReadOnlyList<WalkableAccessPoint> AccessPoints);
+    IReadOnlyList<WalkableAccessPoint> AccessPoints)
+{
+    // R1 (docs/PEDESTRIAN-R1-CONNECTION-STITCH-DESIGN.md): the net's own DECLARED pedestrian connectivity --
+    // one entry per SUMO <connection> whose both ends are pedestrian lanes (sidewalk/crossing/walkingArea).
+    // The navmesh baker stitches portals from these so a junction whose split walkingArea pieces abut only at
+    // an ambiguous corner (which the purely-geometric adjacency pass conservatively won't bridge) is still one
+    // component -- the net says a pedestrian walks straight through. Init-only with an empty default, so every
+    // existing `new PedNetwork(...)` caller is unaffected.
+    public IReadOnlyList<PedConnection> PedConnections { get; init; } = Array.Empty<PedConnection>();
+}
+
+// A declared pedestrian connection between two baked-polygon LANE ids (the id space of BakedPolygon.Id):
+// a sidewalk lane, crossing lane, or walkingArea lane. Unordered for connectivity (a pedestrian move is
+// bidirectional on the navmesh).
+public sealed record PedConnection(string AId, string BId);
 
 // A pedestrian-usable sidewalk lane on a normal (non-internal, non-crossing, non-walkingarea)
 // edge, i.e. a <lane allow="pedestrian" .../> child of an edge with no "function" attribute.

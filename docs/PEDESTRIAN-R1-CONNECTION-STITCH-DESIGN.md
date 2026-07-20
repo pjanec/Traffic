@@ -9,20 +9,30 @@ The **WHAT** is that requirement + the box's 6-component bake. No code yet.
 Baking `scenarios/_ped/demo_city/box` gives `components=6` = `[1027, 36, 7, 1, 1, 1]`. Localized via
 `--ped-navmesh-components-csv` (`box-components.csv`) + a scan of the net's 3976 `<connection>` elements:
 
-| component | polys | what the net says | verdict |
+| component | polys | what the net says (verified at LANE granularity) | verdict |
 |---|---|---|---|
 | **0** | 1027 | the city | main |
-| **5** | 7 (ring-NW) | **15 pedestrian `<connection>`s cross to comp 0** — the net declares these connected; the geometric adjacency pass just missed them | **baker miss — the R1 fix** |
-| **1** | 36 (dining-plaza) | walkingAreas connect internally (48) + to **vehicle** edges (16); **0** ped connections to any other component; **no** same-junction walkingArea split-pieces elsewhere | **NET-authoring gap — not baker-fixable** |
+| **1** | 36 (dining-plaza) | walkingAreas connect internally + to **vehicle** edges only; **0** ped-lane connections to any other component | **NET-authoring gap** |
+| **5** | 7 (ring-NW) | **0** ped-lane connections to any other component | **NET-authoring gap** |
 | **2/3/4** | 1 each (`:q_*_w0`) | isolated single walkingArea pieces that connect nothing pedestrian | **benign orphan artifacts** |
 
-**Key correction to the handoff's framing.** SumoData reported the whole residual as netconvert
-walkingArea-splitting the baker must stitch. The connection scan shows only **comp 5** is that (a real,
-net-declared link the geometry missed). The **plaza-36 is ped-isolated in the net itself** — its interior grid
-has no `<connection>` giving a pedestrian a way in or out (only car connections to the bounding roads). No
-baker stitch can bridge it without fabricating a path SUMO does not declare (which would be exactly the
-shortcut the POC-0 invariant forbids). So R1 splits into: **a baker fix (this doc, for comp 5 and the general
-class) + a data item bounced back to SumoData (the plaza).**
+**Correction — verified at LANE granularity (supersedes an earlier edge-level read).** A first scan matched
+connections by *edge* id and appeared to show comp 5 with 15 cross-component ped links — implying a baker miss.
+That was wrong: SUMO ped connectivity (and the stitch) is **lane**-level, and re-scanning at lane granularity
+(`from + "_" + fromLane`) finds **1377 ped-lane connections, ALL within-component, ZERO crossing any boundary**.
+The comp-5 "links" were vehicle-lane connections between edges that merely also carry a sidewalk. So **every
+residual — plaza, ring-NW, and the stubs — is ped-isolated in the net itself.** There is no declared pedestrian
+connectivity to stitch across any boundary, so the connection-stitch (correct + shortcut-safe) is a **no-op on
+this box**: it cannot merge what the net does not connect. **All of the box's fragmentation is a citygen
+authoring gap, not a baker limitation** (confirmed by SumoData: `build_dining` downgrades the plaza interior to
+`allow="pedestrian"` but authors no ped link across the perimeter junctions, unlike the park's `build_ped_hub`
+gate edges — and the ring-NW has the same gap).
+
+So R1 delivered two things, and neither is a stitch of *this* box: **(a)** the connection-stitch as a correct,
+tested, general mechanism (it merges any net that *does* declare a geometry-missed ped link — proven by
+`NavConnectionStitchTests`, inert here); and **(b)** the automatic **ped-isolated-component warning** (§ below)
+that turns the by-hand scan into a bake-report signal and correctly flags all 5 residuals as net gaps. The fix
+itself is SumoData's citygen gate-edge pass.
 
 ## 2. Why geometry alone misses comp 5 (and the fix's premise)
 
