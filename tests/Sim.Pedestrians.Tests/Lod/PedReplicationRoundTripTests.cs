@@ -35,6 +35,20 @@ public class PedReplicationRoundTripTests
         public IReadOnlyList<Vec2>? FindPath(Vec2 start, Vec2 goal) => null;
     }
 
+    // W4: a nav that DOES route (straight start->goal) and reports a real 2 m half-width, so a demote's
+    // resume leg has room to weave -- lets the test see the weave actually resume after coming back low-power.
+    private sealed class StraightWideNav : IPedNavigation
+    {
+        public IReadOnlyList<Vec2>? FindPath(Vec2 start, Vec2 goal) => new[] { start, goal };
+
+        public IReadOnlyList<double> HalfWidthsAlong(IReadOnlyList<Vec2> path)
+        {
+            var w = new double[path.Count];
+            Array.Fill(w, 2.0);
+            return w;
+        }
+    }
+
     private const double Dt = 0.1;
 
     [Fact]
@@ -241,5 +255,111 @@ public class PedReplicationRoundTripTests
         Assert.True(maxLateral > 0.2, $"the weave must be active over the wire (reconstructed track leaves the centreline); max lateral was {maxLateral:F3} m");
         Assert.Equal(1, publisher.ActivityTimelineRecordsSent[7]);
         _output.WriteLine($"[W3 measured] weaving ped: {samples} exact over-the-wire samples, max lateral {maxLateral:F3} m");
+    }
+
+    // W4 (docs/PEDESTRIAN-WEAVE-PRODUCTION-DESIGN.md): a weaving ped that PROMOTES to reactive high-power and
+    // then DEMOTES must RESUME the deterministic weave (not fall back to a flat PathArc leg), with no pop
+    // across the LOD switch and server==IG exact again after the demote -- end to end over the real wire.
+    // The production analog of Prototype D2's restore (no l_r needed: the resume leg is re-anchored exactly at
+    // the frozen pose, so the Offset start-taper gives continuity).
+    [Fact]
+    public void WeavingPed_PromotesThenDemotes_ResumesWeave_NoPop_ServerEqualsIgOverTheWire()
+    {
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(new StraightWideNav(), publisher, arriveRadius: 0.3, dwellSeconds: 0.5);
+
+        var widths = new[] { 2.0, 2.0 };
+        var timeline = new ActivityTimeline(
+            t0: 0.0,
+            new ActivitySegment[] { new WalkSegment(new[] { new Vec2(0.0, 10.0), new Vec2(60.0, 10.0) }, 1.3, widths) },
+            seed: 0xBEEF77UL, globalSeed: 42UL);
+        manager.AddPedLively(id: 9, timeline, maxSpeed: 1.3, radius: 0.3, now: 0.0);
+
+        // An entity-attached source sitting at the start promotes the ped early; as it walks east it leaves
+        // the demote radius and comes back low-power (resuming the weave) partway along the leg.
+        var field = new InterestField();
+        field.Register(new InterestSource(new Vec2(2.0, 10.0), promoteRadius: 3.0, demoteRadius: 6.0), InterestSourceKind.EntityAttached);
+        var noEntities = Array.Empty<WorldDisc>();
+
+        var bus = new InMemoryPedReplicationBus();
+        var replicationPublisher = new PedReplicationPublisher(bus.Sink);
+        var receiver = new PedReplicationReceiver(bus.Source);
+        replicationPublisher.Publish(publisher.Events);
+        bus.Source.Pump();
+        receiver.Drain();
+
+        var everPromoted = false;
+        var demotedToWeave = false;
+        var demoteNow = -1.0;
+        var lastPosBeforeDemote = Vec2.Zero;
+        var prevModel = PedDrModel.ActivityTimeline;
+        var prevServerPos = manager.PositionOf(9, 0.0);
+
+        var now = 0.0;
+        for (var i = 0; i < 700; i++)
+        {
+            var beforeCount = publisher.Events.Count;
+            manager.Step(now, Dt, field, noEntities);
+            var stepNow = now;
+            now += Dt;
+
+            var newEvents = new List<PedEvent>();
+            for (var e = beforeCount; e < publisher.Events.Count; e++)
+            {
+                newEvents.Add(publisher.Events[e]);
+            }
+
+            replicationPublisher.Publish(newEvents);
+            bus.Source.Pump();
+            receiver.Drain();
+
+            var model = manager.ModelOf(9);
+            if (model == PedDrModel.FreeKinematic)
+            {
+                everPromoted = true;
+            }
+
+            // Detect the FreeKinematic -> ActivityTimeline demote transition (the weave resume).
+            if (everPromoted && !demotedToWeave && prevModel == PedDrModel.FreeKinematic && model == PedDrModel.ActivityTimeline)
+            {
+                demotedToWeave = true;
+                demoteNow = stepNow;
+                // No teleport across the switch: the first low-power pose is within one step of normal motion
+                // of the last high-power pose (the resume leg is re-anchored at the frozen pose).
+                var here = manager.PositionOf(9, stepNow);
+                Assert.True((here - lastPosBeforeDemote).Abs < (1.3 * Dt) + 1e-6,
+                    $"demote teleported: |Δ| = {(here - lastPosBeforeDemote).Abs:F4} m across the LOD switch");
+            }
+
+            if (model == PedDrModel.FreeKinematic)
+            {
+                lastPosBeforeDemote = manager.PositionOf(9, now);
+            }
+
+            prevModel = model;
+            prevServerPos = manager.PositionOf(9, now);
+        }
+
+        Assert.True(everPromoted, "ped never promoted");
+        Assert.True(demotedToWeave, "ped never demoted back to a weaving ActivityTimeline");
+        Assert.Equal(PedDrModel.ActivityTimeline, manager.ModelOf(9));
+        Assert.Equal(PedDrModel.ActivityTimeline, receiver.Ig.ModelOf(9)); // the demote->timeline switch arrived over the wire
+
+        // server==IG EXACT after the demote (the resume leg reconstructs bit-for-bit), and the weave is active.
+        var exact = 0;
+        var maxLateralAfter = 0.0;
+        for (var t = demoteNow + Dt; t <= now; t += Dt / 2.0)
+        {
+            var server = manager.PositionOf(9, t);
+            var ig = receiver.Ig.ReconstructSample(9, t).Pos;
+            Assert.Equal(server.X, ig.X);
+            Assert.Equal(server.Y, ig.Y);
+            maxLateralAfter = Math.Max(maxLateralAfter, Math.Abs(server.Y - 10.0));
+            exact++;
+        }
+
+        Assert.True(exact > 20, $"expected a fine post-demote sweep, got {exact}");
+        Assert.True(maxLateralAfter > 0.2, $"the weave should be active AFTER demote; max lateral was {maxLateralAfter:F3} m");
+        _output.WriteLine($"[W4 measured] demote@{demoteNow:F1}s -> resumed weave: {exact} exact over-the-wire samples, max lateral after {maxLateralAfter:F3} m");
     }
 }

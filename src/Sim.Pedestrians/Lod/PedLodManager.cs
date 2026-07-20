@@ -66,6 +66,12 @@ public sealed class PedLodManager
         // Default false -> the interest-field-driven promotion path is exactly as before (bit-identical).
         public bool ForcedHighPower;
 
+        // W4 (docs/PEDESTRIAN-WEAVE-PRODUCTION-DESIGN.md): the ped's deterministic-weave seeds, kept across a
+        // promote->demote so a demoted weaving ped RESUMES the weave (emits a weaving ActivityTimeline resume
+        // leg) rather than a flat PathArc leg. 0 == not a weaving ped -> demote stays exactly as before.
+        public ulong WeaveSeed;
+        public ulong WeaveGlobalSeed;
+
         public OrcaHandle HighIndex = OrcaHandle.Invalid;    // handle into the persistent high-power OrcaCrowd, or Invalid when Low
 
         public double StateEnteredAt;             // sim time this ped entered its CURRENT LOD state
@@ -197,12 +203,36 @@ public sealed class PedLodManager
             Timeline = timeline,
             PathStartTime = now,
             StateEnteredAt = now,
+            WeaveSeed = timeline.Seed,
+            WeaveGlobalSeed = timeline.GlobalSeed,
         };
 
         _peds.Add(id, entry);
         _publisher.PublishActivityTimeline(id, timeline, now);
         _publisher.PublishSwitch(id, PedDrModel.PathArc, PedDrModel.ActivityTimeline, now);
         return id;
+    }
+
+    // W4: force a routed path to START exactly at `anchor` (the frozen demote pose), so a resume leg's
+    // pose at arc 0 IS the ped's current position -- machine-precision no-pop across the LOD switch. Drops
+    // any leading routed point that coincides with the anchor (avoids a zero-length first segment).
+    private static IReadOnlyList<Vec2> ReanchorAt(IReadOnlyList<Vec2> routed, Vec2 anchor)
+    {
+        var pts = new List<Vec2>(routed.Count + 1) { anchor };
+        foreach (var p in routed)
+        {
+            if ((p - anchor).Abs > 1e-9 || pts.Count > 1)
+            {
+                pts.Add(p);
+            }
+        }
+
+        if (pts.Count < 2)
+        {
+            pts.Add(anchor); // degenerate route -- keep a valid 2-point leg
+        }
+
+        return pts;
     }
 
     // ADDITIVE (P2-3, docs/PEDESTRIAN-TASKS.md; docs/PEDESTRIAN-NAVMESH-CONTRACT.md): removes a ped
@@ -390,19 +420,44 @@ public sealed class PedLodManager
         {
             var e = _peds[id];
             var pos = frozenPos[id];
-            var newPath = _navigation.FindPath(pos, e.Destination) ?? new[] { pos, e.Destination };
+            var routed = _navigation.FindPath(pos, e.Destination) ?? new[] { pos, e.Destination };
+            // Re-anchor the resume leg EXACTLY at the frozen high-power pose, so the low-power pose at the
+            // demote instant is the ped's current position to machine precision (no pop across the LOD switch).
+            var newPath = ReanchorAt(routed, pos);
 
             _highController.RemoveRoute(e.HighIndex);
             _highCrowd.Remove(e.HighIndex);
             _highPowerLiveCount--;
 
-            e.Model = PedDrModel.PathArc;
-            e.Path = newPath;
-            e.PathStartTime = now;
             e.StateEnteredAt = now;
+            e.PathStartTime = now;
             e.HighIndex = OrcaHandle.Invalid;
-            _publisher.PublishPathArc(id, newPath, now, e.MaxSpeed, now);
-            _publisher.PublishSwitch(id, PedDrModel.FreeKinematic, PedDrModel.PathArc, now);
+
+            if (e.WeaveSeed != 0)
+            {
+                // W4: a weaving ped RESUMES the deterministic weave -- emit a single-Walk ActivityTimeline
+                // resume leg (exact ActivityTimelineWire, unlike the quantized PathArc record) carrying the
+                // ped's own weave seed + the baked per-vertex half-widths. The Offset start-taper is 0 at the
+                // re-anchored start, so the pose leaves `pos` with no pop and weaves back in over the lead-in.
+                var widths = _navigation.HalfWidthsAlong(newPath);
+                var resume = new ActivityTimeline(
+                    now,
+                    new ActivitySegment[] { new WalkSegment(newPath, e.MaxSpeed, widths) },
+                    e.WeaveSeed, e.WeaveGlobalSeed);
+
+                e.Model = PedDrModel.ActivityTimeline;
+                e.Timeline = resume;
+                e.Path = newPath;
+                _publisher.PublishActivityTimeline(id, resume, now);
+                _publisher.PublishSwitch(id, PedDrModel.FreeKinematic, PedDrModel.ActivityTimeline, now);
+            }
+            else
+            {
+                e.Model = PedDrModel.PathArc;
+                e.Path = newPath;
+                _publisher.PublishPathArc(id, newPath, now, e.MaxSpeed, now);
+                _publisher.PublishSwitch(id, PedDrModel.FreeKinematic, PedDrModel.PathArc, now);
+            }
         }
 
         if (_highPowerLiveCount > 0)
