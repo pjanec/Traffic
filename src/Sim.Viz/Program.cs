@@ -75,6 +75,7 @@ internal static class Program
             "--ped-weave-cross-csv" => RunPedWeaveCrossCsv(args),
             "--ped-weave-cross2-csv" => RunPedWeaveCross2Csv(args),
             "--ped-weave-bands-csv" => RunPedWeaveBandsCsv(args),
+            "--ped-net-polys-csv" => RunPedNetPolysCsv(args),
             _ => RunSingle(args),
         };
     }
@@ -633,6 +634,36 @@ internal static class Program
 
         System.IO.File.WriteAllText(outPath, sb.ToString());
         Console.WriteLine($"wrote {outPath}  frames={(int)(tMax / dt) + 1} length={length} (ambient weave + phone + doorway actors)");
+        return 0;
+    }
+
+    // Dumps the baked walkable polygon rings of a box (sidewalks/crossings/walkingAreas/plazas) as a flat CSV
+    // -- background context for a crowd render. One row per vertex: polyId,kind,x,y (ring closes implicitly).
+    private static int RunPedNetPolysCsv(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("error: --ped-net-polys-csv requires <out.csv> <boxDir>");
+            return 2;
+        }
+
+        var network = Sim.Pedestrians.PedNetworkParser.Load(Path.Combine(args[2], "net.xml"));
+        var polygons = Sim.Pedestrians.Navigation.Bake.WalkablePolygonBaker.Bake(network);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("poly,kind,x,y\n");
+        for (var i = 0; i < polygons.Count; i++)
+        {
+            var p = polygons[i];
+            foreach (var v in p.Vertices)
+            {
+                sb.Append(i).Append(',').Append(p.Kind).Append(',')
+                  .Append(v.X.ToString("F2", inv)).Append(',').Append(v.Y.ToString("F2", inv)).Append('\n');
+            }
+        }
+
+        System.IO.File.WriteAllText(args[1], sb.ToString());
+        Console.WriteLine($"wrote {args[1]}  polys={polygons.Count}");
         return 0;
     }
 
