@@ -193,3 +193,65 @@ stream-crossings, ideally inside the already-promoted zones.**
   the demand plan assigned.
 - Whether a genuine in-flow stop (no step-aside possible) promotes the LOCAL region so followers avoid it, or
   is simply disallowed by always stepping aside first.
+
+## 10. Design proposals for the §9d open decisions
+
+### 10.1 The lateral-profile abstraction (concrete)
+The low-power pose is one composition:
+
+```
+pos(s, now) = centreline(s) + rightNormal(s) · lateral(s, now)
+lateral(s, now) =
+    default (in-flow):        c(a, now) ± weaveMag(s, seed, room)          // the weave, relative to the moving interface
+    within an activity window: blend( weaveLateral , activityTarget , smoothstep over lead-in/out )
+```
+
+An `ActivityTimeline` segment gains an optional **lateral target**:
+`{ Mode: None | AbsoluteOffset | Side(kerb|building) | PoiAnchored, Value, LeadInMeters, LeadOutMeters }`.
+The pose evaluator, at arc-length `s`, finds the active segment's target (if any) and smoothsteps between the
+weave lateral and that **absolute** corridor-lateral target (absolute, because an edge/doorway/step-aside
+position is fixed, not relative to the moving interface). Everything is on the broadcast timeline, so the IG
+reconstructs the identical profile. This ONE mechanism expresses the weave, `SocialPlanner`'s step-aside, the
+doorway/venue/kerb approaches, and the phone-check drift — they differ only in `Value`/`Mode`.
+
+### 10.2 Promote → ORCA → demote for stream-crossing (concrete)
+- **Trigger (deterministic, server-side):** the demand plan assigns a far-side POI; the router marks the
+  crossing arc-length `s_x`. At `s_x − leadPromote` the server pins the ped high-power (`SetForcedHighPower`
+  / a crossing interest source). Scheduled, not reactive.
+- **Excursion:** ORCA steers the ped toward the far-side entry point while reciprocally avoiding the
+  counterflow; broadcast as a DR-gated high-power stream (P3-2/3-3), which the IG follows.
+- **Demote / restore (the load-bearing step):** on arrival at the far side, the server (a) projects the ped's
+  position onto its far-side route continuation → resume arc-length `s_r`; (b) emits a **fresh low-power
+  PathArc leg** from `s_r` (weave seed + startTime) carrying a **resume-lateral `l_r`** = the ped's current
+  projected lateral offset; (c) clears the high-power pin. The IG gets the demote DR-switch + fresh leg +
+  `l_r`; P3-3 absorbs the switch; the weave blends from `l_r` to the lane plan over `LeadIn`. **server==IG is
+  exact again from the demote instant.**
+- **Wire delta:** the fresh-leg record gains ONE scalar (`l_r`); the promote/demote ride the existing
+  lifecycle + DR-switch records; the excursion reuses the existing high-power sample stream. No new topic.
+
+### 10.3 The reconstruction-fidelity guarantee
+Server==IG is **exact** (pure function) for every low-power ped and every low-power *phase* of a ped —
+i.e. the whole 9a set and the before-promote / after-demote spans. It is **within render tolerance**
+(≤ ~0.25 m, P3-3) only during an actual ORCA excursion, which is broadcast. Because excursions are the
+minority (far-side crossings only) and concentrated in hotspots (10.4 / §9c), the exactly-reconstructed
+low-power bulk dominates both the wire and the picture.
+
+### 10.4 In-flow stop policy
+Default: a stop ALWAYS steps aside first (9a), so it is never an in-flow obstacle and forces no neighbour
+reaction. Fallback for a genuinely unavoidable in-flow stop: register a transient interest source at the
+stopped ped so local followers promote, avoid, and demote when it clears — rare by construction.
+
+## 11. Prototype roadmap (well-specified, success-criteria'd)
+
+| # | Prototype | Exercises | Success criteria | De-risks | Deps |
+|---|---|---|---|---|---|
+| A | straight-corridor weave + moving interface *(BUILT — `--ped-weave-csv`)* | §7 | opposing flows separate; bands not lanes; centre populated; interface meanders in space+time | the core weave look | — |
+| B | multi-segment route with a bend *(BUILT — `--ped-weave-bend-csv`)* | §8-1/§8-3 | offset flows continuously through the corner; anchors only at true O/D | route continuity + junction hand-off | — |
+| C | **activity lateral-override (low-power)** | §9a, §10.1 | a ped drifts to the kerb → Pause(phone) → rejoins; a ped drifts to a doorway → hidden; neighbours unaffected; **server==IG exact** (bit-identical reconstruction) | the lateral-profile API; that most behaviours need NO ORCA | §10.1 API |
+| D | **cross-stream ORCA excursion + restore** | §9b, §10.2 | a low-power ped promotes, reactively crosses the counterflow to a far-side POI, demotes; resumes the deterministic weave **with no pop**; server==IG **exact before promote and after demote**, within-tolerance during | the promote/demote/re-anchor loop; the "restore" | §10.2 wire delta (`l_r`), P3-3 |
+| E | **composed demo on the synthetic mesh** | §9 all + density | weave + all 9a behaviours + a few 9b crossings at the calibrated density read as a believable crowd; no pass-throughs in the low-power bulk; crossings avoid cleanly | the whole story end-to-end | SumoData synthetic mesh + `edge_fields.json` |
+
+Sequencing: C is next and unblocked (pure low-power, on a clean box) — it proves the lateral-profile API and
+that 9a needs no ORCA. D follows (the one genuinely-reactive case, end-to-end). E is the acceptance demo and
+waits on the synthetic mesh. Each prototype must show its **server==IG** column literally (a reconstruction
+diff), not just look right — the same "necessary, not sufficient" discipline as the navmesh witnesses.
