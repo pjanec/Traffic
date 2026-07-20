@@ -11,6 +11,7 @@ using Sim.Pedestrians.Navigation.Bake;
 using Sim.Pedestrians.Obstacles;
 using Sim.Pedestrians.Parking;
 using Sim.Replication;
+using System.Text.RegularExpressions;
 using static Sim.Viz.PayloadBuilder;
 
 namespace Sim.Viz;
@@ -1560,6 +1561,279 @@ internal static class SceneGen
             new double[] { 5.0, 1.8 },
             Dt * Decimate,
             frames.ToArray());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Scene -- "Dense city: cars + weaving crowd" (W1-W4 on the demo-city, docs/SUMOSHARP-DEMO-CITY-
+    // REQUIREMENTS.md): the big-and-dense version of BuildWeaveCity. Instead of one junction, this runs
+    // on the committed synthetic ~4.75 km demo-city box (real drivable grid + baked sidewalks) and frames
+    // an auto-picked, sidewalk-dense ~900 m downtown window. A dense pedestrian crowd (weave ON) is routed
+    // O-D across the crop's real sidewalks/crossings via the SAME PedDemand + PedLodManager path as every
+    // other ped demo (rendered from PositionOf, so each disc is the already-woven low-power pose), and a
+    // dense LOCAL car flow drives the crop's real road grid -- ordinary Engine + Krauss vehicles, each
+    // routed between two edges inside the crop so traffic stays in-frame. The network geometry, the cars,
+    // and the pedestrians are all cropped to the window so the payload stays small and the view is a busy
+    // city block, not a 5 km map of specks.
+    // ---------------------------------------------------------------------------------------
+    internal static ScenePayload BuildDenseCity(string boxDir)
+    {
+        var netPath = Path.Combine(boxDir, "net.xml");
+        var model = NetworkParser.Parse(netPath);
+        var fullNet = BuildNetwork(model);
+
+        // ---- pedestrian navmesh (mirrors SubareaFcdRecorder's proven demo-city load) ----
+        var pedNetwork = PedNetworkParser.Load(netPath);
+        var polygons = WalkablePolygonBaker.Bake(pedNetwork);
+        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons), pedNetwork.PedConnections);
+
+        // ---- auto-pick the densest CROP window from sidewalk-polygon centroids (same "find the busy
+        // downtown block" idea the earlier recorded demo used), then frame everything to it ----
+        const double Crop = 900.0;
+        var bins = new Dictionary<(int, int), int>();
+        foreach (var poly in polygons)
+        {
+            if (poly.Kind != BakedPolygonKind.SidewalkSegment) continue;
+            var key = ((int)Math.Round(poly.Centroid.X / Crop), (int)Math.Round(poly.Centroid.Y / Crop));
+            bins[key] = bins.TryGetValue(key, out var c) ? c + 1 : 1;
+        }
+
+        var best = bins.Count > 0
+            ? bins.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First().Key
+            : (0, 0);
+        var cxBin = best.Item1 * Crop;
+        var cyBin = best.Item2 * Crop;
+        var x0 = cxBin - Crop / 2;
+        var y0 = cyBin - Crop / 2;
+        var x1 = x0 + Crop;
+        var y1 = y0 + Crop;
+        bool In(double x, double y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+        bool InV(Vec2 p) => In(p.X, p.Y);
+
+        // ---- pedestrian O-D endpoints = sidewalk spine midpoints inside the crop (guaranteed walkable),
+        // deterministically thinned to a spread set so demand crisscrosses the whole block ----
+        var allEndpoints = new List<Vec2>();
+        foreach (var poly in polygons)
+        {
+            if (poly.Kind != BakedPolygonKind.SidewalkSegment) continue;
+            if (!InV(poly.Centroid)) continue;
+            var spine = poly.Spine;
+            var pt = spine is { Count: > 0 } ? spine[spine.Count / 2] : poly.Centroid;
+            if (InV(pt)) allEndpoints.Add(pt);
+        }
+
+        const int MaxEndpoints = 90;
+        var odPoints = new List<Vec2>();
+        if (allEndpoints.Count <= MaxEndpoints)
+        {
+            odPoints.AddRange(allEndpoints);
+        }
+        else
+        {
+            var stride = (double)allEndpoints.Count / MaxEndpoints;
+            for (var k = 0; k < MaxEndpoints; k++) odPoints.Add(allEndpoints[(int)(k * stride)]);
+        }
+
+        var config = new Sim.Pedestrians.Demand.PedDemandConfig
+        {
+            Origins = odPoints,
+            Destinations = odPoints,
+            SpawnRatePerSecond = 8.0,
+            PopulationCap = 160,
+            Seed = 20260721UL,
+            MaxSpeed = 1.3,
+            Radius = 0.3,
+            ArrivalRadius = 0.6,
+            Liveliness = new Sim.Pedestrians.Demand.PedLivelinessConfig
+            {
+                PauseProbability = 0.15,
+                MinPauseSeconds = 2.0,
+                MaxPauseSeconds = 5.0,
+                MaxPausesPerTrip = 1,
+                PauseAnimTag = "idle",
+            },
+            EnableWeave = true,
+        };
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, arriveRadius: 0.3, dwellSeconds: 1.0);
+        var demand = new Sim.Pedestrians.Demand.PedDemand(config, nav, manager, startTime: 0.0);
+        var field = new InterestField();
+        var noEntities = Array.Empty<WorldDisc>();
+
+        // ---- cars: real Engine on the full net; a dense LOCAL flow on the crop's drivable edges ----
+        var engine = new Engine();
+        engine.LoadNetwork(netPath);
+        var vtype = engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
+
+        // Drivable edges = the union of edges the committed car demand actually uses (guaranteed
+        // routable), restricted to those whose mid-vertex is in the crop. Each carries its outermost
+        // lane index -- lane 0 is the sidewalk here (the committed routes depart on lane 1), so cars
+        // spawn on the highest-index (car) lane.
+        var routeEdges = ReadDrivableEdges(Path.Combine(boxDir, "scenario.rou.xml"));
+        var cropEdges = new List<(string Id, int Lane)>();
+        foreach (var eid in routeEdges)
+        {
+            if (!model.EdgesById.TryGetValue(eid, out var edge) || edge.Lanes.Count == 0) continue;
+            var carLane = edge.Lanes[^1];
+            if (carLane.Shape.Count == 0) continue;
+            var mid = carLane.Shape[carLane.Shape.Count / 2];
+            if (In(mid.X, mid.Y)) cropEdges.Add((eid, carLane.Index));
+        }
+
+        // Deterministic SplitMix64 stream for from/to edge picks (CLAUDE.md forbids System.Random).
+        var rng = 0x243F6A8885A308D3UL;
+        uint NextRng()
+        {
+            rng += 0x9E3779B97F4A7C15UL;
+            var z = rng;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            return (uint)(z ^ (z >> 31));
+        }
+
+        const double Dt = 0.5;
+        const int steps = 240;              // 120 s simulated
+        const int Decimate = 1;             // 240 recorded frames
+        const int CarTargetConcurrent = 110; // top up toward this many in-frame cars each step
+        const int CarSpawnPerStep = 5;       // metered so distinct edges are used, no spawn pile-up
+
+        var slotByHandle = new Dictionary<uint, int>();
+        var frames = new List<FramePayload>();
+        var discsKeyedPerFrame = new List<List<(string Key, double[] Disc)>>();
+
+        var now = 0.0;
+        for (var step = 0; step < steps; step++)
+        {
+            // Top up the local car flow: spawn a few cars from random crop edges to random crop edges
+            // (engine routes between them -- short, mostly-in-frame paths), while under the concurrent
+            // target. Unroutable/occupied picks are skipped for this step, not retried forever.
+            if (cropEdges.Count >= 2)
+            {
+                var live = engine.VehicleHandles.Length;
+                for (var s = 0; s < CarSpawnPerStep && live < CarTargetConcurrent; s++)
+                {
+                    var (fromId, fromLane) = cropEdges[(int)(NextRng() % (uint)cropEdges.Count)];
+                    var (toId, _) = cropEdges[(int)(NextRng() % (uint)cropEdges.Count)];
+                    if (fromId == toId) continue;
+                    try
+                    {
+                        engine.SpawnVehicle(vtype, fromId, toId, departPos: 5.0, departSpeed: 0.0, departLane: fromLane);
+                        live++;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // no route / bad insertion this pick -- skip, try again next step
+                    }
+                }
+            }
+
+            engine.Step();
+            demand.Step(now, Dt, field, noEntities);
+            now += Dt;
+
+            if (step % Decimate != 0) continue;
+
+            // cars in crop -> fixed slot per stable handle
+            var handles = engine.VehicleHandles;
+            var px = engine.PosX;
+            var py = engine.PosY;
+            var pa = engine.Angle;
+            for (var i = 0; i < handles.Length; i++)
+            {
+                if (!In(px[i], py[i])) continue;
+                if (!slotByHandle.ContainsKey(handles[i].Index))
+                {
+                    slotByHandle[handles[i].Index] = slotByHandle.Count;
+                }
+            }
+
+            var v = new double[slotByHandle.Count][];
+            for (var i = 0; i < handles.Length; i++)
+            {
+                if (!In(px[i], py[i])) continue;
+                v[slotByHandle[handles[i].Index]] = new[] { R(px[i]), R(py[i]), R(pa[i]) };
+            }
+
+            // pedestrians in crop -> PositionOf is already the woven pose (weave lives in the shared
+            // ActivityTimeline evaluator, W1); colour walking vs paused.
+            var discs = new List<(string, double[])>(demand.LiveIds.Count);
+            foreach (var id in demand.LiveIds)
+            {
+                var pos = manager.PositionOf(id, now);
+                if (!InV(pos)) continue;
+                var animTag = manager.AnimTagOf(id, now);
+                var kind = animTag == ActivityTimeline.WalkAnimTag ? KindPedestrian : KindPedPaused;
+                discs.Add(($"ped{id}", new[] { R(pos.X), R(pos.Y), 0.3, (double)kind }));
+            }
+
+            frames.Add(new FramePayload(v, Array.Empty<double[]?>()));
+            discsKeyedPerFrame.Add(discs);
+        }
+
+        NormalizeVehicleSlots(frames, slotByHandle.Count);
+        AssignStableDiscSlots(frames, discsKeyedPerFrame);
+
+        var cropNet = CropNetwork(fullNet, pedNetwork, netPath, x0, y0, x1, y1);
+
+        return new ScenePayload(
+            "Dense city: cars + weaving pedestrians",
+            "A busy ~900 m block of the synthetic ~4.75 km demo-city: a dense pedestrian crowd routed "
+            + "O-D across the real sidewalks, crossings, and walkingareas with the deterministic lateral "
+            + "WEAVE on (every disc is the low-power woven pose -- a pure function of route + seed + baked "
+            + "width + time, server == IG, no neighbour queries), sharing the streets with a dense local "
+            + "car flow on the real road grid (ordinary Engine + Krauss vehicles, each routed between two "
+            + "edges inside the block). This is the weave at city density: hundreds of opposing / "
+            + "overtaking pedestrians thread the same sidewalks without passing through each other, at "
+            + "O(1) per ped. Purple = walking, yellow = paused; boxes = cars.",
+            new double[] { R(x0), R(y0), R(x1), R(y1) },
+            cropNet,
+            new double[] { 5.0, 1.8 },
+            Dt * Decimate,
+            frames.ToArray());
+    }
+
+    // Read the union of drivable edge ids from a committed car route file (every `edges="..."` token).
+    // These are exactly the edges the demo-city's own SUMO demand routes over, so each is a real,
+    // routable road edge -- a safe universe to synthesize a local car flow from without re-deriving
+    // drivability from lane vClasses.
+    private static IReadOnlyList<string> ReadDrivableEdges(string rouPath)
+    {
+        var edges = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (!File.Exists(rouPath)) return edges;
+        foreach (Match m in Regex.Matches(File.ReadAllText(rouPath), "edges=\"([^\"]*)\""))
+        {
+            foreach (var tok in m.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (seen.Add(tok)) edges.Add(tok);
+            }
+        }
+
+        return edges;
+    }
+
+    // Restrict a full-network payload to a crop rectangle: keep only lanes / junctions / crossings /
+    // signals with any vertex inside it, so the drawn network (and the payload) is the framed block, not
+    // the whole 5 km map. TL logics are kept whole (tiny); their signal heads are position-filtered.
+    private static NetworkPayload CropNetwork(
+        NetworkPayload net, PedNetwork pedNetwork, string netPath, double x0, double y0, double x1, double y1)
+    {
+        bool In(double x, double y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+        bool AnyFlat(double[] flat)
+        {
+            for (var p = 0; p + 1 < flat.Length; p += 2) if (In(flat[p], flat[p + 1])) return true;
+            return false;
+        }
+
+        var lanes = net.Lanes.Where(l => AnyFlat(l.Shape)).ToArray();
+        var junctions = net.Junctions.Where(j => AnyFlat(j.Shape)).ToArray();
+        var signals = net.Signals.Where(s => In(s.X, s.Y)).ToArray();
+
+        var withCross = WithCrossings(net, pedNetwork, netPath);
+        var crossings = withCross.Crossings.Where(c => AnyFlat(c.Outline)).ToArray();
+        var pedSignals = withCross.PedSignals.Where(s => In(s.X, s.Y)).ToArray();
+
+        return new NetworkPayload(lanes, junctions, net.Tls, signals, crossings, pedSignals);
     }
 
     // ---------------------------------------------------------------------------------------

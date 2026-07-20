@@ -46,6 +46,7 @@ internal static class Program
             Console.Error.WriteLine("       Sim.Viz --ped-waiter <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-lively-crowd <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-weave-city <outPath>");
+            Console.Error.WriteLine("       Sim.Viz --ped-dense-city <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-remote <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-subarea-fcd <outPath.fcd.xml> [--dial d] [--seconds s] [--box <dir>]");
             return args.Length == 0 ? 2 : 0;
@@ -68,6 +69,7 @@ internal static class Program
             "--ped-waiter" => RunPedWaiter(args),
             "--ped-lively-crowd" => RunPedLivelyCrowd(args),
             "--ped-weave-city" => RunPedScene(args, "--ped-weave-city", SceneGen.BuildWeaveCity),
+            "--ped-dense-city" => RunPedDenseCity(args),
             "--ped-remote" => RunPedRemote(args),
             "--ped-subarea-fcd" => RunPedSubareaFcd(args),
             "--ped-weave-csv" => RunPedWeaveCsv(args),
@@ -260,6 +262,45 @@ internal static class Program
     // ---------------------------------------------------------------------------------------
     // Pedestrian showcase: "Dodge / reroute" (local avoidance + BlockerRegistry/RerouteDriver).
     // ---------------------------------------------------------------------------------------
+    // "Dense city": the demo-city box (not the single junction), auto-framed to a busy ~900 m block,
+    // with a dense weave-on crowd + a dense local car flow. Reports the peak in-frame car and ped counts
+    // so a run is self-evidently dense, not just claimed to be.
+    private static int RunPedDenseCity(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("error: --ped-dense-city requires an output path");
+            return 2;
+        }
+
+        var outPath = args[1];
+        var boxDir = Path.Combine(RepoRoot(), "scenarios", "_ped", "demo_city", "box");
+
+        var scene = SceneGen.BuildDenseCity(boxDir);
+        var payload = new ReplayData(new[] { scene });
+        if (!WriteHtml(payload, scene.Name, outPath))
+        {
+            return 2;
+        }
+
+        var maxCars = 0;
+        var maxPeds = 0;
+        foreach (var frame in scene.Frames)
+        {
+            var c = 0;
+            foreach (var vv in frame.V) if (vv is not null) c++;
+            if (c > maxCars) maxCars = c;
+            var n = 0;
+            foreach (var d in frame.D) if (d is not null) n++;
+            if (n > maxPeds) maxPeds = n;
+        }
+
+        var size = new FileInfo(outPath).Length;
+        Console.WriteLine(
+            $"wrote {outPath}  ({size} bytes)  frames={scene.Frames.Length} view={scene.View[0]},{scene.View[1]}..{scene.View[2]},{scene.View[3]} maxCars={maxCars} maxPeds={maxPeds}");
+        return 0;
+    }
+
     private static int RunPedScene(string[] args, string flag, Func<string, ScenePayload> build)
     {
         if (args.Length < 2)

@@ -321,6 +321,9 @@ try ped-weave "Deterministic weave — no pass-through (on/off)" \
 try ped-weave-city "City: cars + weaving pedestrians" \
   "A routed O-D pedestrian crowd on the junction's real sidewalks, crossings, and walkingareas -- with the deterministic lateral weave turned ON -- sharing the scene with cars driving cross-traffic through the junction (real Engine + Krauss). This is what the weave is for: without it, low-power peds walk exact centrelines and opposing/overtaking peds pass straight through each other on a shared sidewalk; with it, each ped's pose is offset onto its own deterministic half of the baked walkable width (a pure function of route+seed+width+time -- server==IG, no neighbour queries), so the crowd threads the sidewalks with few overlaps. Purple = walking, yellow = paused; boxes = cars (PedDemand EnableWeave + Engine, W1-W4)." \
   "Pedestrians" demo_ped weave-city ped-weave-city
+try ped-dense-city "Dense city: cars + weaving pedestrians" \
+  "A busy ~900 m block of the synthetic ~4.75 km demo-city: hundreds of pedestrians routed O-D across the real sidewalks/crossings with the deterministic weave ON (every disc is the low-power woven pose -- a pure function of route+seed+baked width+time, server==IG, no neighbour queries), sharing the streets with a dense local car flow on the real signalized road grid (ordinary Engine + Krauss vehicles routed edge-to-edge inside the block). The weave at city density: opposing/overtaking peds thread the same sidewalks without passing through each other, at O(1) per ped -- auto-framed to the densest downtown block of the committed box (PedDemand EnableWeave + Engine, W1-W4)." \
+  "Pedestrians" demo_ped dense-city ped-dense-city
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \
