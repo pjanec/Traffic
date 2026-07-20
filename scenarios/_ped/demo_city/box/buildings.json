@@ -1,0 +1,708 @@
+{
+  "schema": "buildings/v1",
+  "generator": "compose.py",
+  "seed": 42,
+  "net": "scenario.net.xml",
+  "buildings": [
+    {
+      "id": "bldg_mall_0",
+      "footprint": [
+        [
+          4140.0,
+          4270.0
+        ],
+        [
+          4360.0,
+          4270.0
+        ],
+        [
+          4360.0,
+          4410.0
+        ],
+        [
+          4140.0,
+          4410.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 14.0,
+      "type": "mall",
+      "zone": "zone_retail"
+    },
+    {
+      "id": "bldg_garage_0",
+      "footprint": [
+        [
+          4260.0,
+          4260.0
+        ],
+        [
+          4300.0,
+          4260.0
+        ],
+        [
+          4300.0,
+          4300.0
+        ],
+        [
+          4260.0,
+          4300.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 4.0,
+      "type": "garage",
+      "zone": "zone_retail"
+    },
+    {
+      "id": "bldg_garage_1",
+      "footprint": [
+        [
+          2872.0,
+          2832.0
+        ],
+        [
+          2908.0,
+          2832.0
+        ],
+        [
+          2908.0,
+          2868.0
+        ],
+        [
+          2872.0,
+          2868.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 4.0,
+      "type": "garage",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_0",
+      "footprint": [
+        [
+          1655.0,
+          1655.0
+        ],
+        [
+          1795.0,
+          1655.0
+        ],
+        [
+          1795.0,
+          1795.0
+        ],
+        [
+          1655.0,
+          1795.0
+        ]
+      ],
+      "levels": 11,
+      "height_m": 38.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_1",
+      "footprint": [
+        [
+          1655.0,
+          2155.0
+        ],
+        [
+          1795.0,
+          2155.0
+        ],
+        [
+          1795.0,
+          2295.0
+        ],
+        [
+          1655.0,
+          2295.0
+        ]
+      ],
+      "levels": 8,
+      "height_m": 28.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_2",
+      "footprint": [
+        [
+          1655.0,
+          2655.0
+        ],
+        [
+          1795.0,
+          2655.0
+        ],
+        [
+          1795.0,
+          2795.0
+        ],
+        [
+          1655.0,
+          2795.0
+        ]
+      ],
+      "levels": 16,
+      "height_m": 56.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_3",
+      "footprint": [
+        [
+          1905.0,
+          1905.0
+        ],
+        [
+          2045.0,
+          1905.0
+        ],
+        [
+          2045.0,
+          2045.0
+        ],
+        [
+          1905.0,
+          2045.0
+        ]
+      ],
+      "levels": 15,
+      "height_m": 52.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_4",
+      "footprint": [
+        [
+          1905.0,
+          2905.0
+        ],
+        [
+          2045.0,
+          2905.0
+        ],
+        [
+          2045.0,
+          3045.0
+        ],
+        [
+          1905.0,
+          3045.0
+        ]
+      ],
+      "levels": 15,
+      "height_m": 52.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_5",
+      "footprint": [
+        [
+          2155.0,
+          1655.0
+        ],
+        [
+          2295.0,
+          1655.0
+        ],
+        [
+          2295.0,
+          1795.0
+        ],
+        [
+          2155.0,
+          1795.0
+        ]
+      ],
+      "levels": 12,
+      "height_m": 42.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_6",
+      "footprint": [
+        [
+          2155.0,
+          2155.0
+        ],
+        [
+          2295.0,
+          2155.0
+        ],
+        [
+          2295.0,
+          2295.0
+        ],
+        [
+          2155.0,
+          2295.0
+        ]
+      ],
+      "levels": 11,
+      "height_m": 38.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_7",
+      "footprint": [
+        [
+          2155.0,
+          2655.0
+        ],
+        [
+          2295.0,
+          2655.0
+        ],
+        [
+          2295.0,
+          2795.0
+        ],
+        [
+          2155.0,
+          2795.0
+        ]
+      ],
+      "levels": 25,
+      "height_m": 87.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_8",
+      "footprint": [
+        [
+          2655.0,
+          1655.0
+        ],
+        [
+          2795.0,
+          1655.0
+        ],
+        [
+          2795.0,
+          1795.0
+        ],
+        [
+          2655.0,
+          1795.0
+        ]
+      ],
+      "levels": 10,
+      "height_m": 35.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_9",
+      "footprint": [
+        [
+          2655.0,
+          2155.0
+        ],
+        [
+          2795.0,
+          2155.0
+        ],
+        [
+          2795.0,
+          2295.0
+        ],
+        [
+          2655.0,
+          2295.0
+        ]
+      ],
+      "levels": 26,
+      "height_m": 91.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_10",
+      "footprint": [
+        [
+          2655.0,
+          2655.0
+        ],
+        [
+          2795.0,
+          2655.0
+        ],
+        [
+          2795.0,
+          2795.0
+        ],
+        [
+          2655.0,
+          2795.0
+        ]
+      ],
+      "levels": 21,
+      "height_m": 73.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_11",
+      "footprint": [
+        [
+          2905.0,
+          1905.0
+        ],
+        [
+          3045.0,
+          1905.0
+        ],
+        [
+          3045.0,
+          2045.0
+        ],
+        [
+          2905.0,
+          2045.0
+        ]
+      ],
+      "levels": 9,
+      "height_m": 31.5,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_office_12",
+      "footprint": [
+        [
+          2905.0,
+          2905.0
+        ],
+        [
+          3045.0,
+          2905.0
+        ],
+        [
+          3045.0,
+          3045.0
+        ],
+        [
+          2905.0,
+          3045.0
+        ]
+      ],
+      "levels": 8,
+      "height_m": 28.0,
+      "type": "office",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_residential_0",
+      "footprint": [
+        [
+          215.0,
+          1415.0
+        ],
+        [
+          285.0,
+          1415.0
+        ],
+        [
+          285.0,
+          1485.0
+        ],
+        [
+          215.0,
+          1485.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_1",
+      "footprint": [
+        [
+          515.0,
+          515.0
+        ],
+        [
+          585.0,
+          515.0
+        ],
+        [
+          585.0,
+          585.0
+        ],
+        [
+          515.0,
+          585.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_2",
+      "footprint": [
+        [
+          515.0,
+          1115.0
+        ],
+        [
+          585.0,
+          1115.0
+        ],
+        [
+          585.0,
+          1185.0
+        ],
+        [
+          515.0,
+          1185.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_3",
+      "footprint": [
+        [
+          815.0,
+          1415.0
+        ],
+        [
+          885.0,
+          1415.0
+        ],
+        [
+          885.0,
+          1485.0
+        ],
+        [
+          815.0,
+          1485.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_4",
+      "footprint": [
+        [
+          1115.0,
+          515.0
+        ],
+        [
+          1185.0,
+          515.0
+        ],
+        [
+          1185.0,
+          585.0
+        ],
+        [
+          1115.0,
+          585.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_5",
+      "footprint": [
+        [
+          1115.0,
+          1115.0
+        ],
+        [
+          1185.0,
+          1115.0
+        ],
+        [
+          1185.0,
+          1185.0
+        ],
+        [
+          1115.0,
+          1185.0
+        ]
+      ],
+      "levels": 3,
+      "height_m": 9.6,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_6",
+      "footprint": [
+        [
+          1415.0,
+          215.0
+        ],
+        [
+          1485.0,
+          215.0
+        ],
+        [
+          1485.0,
+          285.0
+        ],
+        [
+          1415.0,
+          285.0
+        ]
+      ],
+      "levels": 2,
+      "height_m": 6.4,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_7",
+      "footprint": [
+        [
+          1415.0,
+          815.0
+        ],
+        [
+          1485.0,
+          815.0
+        ],
+        [
+          1485.0,
+          885.0
+        ],
+        [
+          1415.0,
+          885.0
+        ]
+      ],
+      "levels": 3,
+      "height_m": 9.6,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_residential_8",
+      "footprint": [
+        [
+          1415.0,
+          1415.0
+        ],
+        [
+          1485.0,
+          1415.0
+        ],
+        [
+          1485.0,
+          1485.0
+        ],
+        [
+          1415.0,
+          1485.0
+        ]
+      ],
+      "levels": 3,
+      "height_m": 9.6,
+      "type": "residential",
+      "zone": "zone_residential"
+    },
+    {
+      "id": "bldg_restaurant_0",
+      "footprint": [
+        [
+          3325.0,
+          2007.0
+        ],
+        [
+          3375.0,
+          2007.0
+        ],
+        [
+          3375.0,
+          2043.0
+        ],
+        [
+          3325.0,
+          2043.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_dining"
+    },
+    {
+      "id": "bldg_restaurant_1",
+      "footprint": [
+        [
+          3725.0,
+          2007.0
+        ],
+        [
+          3775.0,
+          2007.0
+        ],
+        [
+          3775.0,
+          2043.0
+        ],
+        [
+          3725.0,
+          2043.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_dining"
+    },
+    {
+      "id": "bldg_restaurant_2",
+      "footprint": [
+        [
+          3200.0,
+          2532.0
+        ],
+        [
+          3250.0,
+          2532.0
+        ],
+        [
+          3250.0,
+          2568.0
+        ],
+        [
+          3200.0,
+          2568.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_dining"
+    }
+  ]
+}

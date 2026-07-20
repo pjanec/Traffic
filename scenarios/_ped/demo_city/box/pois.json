@@ -1,0 +1,8002 @@
+{
+  "generator": "deduce_pois.py",
+  "seed": 42,
+  "net": "scenario.net.xml",
+  "coordinate_frame": {
+    "units": "metres",
+    "note": "SUMO network XY; same frame as manifest.subarea"
+  },
+  "weight_formula": "KIND_BASE[kind] * (0.60*betweenness_n(edge) + 0.40*landuse_n(edge))",
+  "kind_base": {
+    "venue": 1.0,
+    "transit_stop": 0.9,
+    "parking_access": 0.8,
+    "dwell_spot": 0.7,
+    "building_entrance": 0.5
+  },
+  "landuse_source": "topology (parking-density proxy)",
+  "counts": {
+    "venue": 25,
+    "transit_stop": 12,
+    "building_entrance": 45,
+    "dwell_spot": 24,
+    "parking_access": 346,
+    "parking_lot": 5,
+    "park": 1
+  },
+  "pois": [
+    {
+      "id": "poi_venue_0",
+      "kind": "venue",
+      "pos": [
+        233.3,
+        253.32
+      ],
+      "edge": "e_ra_sw_r1_ra_sw_r2",
+      "weight": 0.7895,
+      "capacity": 200,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_1",
+      "kind": "venue",
+      "pos": [
+        170.22,
+        175.67
+      ],
+      "edge": "e_ra_sw_r2_r_0_0",
+      "weight": 0.7718,
+      "capacity": 194,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_2",
+      "kind": "venue",
+      "pos": [
+        257.59,
+        95.8
+      ],
+      "edge": "e_r_0_0_r_1_0",
+      "weight": 0.6717,
+      "capacity": 152,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_3",
+      "kind": "venue",
+      "pos": [
+        1261.72,
+        2344.8
+      ],
+      "edge": "e_axis_w_zip_d_0_3",
+      "weight": 0.4562,
+      "capacity": 150,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.8
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_4",
+      "kind": "venue",
+      "pos": [
+        1725.0,
+        2338.4
+      ],
+      "edge": "e_d_0_3_d_1_3",
+      "weight": 0.7155,
+      "capacity": 146,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_5",
+      "kind": "venue",
+      "pos": [
+        546.74,
+        95.8
+      ],
+      "edge": "e_r_1_0_r_2_0",
+      "weight": 0.539,
+      "capacity": 143,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_6",
+      "kind": "venue",
+      "pos": [
+        926.57,
+        2381.56
+      ],
+      "edge": "e_d_0_3_ring_W",
+      "weight": 0.4178,
+      "capacity": 139,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.11
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_7",
+      "kind": "venue",
+      "pos": [
+        1725.0,
+        2361.6
+      ],
+      "edge": "e_d_1_3_d_0_3",
+      "weight": 0.6773,
+      "capacity": 134,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_8",
+      "kind": "venue",
+      "pos": [
+        2218.2,
+        2338.4
+      ],
+      "edge": "e_d_2_3_d_3_3",
+      "weight": 0.684,
+      "capacity": 130,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_9",
+      "kind": "venue",
+      "pos": [
+        1975.0,
+        2338.4
+      ],
+      "edge": "e_d_1_3_d_2_3",
+      "weight": 0.6611,
+      "capacity": 129,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_10",
+      "kind": "venue",
+      "pos": [
+        232.11,
+        1304.05
+      ],
+      "edge": "e_ring_W_ra_sw_r1",
+      "weight": 0.66,
+      "capacity": 129,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_11",
+      "kind": "venue",
+      "pos": [
+        704.2,
+        252.01
+      ],
+      "edge": "e_r_2_0_r_2_1",
+      "weight": 0.6141,
+      "capacity": 128,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_12",
+      "kind": "venue",
+      "pos": [
+        1100.22,
+        2008.95
+      ],
+      "edge": "e_axis_w_ramp_axis_w_zip",
+      "weight": 0.3653,
+      "capacity": 123,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_13",
+      "kind": "venue",
+      "pos": [
+        1429.63,
+        1350.12
+      ],
+      "edge": "e_r_5_3_axis_w_ramp",
+      "weight": 0.639,
+      "capacity": 123,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_14",
+      "kind": "venue",
+      "pos": [
+        2218.2,
+        2361.6
+      ],
+      "edge": "e_d_3_3_d_2_3",
+      "weight": 0.6552,
+      "capacity": 121,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_15",
+      "kind": "venue",
+      "pos": [
+        1975.0,
+        2361.6
+      ],
+      "edge": "e_d_2_3_d_1_3",
+      "weight": 0.6323,
+      "capacity": 121,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 7.1
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_16",
+      "kind": "venue",
+      "pos": [
+        2334.53,
+        234.53
+      ],
+      "edge": "e_ra_s_r2_ra_s_r3",
+      "weight": 0.3811,
+      "capacity": 109,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_17",
+      "kind": "venue",
+      "pos": [
+        2358.67,
+        227.73
+      ],
+      "edge": "e_ra_s_r3_ra_s_r0",
+      "weight": 0.3811,
+      "capacity": 109,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_18",
+      "kind": "venue",
+      "pos": [
+        704.2,
+        547.99
+      ],
+      "edge": "e_r_2_1_r_2_2",
+      "weight": 0.5471,
+      "capacity": 108,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_19",
+      "kind": "venue",
+      "pos": [
+        262.76,
+        261.91
+      ],
+      "edge": "e_ra_sw_r0_ra_sw_r1",
+      "weight": 0.4836,
+      "capacity": 108,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_venue_20",
+      "kind": "venue",
+      "pos": [
+        3182.62,
+        1824.48
+      ],
+      "edge": "e_d_6_0_q_0_0",
+      "weight": 0.4821,
+      "capacity": 107,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "commercial"
+    },
+    {
+      "id": "poi_transit_stop_0",
+      "kind": "transit_stop",
+      "pos": [
+        3190.44,
+        1894.72
+      ],
+      "edge": "e_q_0_0_d_6_0",
+      "weight": 0.4528,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_1",
+      "kind": "transit_stop",
+      "pos": [
+        2361.6,
+        2443.15
+      ],
+      "edge": "e_d_3_3_d_3_4",
+      "weight": 0.5664,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_2",
+      "kind": "transit_stop",
+      "pos": [
+        2361.6,
+        2691.07
+      ],
+      "edge": "e_d_3_4_d_3_5",
+      "weight": 0.5598,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_3",
+      "kind": "transit_stop",
+      "pos": [
+        2338.4,
+        2510.05
+      ],
+      "edge": "e_d_3_4_d_3_3",
+      "weight": 0.5573,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_4",
+      "kind": "transit_stop",
+      "pos": [
+        2329.66,
+        1127.9
+      ],
+      "edge": "e_d_3_0_ra_s_r2",
+      "weight": 0.2903,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_5",
+      "kind": "transit_stop",
+      "pos": [
+        2338.4,
+        2758.93
+      ],
+      "edge": "e_d_3_5_d_3_4",
+      "weight": 0.5506,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_6",
+      "kind": "transit_stop",
+      "pos": [
+        2361.6,
+        2941.07
+      ],
+      "edge": "e_d_3_5_d_3_6",
+      "weight": 0.51,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_7",
+      "kind": "transit_stop",
+      "pos": [
+        2361.6,
+        1691.07
+      ],
+      "edge": "e_d_3_0_d_3_1",
+      "weight": 0.5093,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_8",
+      "kind": "transit_stop",
+      "pos": [
+        2446.79,
+        2338.4
+      ],
+      "edge": "e_d_3_3_d_4_3",
+      "weight": 0.5446,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_9",
+      "kind": "transit_stop",
+      "pos": [
+        2344.15,
+        275.09
+      ],
+      "edge": "e_ra_s_r1_ra_s_r2",
+      "weight": 0.3129,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_10",
+      "kind": "transit_stop",
+      "pos": [
+        2691.07,
+        2338.4
+      ],
+      "edge": "e_d_4_3_d_5_3",
+      "weight": 0.5393,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_transit_stop_11",
+      "kind": "transit_stop",
+      "pos": [
+        2338.4,
+        3008.93
+      ],
+      "edge": "e_d_3_6_d_3_5",
+      "weight": 0.5005,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "transit"
+    },
+    {
+      "id": "poi_building_entrance_0",
+      "kind": "building_entrance",
+      "pos": [
+        578.63,
+        576.37
+      ],
+      "edge": "e_r_park_hub_r_2_2",
+      "weight": 0.0421,
+      "facing": [
+        0.707,
+        -0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      },
+      "building": "bldg_residential_1"
+    },
+    {
+      "id": "poi_building_entrance_1",
+      "kind": "building_entrance",
+      "pos": [
+        576.37,
+        221.37
+      ],
+      "edge": "e_r_park_hub_r_2_0",
+      "weight": 0.0632,
+      "facing": [
+        -0.707,
+        -0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_2",
+      "kind": "building_entrance",
+      "pos": [
+        223.63,
+        578.63
+      ],
+      "edge": "e_r_park_hub_r_0_2",
+      "weight": 0.0632,
+      "facing": [
+        0.707,
+        0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_3",
+      "kind": "building_entrance",
+      "pos": [
+        224.18,
+        226.45
+      ],
+      "edge": "e_r_park_hub_r_0_0",
+      "weight": 0.0947,
+      "facing": [
+        -0.707,
+        0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_4",
+      "kind": "building_entrance",
+      "pos": [
+        519.37,
+        521.63
+      ],
+      "edge": "e_r_2_2_r_park_hub",
+      "weight": 0.0421,
+      "facing": [
+        -0.707,
+        0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      },
+      "building": "bldg_residential_1"
+    },
+    {
+      "id": "poi_building_entrance_5",
+      "kind": "building_entrance",
+      "pos": [
+        521.63,
+        280.63
+      ],
+      "edge": "e_r_2_0_r_park_hub",
+      "weight": 0.0632,
+      "facing": [
+        0.707,
+        0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_6",
+      "kind": "building_entrance",
+      "pos": [
+        278.37,
+        519.37
+      ],
+      "edge": "e_r_0_2_r_park_hub",
+      "weight": 0.0632,
+      "facing": [
+        -0.707,
+        -0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_7",
+      "kind": "building_entrance",
+      "pos": [
+        282.47,
+        280.21
+      ],
+      "edge": "e_r_0_0_r_park_hub",
+      "weight": 0.0947,
+      "facing": [
+        0.707,
+        -0.707
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_8",
+      "kind": "building_entrance",
+      "pos": [
+        220.33,
+        401.6
+      ],
+      "edge": "e_r_park_hub_r_0_1",
+      "weight": 0.1053,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_9",
+      "kind": "building_entrance",
+      "pos": [
+        277.14,
+        398.4
+      ],
+      "edge": "e_r_0_1_r_park_hub",
+      "weight": 0.1053,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_10",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        2997.62
+      ],
+      "edge": "e_d_4_5_d_4_6",
+      "weight": 0.1371,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_11",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        1747.62
+      ],
+      "edge": "e_d_4_0_d_4_1",
+      "weight": 0.1477,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_12",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        2952.38
+      ],
+      "edge": "e_d_2_6_d_2_5",
+      "weight": 0.1477,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_13",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        1702.38
+      ],
+      "edge": "e_d_2_1_d_2_0",
+      "weight": 0.1477,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_14",
+      "kind": "building_entrance",
+      "pos": [
+        3851.6,
+        2168.46
+      ],
+      "edge": "e_q_3_0_q_3_1",
+      "weight": 0.0742,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_15",
+      "kind": "building_entrance",
+      "pos": [
+        3368.46,
+        2648.4
+      ],
+      "edge": "e_q_0_3_q_1_3",
+      "weight": 0.0952,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_16",
+      "kind": "building_entrance",
+      "pos": [
+        3848.4,
+        2130.04
+      ],
+      "edge": "e_q_3_1_q_3_0",
+      "weight": 0.0742,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_17",
+      "kind": "building_entrance",
+      "pos": [
+        3330.04,
+        2651.6
+      ],
+      "edge": "e_q_1_3_q_0_3",
+      "weight": 0.0847,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_18",
+      "kind": "building_entrance",
+      "pos": [
+        3952.08,
+        4257.4
+      ],
+      "edge": "e_m_lot_m_0_1",
+      "weight": 0.0426,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_19",
+      "kind": "building_entrance",
+      "pos": [
+        4447.84,
+        4757.4
+      ],
+      "edge": "e_m_2_2_m_1_2",
+      "weight": 0.0321,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_20",
+      "kind": "building_entrance",
+      "pos": [
+        4545.76,
+        4742.6
+      ],
+      "edge": "e_m_1_2_m_2_2",
+      "weight": 0.0426,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_21",
+      "kind": "building_entrance",
+      "pos": [
+        4047.92,
+        4242.6
+      ],
+      "edge": "e_m_0_1_m_lot",
+      "weight": 0.0426,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_22",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        2747.62
+      ],
+      "edge": "e_d_4_4_d_4_5",
+      "weight": 0.1479,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_23",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        1997.62
+      ],
+      "edge": "e_d_4_1_d_4_2",
+      "weight": 0.1479,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_24",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        2702.38
+      ],
+      "edge": "e_d_2_5_d_2_4",
+      "weight": 0.1584,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_25",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        1952.38
+      ],
+      "edge": "e_d_2_2_d_2_1",
+      "weight": 0.1479,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_26",
+      "kind": "building_entrance",
+      "pos": [
+        3330.94,
+        2251.6
+      ],
+      "edge": "e_q_1_1_q_0_1",
+      "weight": 0.1059,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_27",
+      "kind": "building_entrance",
+      "pos": [
+        3369.06,
+        2248.4
+      ],
+      "edge": "e_q_0_1_q_1_1",
+      "weight": 0.1059,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_28",
+      "kind": "building_entrance",
+      "pos": [
+        1422.24,
+        1604.2
+      ],
+      "edge": "e_r_5_5_r_4_5",
+      "weight": 0.1059,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_29",
+      "kind": "building_entrance",
+      "pos": [
+        1479.76,
+        1595.8
+      ],
+      "edge": "e_r_4_5_r_5_5",
+      "weight": 0.127,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_30",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        2498.9
+      ],
+      "edge": "e_d_4_3_d_4_4",
+      "weight": 0.1586,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_31",
+      "kind": "building_entrance",
+      "pos": [
+        2608.4,
+        2245.7
+      ],
+      "edge": "e_d_4_2_d_4_3",
+      "weight": 0.1586,
+      "facing": [
+        1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_32",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        2454.3
+      ],
+      "edge": "e_d_2_4_d_2_3",
+      "weight": 0.1375,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_33",
+      "kind": "building_entrance",
+      "pos": [
+        2091.6,
+        2201.1
+      ],
+      "edge": "e_d_2_3_d_2_2",
+      "weight": 0.1481,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 5.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_34",
+      "kind": "building_entrance",
+      "pos": [
+        3330.94,
+        2451.6
+      ],
+      "edge": "e_q_1_2_q_0_2",
+      "weight": 0.1062,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_35",
+      "kind": "building_entrance",
+      "pos": [
+        3369.06,
+        2448.4
+      ],
+      "edge": "e_q_0_2_q_1_2",
+      "weight": 0.1062,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_36",
+      "kind": "building_entrance",
+      "pos": [
+        220.24,
+        1604.2
+      ],
+      "edge": "e_r_1_5_r_0_5",
+      "weight": 0.0643,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_37",
+      "kind": "building_entrance",
+      "pos": [
+        277.76,
+        1595.8
+      ],
+      "edge": "e_r_0_5_r_1_5",
+      "weight": 0.1064,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_38",
+      "kind": "building_entrance",
+      "pos": [
+        221.44,
+        1004.2
+      ],
+      "edge": "e_r_1_3_r_0_3",
+      "weight": 0.138,
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_39",
+      "kind": "building_entrance",
+      "pos": [
+        995.8,
+        221.44
+      ],
+      "edge": "e_r_3_1_r_3_0",
+      "weight": 0.1276,
+      "facing": [
+        -1.0,
+        -0.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_building_entrance_40",
+      "kind": "building_entrance",
+      "pos": [
+        278.56,
+        995.8
+      ],
+      "edge": "e_r_0_3_r_1_3",
+      "weight": 0.1276,
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.3
+      },
+      "land_use": "residential",
+      "legitimate_sink": true,
+      "inside_dwell": {
+        "min_s": 30,
+        "max_s": 300
+      }
+    },
+    {
+      "id": "poi_dwell_spot_0",
+      "kind": "dwell_spot",
+      "pos": [
+        403.22,
+        390.99
+      ],
+      "edge": ":r_park_hub_w0",
+      "weight": 0.1105,
+      "capacity": 138,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.2
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      },
+      "meet_area": "meet_area_park_0"
+    },
+    {
+      "id": "poi_dwell_spot_1",
+      "kind": "dwell_spot",
+      "pos": [
+        3255.52,
+        2056.12
+      ],
+      "edge": ":q_0_0_w0",
+      "weight": 0.2784,
+      "capacity": 101,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      },
+      "meet_area": "meet_area_plaza_0"
+    },
+    {
+      "id": "poi_dwell_spot_2",
+      "kind": "dwell_spot",
+      "pos": [
+        3109.87,
+        3095.39
+      ],
+      "edge": ":d_6_6_w0",
+      "weight": 0.1398,
+      "capacity": 62,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_3",
+      "kind": "dwell_spot",
+      "pos": [
+        1604.61,
+        3109.87
+      ],
+      "edge": ":d_0_6_w0",
+      "weight": 0.1546,
+      "capacity": 62,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_4",
+      "kind": "dwell_spot",
+      "pos": [
+        1590.13,
+        1604.61
+      ],
+      "edge": ":d_0_0_w0",
+      "weight": 0.1988,
+      "capacity": 62,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_5",
+      "kind": "dwell_spot",
+      "pos": [
+        1589.6,
+        1850.0
+      ],
+      "edge": ":d_0_1_w0",
+      "weight": 0.2033,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_6",
+      "kind": "dwell_spot",
+      "pos": [
+        1589.6,
+        2100.0
+      ],
+      "edge": ":d_0_2_w0",
+      "weight": 0.1999,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_7",
+      "kind": "dwell_spot",
+      "pos": [
+        1589.6,
+        2600.0
+      ],
+      "edge": ":d_0_4_w0",
+      "weight": 0.2055,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_8",
+      "kind": "dwell_spot",
+      "pos": [
+        1589.6,
+        2850.0
+      ],
+      "edge": ":d_0_5_w0",
+      "weight": 0.1988,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_9",
+      "kind": "dwell_spot",
+      "pos": [
+        1850.0,
+        1589.6
+      ],
+      "edge": ":d_1_0_w2",
+      "weight": 0.2009,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_10",
+      "kind": "dwell_spot",
+      "pos": [
+        1850.0,
+        3110.4
+      ],
+      "edge": ":d_1_6_w0",
+      "weight": 0.1879,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_11",
+      "kind": "dwell_spot",
+      "pos": [
+        2850.0,
+        1589.6
+      ],
+      "edge": ":d_5_0_w2",
+      "weight": 0.2628,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_12",
+      "kind": "dwell_spot",
+      "pos": [
+        3110.4,
+        1850.0
+      ],
+      "edge": ":d_6_1_w1",
+      "weight": 0.2784,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_13",
+      "kind": "dwell_spot",
+      "pos": [
+        3110.4,
+        2100.0
+      ],
+      "edge": ":d_6_2_w1",
+      "weight": 0.3037,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_14",
+      "kind": "dwell_spot",
+      "pos": [
+        3110.4,
+        2600.0
+      ],
+      "edge": ":d_6_4_w1",
+      "weight": 0.2653,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_15",
+      "kind": "dwell_spot",
+      "pos": [
+        2850.0,
+        3110.4
+      ],
+      "edge": ":d_5_6_w0",
+      "weight": 0.1665,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_16",
+      "kind": "dwell_spot",
+      "pos": [
+        3110.4,
+        2850.0
+      ],
+      "edge": ":d_6_5_w1",
+      "weight": 0.1989,
+      "capacity": 47,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_17",
+      "kind": "dwell_spot",
+      "pos": [
+        2311.91,
+        271.2
+      ],
+      "edge": ":ra_s_r2_w0",
+      "weight": 0.2346,
+      "capacity": 45,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_18",
+      "kind": "dwell_spot",
+      "pos": [
+        2370.87,
+        288.24
+      ],
+      "edge": ":ra_s_r1_w0",
+      "weight": 0.1393,
+      "capacity": 45,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_19",
+      "kind": "dwell_spot",
+      "pos": [
+        3091.05,
+        1589.84
+      ],
+      "edge": ":d_6_0_w2",
+      "weight": 0.295,
+      "capacity": 42,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_20",
+      "kind": "dwell_spot",
+      "pos": [
+        3743.15,
+        3774.74
+      ],
+      "edge": ":m_0_0_w0",
+      "weight": 0.135,
+      "capacity": 41,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 2.0
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      }
+    },
+    {
+      "id": "poi_dwell_spot_21",
+      "kind": "dwell_spot",
+      "pos": [
+        3453.22,
+        2445.53
+      ],
+      "edge": ":q_1_2_w0",
+      "weight": 0.1343,
+      "capacity": 40,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.2
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      },
+      "meet_area": "meet_area_plaza_0"
+    },
+    {
+      "id": "poi_dwell_spot_22",
+      "kind": "dwell_spot",
+      "pos": [
+        3653.22,
+        2445.53
+      ],
+      "edge": ":q_2_2_w0",
+      "weight": 0.1359,
+      "capacity": 40,
+      "lateral_anchor": {
+        "side": "building",
+        "lateral_offset_m": 3.2
+      },
+      "land_use": "open_space",
+      "group_size": 8,
+      "talk_duration": {
+        "min_s": 20,
+        "max_s": 120
+      },
+      "duration_profile": {
+        "min_s": 30,
+        "max_s": 600
+      },
+      "meet_area": "meet_area_plaza_0"
+    },
+    {
+      "id": "poi_parking_access_0",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        3428.95
+      ],
+      "edge": "e_axis_n_drop_d_3_6",
+      "weight": 0.2103,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_1",
+      "kind": "parking_access",
+      "pos": [
+        2358.4,
+        4094.45
+      ],
+      "edge": "e_axis_n_drop_ring_N",
+      "weight": 0.2063,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_2",
+      "kind": "parking_access",
+      "pos": [
+        1100.22,
+        2008.95
+      ],
+      "edge": "e_axis_w_ramp_axis_w_zip",
+      "weight": 0.2923,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_3",
+      "kind": "parking_access",
+      "pos": [
+        1261.72,
+        2344.8
+      ],
+      "edge": "e_axis_w_zip_d_0_3",
+      "weight": 0.3649,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_4",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        1724.25
+      ],
+      "edge": "e_d_0_0_d_0_1",
+      "weight": 0.2307,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_5",
+      "kind": "parking_access",
+      "pos": [
+        1724.25,
+        1591.6
+      ],
+      "edge": "e_d_0_0_d_1_0",
+      "weight": 0.2237,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_6",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        1724.25
+      ],
+      "edge": "e_d_0_1_d_0_0",
+      "weight": 0.2308,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_7",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        1975.0
+      ],
+      "edge": "e_d_0_1_d_0_2",
+      "weight": 0.2085,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_8",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        1841.6
+      ],
+      "edge": "e_d_0_1_d_1_1",
+      "weight": 0.2578,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_9",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        1975.0
+      ],
+      "edge": "e_d_0_2_d_0_1",
+      "weight": 0.2086,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_10",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        2223.4
+      ],
+      "edge": "e_d_0_2_d_0_3",
+      "weight": 0.2192,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_11",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        2223.4
+      ],
+      "edge": "e_d_0_3_d_0_2",
+      "weight": 0.2193,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_12",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        2476.76
+      ],
+      "edge": "e_d_0_3_d_0_4",
+      "weight": 0.2211,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_13",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2338.4
+      ],
+      "edge": "e_d_0_3_d_1_3",
+      "weight": 0.5724,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_14",
+      "kind": "parking_access",
+      "pos": [
+        926.57,
+        2381.56
+      ],
+      "edge": "e_d_0_3_ring_W",
+      "weight": 0.3342,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.11
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_15",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        2476.76
+      ],
+      "edge": "e_d_0_4_d_0_3",
+      "weight": 0.2211,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_16",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        2725.0
+      ],
+      "edge": "e_d_0_4_d_0_5",
+      "weight": 0.2267,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_17",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2591.6
+      ],
+      "edge": "e_d_0_4_d_1_4",
+      "weight": 0.2569,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_18",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        2725.0
+      ],
+      "edge": "e_d_0_5_d_0_4",
+      "weight": 0.2267,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_19",
+      "kind": "parking_access",
+      "pos": [
+        1608.4,
+        2975.75
+      ],
+      "edge": "e_d_0_5_d_0_6",
+      "weight": 0.1809,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_20",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2841.6
+      ],
+      "edge": "e_d_0_5_d_1_5",
+      "weight": 0.2741,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_21",
+      "kind": "parking_access",
+      "pos": [
+        1591.6,
+        2975.75
+      ],
+      "edge": "e_d_0_6_d_0_5",
+      "weight": 0.1809,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_22",
+      "kind": "parking_access",
+      "pos": [
+        1724.25,
+        3091.6
+      ],
+      "edge": "e_d_0_6_d_1_6",
+      "weight": 0.1724,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_23",
+      "kind": "parking_access",
+      "pos": [
+        1724.25,
+        1608.4
+      ],
+      "edge": "e_d_1_0_d_0_0",
+      "weight": 0.2235,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_24",
+      "kind": "parking_access",
+      "pos": [
+        1858.4,
+        1725.0
+      ],
+      "edge": "e_d_1_0_d_1_1",
+      "weight": 0.2575,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_25",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        1591.6
+      ],
+      "edge": "e_d_1_0_d_2_0",
+      "weight": 0.2077,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_26",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        1858.4
+      ],
+      "edge": "e_d_1_1_d_0_1",
+      "weight": 0.2578,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_27",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        1725.0
+      ],
+      "edge": "e_d_1_1_d_1_0",
+      "weight": 0.2632,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_28",
+      "kind": "parking_access",
+      "pos": [
+        1858.4,
+        1975.0
+      ],
+      "edge": "e_d_1_1_d_1_2",
+      "weight": 0.2868,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_29",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        1841.6
+      ],
+      "edge": "e_d_1_1_d_2_1",
+      "weight": 0.2834,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_30",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2108.4
+      ],
+      "edge": "e_d_1_2_d_0_2",
+      "weight": 0.2575,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_31",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        1975.0
+      ],
+      "edge": "e_d_1_2_d_1_1",
+      "weight": 0.296,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_32",
+      "kind": "parking_access",
+      "pos": [
+        1858.4,
+        2223.4
+      ],
+      "edge": "e_d_1_2_d_1_3",
+      "weight": 0.2697,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_33",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2091.6
+      ],
+      "edge": "e_d_1_2_d_2_2",
+      "weight": 0.2497,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_34",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2361.6
+      ],
+      "edge": "e_d_1_3_d_0_3",
+      "weight": 0.5418,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_35",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        2223.4
+      ],
+      "edge": "e_d_1_3_d_1_2",
+      "weight": 0.2772,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_36",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2338.4
+      ],
+      "edge": "e_d_1_3_d_2_3",
+      "weight": 0.5289,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_37",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2608.4
+      ],
+      "edge": "e_d_1_4_d_0_4",
+      "weight": 0.2569,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_38",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        2476.6
+      ],
+      "edge": "e_d_1_4_d_1_3",
+      "weight": 0.3197,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_39",
+      "kind": "parking_access",
+      "pos": [
+        1858.4,
+        2725.0
+      ],
+      "edge": "e_d_1_4_d_1_5",
+      "weight": 0.3026,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_40",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2591.6
+      ],
+      "edge": "e_d_1_4_d_2_4",
+      "weight": 0.2669,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_41",
+      "kind": "parking_access",
+      "pos": [
+        1725.0,
+        2858.4
+      ],
+      "edge": "e_d_1_5_d_0_5",
+      "weight": 0.2741,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_42",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        2725.0
+      ],
+      "edge": "e_d_1_5_d_1_4",
+      "weight": 0.3026,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_43",
+      "kind": "parking_access",
+      "pos": [
+        1858.4,
+        2975.0
+      ],
+      "edge": "e_d_1_5_d_1_6",
+      "weight": 0.2675,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_44",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2841.6
+      ],
+      "edge": "e_d_1_5_d_2_5",
+      "weight": 0.2837,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_45",
+      "kind": "parking_access",
+      "pos": [
+        1724.25,
+        3108.4
+      ],
+      "edge": "e_d_1_6_d_0_6",
+      "weight": 0.1724,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_46",
+      "kind": "parking_access",
+      "pos": [
+        1841.6,
+        2975.0
+      ],
+      "edge": "e_d_1_6_d_1_5",
+      "weight": 0.2675,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_47",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        3091.6
+      ],
+      "edge": "e_d_1_6_d_2_6",
+      "weight": 0.2045,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_48",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        1608.4
+      ],
+      "edge": "e_d_2_0_d_1_0",
+      "weight": 0.2018,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_49",
+      "kind": "parking_access",
+      "pos": [
+        2218.11,
+        1591.6
+      ],
+      "edge": "e_d_2_0_d_3_0",
+      "weight": 0.2173,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_50",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        1858.4
+      ],
+      "edge": "e_d_2_1_d_1_1",
+      "weight": 0.28,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_51",
+      "kind": "parking_access",
+      "pos": [
+        2091.6,
+        1725.0
+      ],
+      "edge": "e_d_2_1_d_2_0",
+      "weight": 0.2363,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_52",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        1841.6
+      ],
+      "edge": "e_d_2_1_d_3_1",
+      "weight": 0.292,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_53",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2108.4
+      ],
+      "edge": "e_d_2_2_d_1_2",
+      "weight": 0.2513,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_54",
+      "kind": "parking_access",
+      "pos": [
+        2091.6,
+        1975.0
+      ],
+      "edge": "e_d_2_2_d_2_1",
+      "weight": 0.2366,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_55",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2091.6
+      ],
+      "edge": "e_d_2_2_d_3_2",
+      "weight": 0.2699,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_56",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2361.6
+      ],
+      "edge": "e_d_2_3_d_1_3",
+      "weight": 0.5058,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_57",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2338.4
+      ],
+      "edge": "e_d_2_3_d_3_3",
+      "weight": 0.5472,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_58",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2608.4
+      ],
+      "edge": "e_d_2_4_d_1_4",
+      "weight": 0.2669,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_59",
+      "kind": "parking_access",
+      "pos": [
+        2091.6,
+        2476.6
+      ],
+      "edge": "e_d_2_4_d_2_3",
+      "weight": 0.22,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_60",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2591.6
+      ],
+      "edge": "e_d_2_4_d_3_4",
+      "weight": 0.2853,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_61",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        2858.4
+      ],
+      "edge": "e_d_2_5_d_1_5",
+      "weight": 0.2837,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_62",
+      "kind": "parking_access",
+      "pos": [
+        2091.6,
+        2725.0
+      ],
+      "edge": "e_d_2_5_d_2_4",
+      "weight": 0.2535,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_63",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2841.6
+      ],
+      "edge": "e_d_2_5_d_3_5",
+      "weight": 0.2853,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_64",
+      "kind": "parking_access",
+      "pos": [
+        1975.0,
+        3108.4
+      ],
+      "edge": "e_d_2_6_d_1_6",
+      "weight": 0.2045,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_65",
+      "kind": "parking_access",
+      "pos": [
+        2091.6,
+        2975.0
+      ],
+      "edge": "e_d_2_6_d_2_5",
+      "weight": 0.2363,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_66",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        3091.6
+      ],
+      "edge": "e_d_2_6_d_3_6",
+      "weight": 0.2061,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_67",
+      "kind": "parking_access",
+      "pos": [
+        2218.11,
+        1608.4
+      ],
+      "edge": "e_d_3_0_d_2_0",
+      "weight": 0.211,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_68",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        1725.0
+      ],
+      "edge": "e_d_3_0_d_3_1",
+      "weight": 0.4527,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_69",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        1591.6
+      ],
+      "edge": "e_d_3_0_d_4_0",
+      "weight": 0.2871,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_70",
+      "kind": "parking_access",
+      "pos": [
+        2326.01,
+        930.69
+      ],
+      "edge": "e_d_3_0_ra_s_r2",
+      "weight": 0.258,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_71",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        1858.4
+      ],
+      "edge": "e_d_3_1_d_2_1",
+      "weight": 0.2882,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_72",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        1725.0
+      ],
+      "edge": "e_d_3_1_d_3_0",
+      "weight": 0.3844,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_73",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        1975.0
+      ],
+      "edge": "e_d_3_1_d_3_2",
+      "weight": 0.4753,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_74",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        1841.6
+      ],
+      "edge": "e_d_3_1_d_4_1",
+      "weight": 0.2895,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_75",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2108.4
+      ],
+      "edge": "e_d_3_2_d_2_2",
+      "weight": 0.2713,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_76",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        1975.0
+      ],
+      "edge": "e_d_3_2_d_3_1",
+      "weight": 0.3985,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_77",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        2223.4
+      ],
+      "edge": "e_d_3_2_d_3_3",
+      "weight": 0.4427,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_78",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2091.6
+      ],
+      "edge": "e_d_3_2_d_4_2",
+      "weight": 0.2879,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_79",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2361.6
+      ],
+      "edge": "e_d_3_3_d_2_3",
+      "weight": 0.5241,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_80",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        2223.4
+      ],
+      "edge": "e_d_3_3_d_3_2",
+      "weight": 0.361,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_81",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        2476.6
+      ],
+      "edge": "e_d_3_3_d_3_4",
+      "weight": 0.5034,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_82",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2338.4
+      ],
+      "edge": "e_d_3_3_d_4_3",
+      "weight": 0.4841,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_83",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2608.4
+      ],
+      "edge": "e_d_3_4_d_2_4",
+      "weight": 0.2856,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_84",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        2476.6
+      ],
+      "edge": "e_d_3_4_d_3_3",
+      "weight": 0.4954,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_85",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        2725.0
+      ],
+      "edge": "e_d_3_4_d_3_5",
+      "weight": 0.4976,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_86",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2591.6
+      ],
+      "edge": "e_d_3_4_d_4_4",
+      "weight": 0.2851,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_87",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        2858.4
+      ],
+      "edge": "e_d_3_5_d_2_5",
+      "weight": 0.2857,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_88",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        2725.0
+      ],
+      "edge": "e_d_3_5_d_3_4",
+      "weight": 0.4894,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_89",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        2975.0
+      ],
+      "edge": "e_d_3_5_d_3_6",
+      "weight": 0.4533,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_90",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2841.6
+      ],
+      "edge": "e_d_3_5_d_4_5",
+      "weight": 0.2732,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_91",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        3428.95
+      ],
+      "edge": "e_d_3_6_axis_n_drop",
+      "weight": 0.2189,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_92",
+      "kind": "parking_access",
+      "pos": [
+        2218.2,
+        3108.4
+      ],
+      "edge": "e_d_3_6_d_2_6",
+      "weight": 0.2066,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_93",
+      "kind": "parking_access",
+      "pos": [
+        2338.4,
+        2975.0
+      ],
+      "edge": "e_d_3_6_d_3_5",
+      "weight": 0.4449,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_94",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        3091.6
+      ],
+      "edge": "e_d_3_6_d_4_6",
+      "weight": 0.2121,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_95",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        1608.4
+      ],
+      "edge": "e_d_4_0_d_3_0",
+      "weight": 0.3757,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_96",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        1725.0
+      ],
+      "edge": "e_d_4_0_d_4_1",
+      "weight": 0.2363,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_97",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        1591.6
+      ],
+      "edge": "e_d_4_0_d_5_0",
+      "weight": 0.2818,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_98",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        1858.4
+      ],
+      "edge": "e_d_4_1_d_3_1",
+      "weight": 0.2942,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_99",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        1975.0
+      ],
+      "edge": "e_d_4_1_d_4_2",
+      "weight": 0.2366,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_100",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        1841.6
+      ],
+      "edge": "e_d_4_1_d_5_1",
+      "weight": 0.2675,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_101",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2108.4
+      ],
+      "edge": "e_d_4_2_d_3_2",
+      "weight": 0.2941,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_102",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        2223.4
+      ],
+      "edge": "e_d_4_2_d_4_3",
+      "weight": 0.2537,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_103",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2091.6
+      ],
+      "edge": "e_d_4_2_d_5_2",
+      "weight": 0.2662,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_104",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2361.6
+      ],
+      "edge": "e_d_4_3_d_3_3",
+      "weight": 0.3874,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_105",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        2476.6
+      ],
+      "edge": "e_d_4_3_d_4_4",
+      "weight": 0.2537,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_106",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2338.4
+      ],
+      "edge": "e_d_4_3_d_5_3",
+      "weight": 0.4794,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_107",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2608.4
+      ],
+      "edge": "e_d_4_4_d_3_4",
+      "weight": 0.2854,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_108",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        2725.0
+      ],
+      "edge": "e_d_4_4_d_4_5",
+      "weight": 0.2366,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_109",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2591.6
+      ],
+      "edge": "e_d_4_4_d_5_4",
+      "weight": 0.2607,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_110",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        2858.4
+      ],
+      "edge": "e_d_4_5_d_3_5",
+      "weight": 0.2738,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_111",
+      "kind": "parking_access",
+      "pos": [
+        2608.4,
+        2975.0
+      ],
+      "edge": "e_d_4_5_d_4_6",
+      "weight": 0.2194,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_112",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2841.6
+      ],
+      "edge": "e_d_4_5_d_5_5",
+      "weight": 0.2656,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_113",
+      "kind": "parking_access",
+      "pos": [
+        2481.8,
+        3108.4
+      ],
+      "edge": "e_d_4_6_d_3_6",
+      "weight": 0.2127,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_114",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        3091.6
+      ],
+      "edge": "e_d_4_6_d_5_6",
+      "weight": 0.1876,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_115",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        1608.4
+      ],
+      "edge": "e_d_5_0_d_4_0",
+      "weight": 0.3709,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_116",
+      "kind": "parking_access",
+      "pos": [
+        2858.4,
+        1725.0
+      ],
+      "edge": "e_d_5_0_d_5_1",
+      "weight": 0.2516,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_117",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        1591.6
+      ],
+      "edge": "e_d_5_0_d_6_0",
+      "weight": 0.2617,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_118",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        1858.4
+      ],
+      "edge": "e_d_5_1_d_4_1",
+      "weight": 0.2726,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_119",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        1725.0
+      ],
+      "edge": "e_d_5_1_d_5_0",
+      "weight": 0.2516,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_120",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        1841.6
+      ],
+      "edge": "e_d_5_1_d_6_1",
+      "weight": 0.2748,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_121",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2108.4
+      ],
+      "edge": "e_d_5_2_d_4_2",
+      "weight": 0.2726,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_122",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        1975.0
+      ],
+      "edge": "e_d_5_2_d_5_1",
+      "weight": 0.2759,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_123",
+      "kind": "parking_access",
+      "pos": [
+        2858.4,
+        2223.4
+      ],
+      "edge": "e_d_5_2_d_5_3",
+      "weight": 0.2945,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_124",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2091.6
+      ],
+      "edge": "e_d_5_2_d_6_2",
+      "weight": 0.274,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_125",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2361.6
+      ],
+      "edge": "e_d_5_3_d_4_3",
+      "weight": 0.3827,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_126",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        2223.4
+      ],
+      "edge": "e_d_5_3_d_5_2",
+      "weight": 0.3001,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_127",
+      "kind": "parking_access",
+      "pos": [
+        2858.4,
+        2476.6
+      ],
+      "edge": "e_d_5_3_d_5_4",
+      "weight": 0.3374,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_128",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2338.4
+      ],
+      "edge": "e_d_5_3_d_6_3",
+      "weight": 0.5069,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_129",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        2608.4
+      ],
+      "edge": "e_d_5_4_d_4_4",
+      "weight": 0.2608,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_130",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        2476.6
+      ],
+      "edge": "e_d_5_4_d_5_3",
+      "weight": 0.337,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_131",
+      "kind": "parking_access",
+      "pos": [
+        2858.4,
+        2725.0
+      ],
+      "edge": "e_d_5_4_d_5_5",
+      "weight": 0.3053,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_132",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2591.6
+      ],
+      "edge": "e_d_5_4_d_6_4",
+      "weight": 0.3059,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_133",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        2725.0
+      ],
+      "edge": "e_d_5_5_d_5_4",
+      "weight": 0.3051,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_134",
+      "kind": "parking_access",
+      "pos": [
+        2858.4,
+        2975.0
+      ],
+      "edge": "e_d_5_5_d_5_6",
+      "weight": 0.2277,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_135",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2841.6
+      ],
+      "edge": "e_d_5_5_d_6_5",
+      "weight": 0.239,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_136",
+      "kind": "parking_access",
+      "pos": [
+        2725.0,
+        3108.4
+      ],
+      "edge": "e_d_5_6_d_4_6",
+      "weight": 0.1877,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_137",
+      "kind": "parking_access",
+      "pos": [
+        2841.6,
+        2975.0
+      ],
+      "edge": "e_d_5_6_d_5_5",
+      "weight": 0.2277,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_138",
+      "kind": "parking_access",
+      "pos": [
+        2975.75,
+        3091.6
+      ],
+      "edge": "e_d_5_6_d_6_6",
+      "weight": 0.1555,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_139",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        1608.4
+      ],
+      "edge": "e_d_6_0_d_5_0",
+      "weight": 0.3845,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_140",
+      "kind": "parking_access",
+      "pos": [
+        3108.4,
+        1722.07
+      ],
+      "edge": "e_d_6_0_d_6_1",
+      "weight": 0.2495,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_141",
+      "kind": "parking_access",
+      "pos": [
+        3182.62,
+        1824.48
+      ],
+      "edge": "e_d_6_0_q_0_0",
+      "weight": 0.3857,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_142",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        1858.4
+      ],
+      "edge": "e_d_6_1_d_5_1",
+      "weight": 0.2775,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_143",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        1724.69
+      ],
+      "edge": "e_d_6_1_d_6_0",
+      "weight": 0.3386,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_144",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2108.4
+      ],
+      "edge": "e_d_6_2_d_5_2",
+      "weight": 0.2773,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_145",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        1975.0
+      ],
+      "edge": "e_d_6_2_d_6_1",
+      "weight": 0.4303,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_146",
+      "kind": "parking_access",
+      "pos": [
+        3108.4,
+        2223.4
+      ],
+      "edge": "e_d_6_2_d_6_3",
+      "weight": 0.3423,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_147",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2361.6
+      ],
+      "edge": "e_d_6_3_d_5_3",
+      "weight": 0.4162,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_148",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        2223.4
+      ],
+      "edge": "e_d_6_3_d_6_2",
+      "weight": 0.4205,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_149",
+      "kind": "parking_access",
+      "pos": [
+        3108.4,
+        2476.6
+      ],
+      "edge": "e_d_6_3_d_6_4",
+      "weight": 0.3419,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_150",
+      "kind": "parking_access",
+      "pos": [
+        3773.36,
+        2338.4
+      ],
+      "edge": "e_d_6_3_ring_E",
+      "weight": 0.2381,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_151",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2608.4
+      ],
+      "edge": "e_d_6_4_d_5_4",
+      "weight": 0.3059,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_152",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        2476.6
+      ],
+      "edge": "e_d_6_4_d_6_3",
+      "weight": 0.3081,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_153",
+      "kind": "parking_access",
+      "pos": [
+        3108.4,
+        2725.0
+      ],
+      "edge": "e_d_6_4_d_6_5",
+      "weight": 0.2787,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_154",
+      "kind": "parking_access",
+      "pos": [
+        2975.0,
+        2858.4
+      ],
+      "edge": "e_d_6_5_d_5_5",
+      "weight": 0.239,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_155",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        2725.0
+      ],
+      "edge": "e_d_6_5_d_6_4",
+      "weight": 0.2786,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_156",
+      "kind": "parking_access",
+      "pos": [
+        2975.75,
+        3108.4
+      ],
+      "edge": "e_d_6_6_d_5_6",
+      "weight": 0.1556,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_157",
+      "kind": "parking_access",
+      "pos": [
+        3091.6,
+        2975.75
+      ],
+      "edge": "e_d_6_6_d_6_5",
+      "weight": 0.164,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_158",
+      "kind": "parking_access",
+      "pos": [
+        3757.4,
+        4009.24
+      ],
+      "edge": "e_m_0_0_m_0_1",
+      "weight": 0.0809,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_159",
+      "kind": "parking_access",
+      "pos": [
+        4009.49,
+        3742.6
+      ],
+      "edge": "e_m_0_0_m_1_0",
+      "weight": 0.1273,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_160",
+      "kind": "parking_access",
+      "pos": [
+        4111.06,
+        4089.96
+      ],
+      "edge": "e_m_0_0_ra_ne_r2",
+      "weight": 0.2547,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_161",
+      "kind": "parking_access",
+      "pos": [
+        3742.6,
+        4009.24
+      ],
+      "edge": "e_m_0_1_m_0_0",
+      "weight": 0.0809,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_162",
+      "kind": "parking_access",
+      "pos": [
+        3757.4,
+        4501.0
+      ],
+      "edge": "e_m_0_1_m_0_2",
+      "weight": 0.066,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_163",
+      "kind": "parking_access",
+      "pos": [
+        4000.0,
+        4242.6
+      ],
+      "edge": "e_m_0_1_m_lot",
+      "weight": 0.0682,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_164",
+      "kind": "parking_access",
+      "pos": [
+        3742.6,
+        4501.0
+      ],
+      "edge": "e_m_0_2_m_0_1",
+      "weight": 0.066,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_165",
+      "kind": "parking_access",
+      "pos": [
+        4003.2,
+        4742.6
+      ],
+      "edge": "e_m_0_2_m_1_2",
+      "weight": 0.0503,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_166",
+      "kind": "parking_access",
+      "pos": [
+        4009.49,
+        3757.4
+      ],
+      "edge": "e_m_1_0_m_0_0",
+      "weight": 0.1273,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_167",
+      "kind": "parking_access",
+      "pos": [
+        4501.0,
+        3742.6
+      ],
+      "edge": "e_m_1_0_m_2_0",
+      "weight": 0.0815,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_168",
+      "kind": "parking_access",
+      "pos": [
+        4257.4,
+        4000.0
+      ],
+      "edge": "e_m_1_0_m_lot",
+      "weight": 0.0992,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_169",
+      "kind": "parking_access",
+      "pos": [
+        4003.2,
+        4757.4
+      ],
+      "edge": "e_m_1_2_m_0_2",
+      "weight": 0.0503,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_170",
+      "kind": "parking_access",
+      "pos": [
+        4496.8,
+        4742.6
+      ],
+      "edge": "e_m_1_2_m_2_2",
+      "weight": 0.0682,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_171",
+      "kind": "parking_access",
+      "pos": [
+        4501.0,
+        3757.4
+      ],
+      "edge": "e_m_2_0_m_1_0",
+      "weight": 0.0815,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_172",
+      "kind": "parking_access",
+      "pos": [
+        4757.4,
+        4003.2
+      ],
+      "edge": "e_m_2_0_m_2_1",
+      "weight": 0.0657,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_173",
+      "kind": "parking_access",
+      "pos": [
+        4742.6,
+        4003.2
+      ],
+      "edge": "e_m_2_1_m_2_0",
+      "weight": 0.0657,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_174",
+      "kind": "parking_access",
+      "pos": [
+        4757.4,
+        4496.8
+      ],
+      "edge": "e_m_2_1_m_2_2",
+      "weight": 0.05,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_175",
+      "kind": "parking_access",
+      "pos": [
+        4496.8,
+        4757.4
+      ],
+      "edge": "e_m_2_2_m_1_2",
+      "weight": 0.0514,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_176",
+      "kind": "parking_access",
+      "pos": [
+        4742.6,
+        4496.8
+      ],
+      "edge": "e_m_2_2_m_2_1",
+      "weight": 0.0669,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_177",
+      "kind": "parking_access",
+      "pos": [
+        4000.0,
+        4257.4
+      ],
+      "edge": "e_m_lot_m_0_1",
+      "weight": 0.0682,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_178",
+      "kind": "parking_access",
+      "pos": [
+        4242.6,
+        4000.0
+      ],
+      "edge": "e_m_lot_m_1_0",
+      "weight": 0.0992,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_179",
+      "kind": "parking_access",
+      "pos": [
+        3168.54,
+        1829.03
+      ],
+      "edge": "e_q_0_0_d_6_0",
+      "weight": 0.4025,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_180",
+      "kind": "parking_access",
+      "pos": [
+        3251.6,
+        2151.25
+      ],
+      "edge": "e_q_0_0_q_0_1",
+      "weight": 0.2306,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_181",
+      "kind": "parking_access",
+      "pos": [
+        3353.55,
+        2048.4
+      ],
+      "edge": "e_q_0_0_q_1_0",
+      "weight": 0.3297,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_182",
+      "kind": "parking_access",
+      "pos": [
+        3248.4,
+        2151.25
+      ],
+      "edge": "e_q_0_1_q_0_0",
+      "weight": 0.2306,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_183",
+      "kind": "parking_access",
+      "pos": [
+        3251.6,
+        2350.0
+      ],
+      "edge": "e_q_0_1_q_0_2",
+      "weight": 0.2331,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_184",
+      "kind": "parking_access",
+      "pos": [
+        3248.4,
+        2350.0
+      ],
+      "edge": "e_q_0_2_q_0_1",
+      "weight": 0.2331,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_185",
+      "kind": "parking_access",
+      "pos": [
+        3251.6,
+        2550.75
+      ],
+      "edge": "e_q_0_2_q_0_3",
+      "weight": 0.2178,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_186",
+      "kind": "parking_access",
+      "pos": [
+        3248.4,
+        2550.75
+      ],
+      "edge": "e_q_0_3_q_0_2",
+      "weight": 0.2178,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_187",
+      "kind": "parking_access",
+      "pos": [
+        3349.25,
+        2648.4
+      ],
+      "edge": "e_q_0_3_q_1_3",
+      "weight": 0.1523,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_188",
+      "kind": "parking_access",
+      "pos": [
+        3353.55,
+        2051.6
+      ],
+      "edge": "e_q_1_0_q_0_0",
+      "weight": 0.3297,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_189",
+      "kind": "parking_access",
+      "pos": [
+        3550.0,
+        2048.4
+      ],
+      "edge": "e_q_1_0_q_2_0",
+      "weight": 0.1662,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_190",
+      "kind": "parking_access",
+      "pos": [
+        3349.25,
+        2651.6
+      ],
+      "edge": "e_q_1_3_q_0_3",
+      "weight": 0.1355,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_191",
+      "kind": "parking_access",
+      "pos": [
+        3550.0,
+        2648.4
+      ],
+      "edge": "e_q_1_3_q_2_3",
+      "weight": 0.1077,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_192",
+      "kind": "parking_access",
+      "pos": [
+        3550.0,
+        2051.6
+      ],
+      "edge": "e_q_2_0_q_1_0",
+      "weight": 0.1662,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_193",
+      "kind": "parking_access",
+      "pos": [
+        3750.75,
+        2048.4
+      ],
+      "edge": "e_q_2_0_q_3_0",
+      "weight": 0.1336,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_194",
+      "kind": "parking_access",
+      "pos": [
+        3550.0,
+        2651.6
+      ],
+      "edge": "e_q_2_3_q_1_3",
+      "weight": 0.1077,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_195",
+      "kind": "parking_access",
+      "pos": [
+        3750.75,
+        2648.4
+      ],
+      "edge": "e_q_2_3_q_3_3",
+      "weight": 0.1085,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_196",
+      "kind": "parking_access",
+      "pos": [
+        3750.75,
+        2051.6
+      ],
+      "edge": "e_q_3_0_q_2_0",
+      "weight": 0.1336,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_197",
+      "kind": "parking_access",
+      "pos": [
+        3851.6,
+        2149.25
+      ],
+      "edge": "e_q_3_0_q_3_1",
+      "weight": 0.1187,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_198",
+      "kind": "parking_access",
+      "pos": [
+        3848.4,
+        2149.25
+      ],
+      "edge": "e_q_3_1_q_3_0",
+      "weight": 0.1187,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_199",
+      "kind": "parking_access",
+      "pos": [
+        3851.6,
+        2350.0
+      ],
+      "edge": "e_q_3_1_q_3_2",
+      "weight": 0.1284,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_200",
+      "kind": "parking_access",
+      "pos": [
+        3848.4,
+        2350.0
+      ],
+      "edge": "e_q_3_2_q_3_1",
+      "weight": 0.1284,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_201",
+      "kind": "parking_access",
+      "pos": [
+        3851.6,
+        2550.75
+      ],
+      "edge": "e_q_3_2_q_3_3",
+      "weight": 0.1269,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_202",
+      "kind": "parking_access",
+      "pos": [
+        3750.75,
+        2651.6
+      ],
+      "edge": "e_q_3_3_q_2_3",
+      "weight": 0.1085,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_203",
+      "kind": "parking_access",
+      "pos": [
+        3848.4,
+        2550.75
+      ],
+      "edge": "e_q_3_3_q_3_2",
+      "weight": 0.1269,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_204",
+      "kind": "parking_access",
+      "pos": [
+        104.2,
+        253.51
+      ],
+      "edge": "e_r_0_0_r_0_1",
+      "weight": 0.2961,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_205",
+      "kind": "parking_access",
+      "pos": [
+        257.59,
+        95.8
+      ],
+      "edge": "e_r_0_0_r_1_0",
+      "weight": 0.5374,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_206",
+      "kind": "parking_access",
+      "pos": [
+        180.32,
+        164.85
+      ],
+      "edge": "e_r_0_0_ra_sw_r2",
+      "weight": 0.342,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_207",
+      "kind": "parking_access",
+      "pos": [
+        95.8,
+        253.52
+      ],
+      "edge": "e_r_0_1_r_0_0",
+      "weight": 0.2728,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_208",
+      "kind": "parking_access",
+      "pos": [
+        104.2,
+        546.74
+      ],
+      "edge": "e_r_0_1_r_0_2",
+      "weight": 0.2018,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_209",
+      "kind": "parking_access",
+      "pos": [
+        95.8,
+        546.74
+      ],
+      "edge": "e_r_0_2_r_0_1",
+      "weight": 0.1785,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_210",
+      "kind": "parking_access",
+      "pos": [
+        104.2,
+        850.0
+      ],
+      "edge": "e_r_0_2_r_0_3",
+      "weight": 0.1768,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_211",
+      "kind": "parking_access",
+      "pos": [
+        252.01,
+        695.8
+      ],
+      "edge": "e_r_0_2_r_1_2",
+      "weight": 0.2285,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_212",
+      "kind": "parking_access",
+      "pos": [
+        95.8,
+        850.0
+      ],
+      "edge": "e_r_0_3_r_0_2",
+      "weight": 0.1427,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_213",
+      "kind": "parking_access",
+      "pos": [
+        104.2,
+        1150.0
+      ],
+      "edge": "e_r_0_3_r_0_4",
+      "weight": 0.1971,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_214",
+      "kind": "parking_access",
+      "pos": [
+        250.0,
+        995.8
+      ],
+      "edge": "e_r_0_3_r_1_3",
+      "weight": 0.2041,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_215",
+      "kind": "parking_access",
+      "pos": [
+        95.8,
+        1150.0
+      ],
+      "edge": "e_r_0_4_r_0_3",
+      "weight": 0.1631,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_216",
+      "kind": "parking_access",
+      "pos": [
+        104.2,
+        1451.0
+      ],
+      "edge": "e_r_0_4_r_0_5",
+      "weight": 0.1831,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_217",
+      "kind": "parking_access",
+      "pos": [
+        255.31,
+        1303.91
+      ],
+      "edge": "e_ra_sw_r1_ring_W",
+      "weight": 0.317,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_218",
+      "kind": "parking_access",
+      "pos": [
+        95.8,
+        1451.0
+      ],
+      "edge": "e_r_0_5_r_0_4",
+      "weight": 0.1493,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_219",
+      "kind": "parking_access",
+      "pos": [
+        249.0,
+        1595.8
+      ],
+      "edge": "e_r_0_5_r_1_5",
+      "weight": 0.1703,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_220",
+      "kind": "parking_access",
+      "pos": [
+        257.59,
+        104.2
+      ],
+      "edge": "e_r_1_0_r_0_0",
+      "weight": 0.2852,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_221",
+      "kind": "parking_access",
+      "pos": [
+        546.74,
+        95.8
+      ],
+      "edge": "e_r_1_0_r_2_0",
+      "weight": 0.4312,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_222",
+      "kind": "parking_access",
+      "pos": [
+        252.02,
+        704.2
+      ],
+      "edge": "e_r_1_2_r_0_2",
+      "weight": 0.2393,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_223",
+      "kind": "parking_access",
+      "pos": [
+        404.2,
+        850.0
+      ],
+      "edge": "e_r_1_2_r_1_3",
+      "weight": 0.2442,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_224",
+      "kind": "parking_access",
+      "pos": [
+        547.99,
+        695.8
+      ],
+      "edge": "e_r_1_2_r_2_2",
+      "weight": 0.1863,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_225",
+      "kind": "parking_access",
+      "pos": [
+        250.0,
+        1004.2
+      ],
+      "edge": "e_r_1_3_r_0_3",
+      "weight": 0.2208,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_226",
+      "kind": "parking_access",
+      "pos": [
+        395.8,
+        850.0
+      ],
+      "edge": "e_r_1_3_r_1_2",
+      "weight": 0.2216,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_227",
+      "kind": "parking_access",
+      "pos": [
+        404.2,
+        1150.0
+      ],
+      "edge": "e_r_1_3_r_1_4",
+      "weight": 0.2651,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_228",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        995.8
+      ],
+      "edge": "e_r_1_3_r_2_3",
+      "weight": 0.2127,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_229",
+      "kind": "parking_access",
+      "pos": [
+        255.31,
+        1303.91
+      ],
+      "edge": "e_ra_sw_r1_ring_W",
+      "weight": 0.317,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_230",
+      "kind": "parking_access",
+      "pos": [
+        395.8,
+        1150.0
+      ],
+      "edge": "e_r_1_4_r_1_3",
+      "weight": 0.25,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_231",
+      "kind": "parking_access",
+      "pos": [
+        404.2,
+        1450.0
+      ],
+      "edge": "e_r_1_4_r_1_5",
+      "weight": 0.2516,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_232",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        1295.8
+      ],
+      "edge": "e_r_1_4_r_2_4",
+      "weight": 0.2334,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_233",
+      "kind": "parking_access",
+      "pos": [
+        249.0,
+        1604.2
+      ],
+      "edge": "e_r_1_5_r_0_5",
+      "weight": 0.1028,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_234",
+      "kind": "parking_access",
+      "pos": [
+        395.8,
+        1450.0
+      ],
+      "edge": "e_r_1_5_r_1_4",
+      "weight": 0.246,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_235",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        1595.8
+      ],
+      "edge": "e_r_1_5_r_2_5",
+      "weight": 0.1436,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_236",
+      "kind": "parking_access",
+      "pos": [
+        546.74,
+        104.2
+      ],
+      "edge": "e_r_2_0_r_1_0",
+      "weight": 0.1792,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_237",
+      "kind": "parking_access",
+      "pos": [
+        704.2,
+        252.01
+      ],
+      "edge": "e_r_2_0_r_2_1",
+      "weight": 0.4913,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_238",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        95.8
+      ],
+      "edge": "e_r_2_0_r_3_0",
+      "weight": 0.1427,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_239",
+      "kind": "parking_access",
+      "pos": [
+        695.8,
+        252.02
+      ],
+      "edge": "e_r_2_1_r_2_0",
+      "weight": 0.2237,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_240",
+      "kind": "parking_access",
+      "pos": [
+        704.2,
+        547.99
+      ],
+      "edge": "e_r_2_1_r_2_2",
+      "weight": 0.4377,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_241",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        395.8
+      ],
+      "edge": "e_r_2_1_r_3_1",
+      "weight": 0.2579,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_242",
+      "kind": "parking_access",
+      "pos": [
+        547.99,
+        704.2
+      ],
+      "edge": "e_r_2_2_r_1_2",
+      "weight": 0.2196,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_243",
+      "kind": "parking_access",
+      "pos": [
+        695.8,
+        547.99
+      ],
+      "edge": "e_r_2_2_r_2_1",
+      "weight": 0.2062,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_244",
+      "kind": "parking_access",
+      "pos": [
+        704.2,
+        850.0
+      ],
+      "edge": "e_r_2_2_r_2_3",
+      "weight": 0.3064,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_245",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        695.8
+      ],
+      "edge": "e_r_2_2_r_3_2",
+      "weight": 0.331,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_246",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        1004.2
+      ],
+      "edge": "e_r_2_3_r_1_3",
+      "weight": 0.2051,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_247",
+      "kind": "parking_access",
+      "pos": [
+        695.8,
+        850.0
+      ],
+      "edge": "e_r_2_3_r_2_2",
+      "weight": 0.22,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_248",
+      "kind": "parking_access",
+      "pos": [
+        704.2,
+        1150.0
+      ],
+      "edge": "e_r_2_3_r_2_4",
+      "weight": 0.2483,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_249",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        995.8
+      ],
+      "edge": "e_r_2_3_r_3_3",
+      "weight": 0.2701,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_250",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        1304.2
+      ],
+      "edge": "e_r_2_4_r_1_4",
+      "weight": 0.2238,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_251",
+      "kind": "parking_access",
+      "pos": [
+        695.8,
+        1150.0
+      ],
+      "edge": "e_r_2_4_r_2_3",
+      "weight": 0.2129,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_252",
+      "kind": "parking_access",
+      "pos": [
+        704.2,
+        1450.0
+      ],
+      "edge": "e_r_2_4_r_2_5",
+      "weight": 0.2228,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_253",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        1295.8
+      ],
+      "edge": "e_r_2_4_r_3_4",
+      "weight": 0.2462,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_254",
+      "kind": "parking_access",
+      "pos": [
+        550.0,
+        1604.2
+      ],
+      "edge": "e_r_2_5_r_1_5",
+      "weight": 0.1041,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_255",
+      "kind": "parking_access",
+      "pos": [
+        695.8,
+        1450.0
+      ],
+      "edge": "e_r_2_5_r_2_4",
+      "weight": 0.2138,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_256",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        1595.8
+      ],
+      "edge": "e_r_2_5_r_3_5",
+      "weight": 0.1537,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_257",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        104.2
+      ],
+      "edge": "e_r_3_0_r_2_0",
+      "weight": 0.1584,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_258",
+      "kind": "parking_access",
+      "pos": [
+        1004.2,
+        250.0
+      ],
+      "edge": "e_r_3_0_r_3_1",
+      "weight": 0.2042,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_259",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        95.8
+      ],
+      "edge": "e_r_3_0_r_4_0",
+      "weight": 0.1634,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_260",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        404.2
+      ],
+      "edge": "e_r_3_1_r_2_1",
+      "weight": 0.2217,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_261",
+      "kind": "parking_access",
+      "pos": [
+        995.8,
+        250.0
+      ],
+      "edge": "e_r_3_1_r_3_0",
+      "weight": 0.2041,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_262",
+      "kind": "parking_access",
+      "pos": [
+        1004.2,
+        550.0
+      ],
+      "edge": "e_r_3_1_r_3_2",
+      "weight": 0.2133,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_263",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        395.8
+      ],
+      "edge": "e_r_3_1_r_4_1",
+      "weight": 0.2734,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_264",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        704.2
+      ],
+      "edge": "e_r_3_2_r_2_2",
+      "weight": 0.2192,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_265",
+      "kind": "parking_access",
+      "pos": [
+        995.8,
+        550.0
+      ],
+      "edge": "e_r_3_2_r_3_1",
+      "weight": 0.2059,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_266",
+      "kind": "parking_access",
+      "pos": [
+        1004.2,
+        850.0
+      ],
+      "edge": "e_r_3_2_r_3_3",
+      "weight": 0.2409,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_267",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        695.8
+      ],
+      "edge": "e_r_3_2_r_4_2",
+      "weight": 0.2687,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_268",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        1004.2
+      ],
+      "edge": "e_r_3_3_r_2_3",
+      "weight": 0.2115,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_269",
+      "kind": "parking_access",
+      "pos": [
+        995.8,
+        850.0
+      ],
+      "edge": "e_r_3_3_r_3_2",
+      "weight": 0.2112,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_270",
+      "kind": "parking_access",
+      "pos": [
+        1004.2,
+        1150.0
+      ],
+      "edge": "e_r_3_3_r_3_4",
+      "weight": 0.2306,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_271",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        995.8
+      ],
+      "edge": "e_r_3_3_r_4_3",
+      "weight": 0.2796,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_272",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        1304.2
+      ],
+      "edge": "e_r_3_4_r_2_4",
+      "weight": 0.2101,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_273",
+      "kind": "parking_access",
+      "pos": [
+        995.8,
+        1150.0
+      ],
+      "edge": "e_r_3_4_r_3_3",
+      "weight": 0.2094,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_274",
+      "kind": "parking_access",
+      "pos": [
+        1004.2,
+        1450.0
+      ],
+      "edge": "e_r_3_4_r_3_5",
+      "weight": 0.2192,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_275",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        1295.8
+      ],
+      "edge": "e_r_3_4_r_4_4",
+      "weight": 0.2834,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_276",
+      "kind": "parking_access",
+      "pos": [
+        850.0,
+        1604.2
+      ],
+      "edge": "e_r_3_5_r_2_5",
+      "weight": 0.1053,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_277",
+      "kind": "parking_access",
+      "pos": [
+        995.8,
+        1450.0
+      ],
+      "edge": "e_r_3_5_r_3_4",
+      "weight": 0.2185,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_278",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        1595.8
+      ],
+      "edge": "e_r_3_5_r_4_5",
+      "weight": 0.1539,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_279",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        104.2
+      ],
+      "edge": "e_r_4_0_r_3_0",
+      "weight": 0.1791,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_280",
+      "kind": "parking_access",
+      "pos": [
+        1304.2,
+        250.0
+      ],
+      "edge": "e_r_4_0_r_4_1",
+      "weight": 0.229,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_281",
+      "kind": "parking_access",
+      "pos": [
+        1451.0,
+        95.8
+      ],
+      "edge": "e_r_4_0_r_5_0",
+      "weight": 0.132,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_282",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        404.2
+      ],
+      "edge": "e_r_4_1_r_3_1",
+      "weight": 0.2445,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_283",
+      "kind": "parking_access",
+      "pos": [
+        1295.8,
+        250.0
+      ],
+      "edge": "e_r_4_1_r_4_0",
+      "weight": 0.2384,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_284",
+      "kind": "parking_access",
+      "pos": [
+        1304.2,
+        550.0
+      ],
+      "edge": "e_r_4_1_r_4_2",
+      "weight": 0.2401,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_285",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        395.8
+      ],
+      "edge": "e_r_4_1_r_5_1",
+      "weight": 0.2428,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_286",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        704.2
+      ],
+      "edge": "e_r_4_2_r_3_2",
+      "weight": 0.196,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_287",
+      "kind": "parking_access",
+      "pos": [
+        1295.8,
+        550.0
+      ],
+      "edge": "e_r_4_2_r_4_1",
+      "weight": 0.2231,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_288",
+      "kind": "parking_access",
+      "pos": [
+        1304.2,
+        850.0
+      ],
+      "edge": "e_r_4_2_r_4_3",
+      "weight": 0.2369,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_289",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        695.8
+      ],
+      "edge": "e_r_4_2_r_5_2",
+      "weight": 0.2355,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_290",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        1004.2
+      ],
+      "edge": "e_r_4_3_r_3_3",
+      "weight": 0.1956,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_291",
+      "kind": "parking_access",
+      "pos": [
+        1304.2,
+        1150.0
+      ],
+      "edge": "e_r_4_3_r_4_4",
+      "weight": 0.2326,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_292",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        995.8
+      ],
+      "edge": "e_r_4_3_r_5_3",
+      "weight": 0.3115,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_293",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        1304.2
+      ],
+      "edge": "e_r_4_4_r_3_4",
+      "weight": 0.227,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_294",
+      "kind": "parking_access",
+      "pos": [
+        1295.8,
+        1150.0
+      ],
+      "edge": "e_r_4_4_r_4_3",
+      "weight": 0.2233,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_295",
+      "kind": "parking_access",
+      "pos": [
+        1304.2,
+        1450.0
+      ],
+      "edge": "e_r_4_4_r_4_5",
+      "weight": 0.2134,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_296",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        1295.8
+      ],
+      "edge": "e_r_4_4_r_5_4",
+      "weight": 0.3064,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_297",
+      "kind": "parking_access",
+      "pos": [
+        1150.0,
+        1604.2
+      ],
+      "edge": "e_r_4_5_r_3_5",
+      "weight": 0.1047,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_298",
+      "kind": "parking_access",
+      "pos": [
+        1295.8,
+        1450.0
+      ],
+      "edge": "e_r_4_5_r_4_4",
+      "weight": 0.2289,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_299",
+      "kind": "parking_access",
+      "pos": [
+        1451.0,
+        1595.8
+      ],
+      "edge": "e_r_4_5_r_5_5",
+      "weight": 0.2031,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_300",
+      "kind": "parking_access",
+      "pos": [
+        1451.0,
+        104.2
+      ],
+      "edge": "e_r_5_0_r_4_0",
+      "weight": 0.1552,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_301",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        404.2
+      ],
+      "edge": "e_r_5_1_r_4_1",
+      "weight": 0.2234,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_302",
+      "kind": "parking_access",
+      "pos": [
+        1595.8,
+        249.0
+      ],
+      "edge": "e_r_5_1_r_5_0",
+      "weight": 0.1539,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_303",
+      "kind": "parking_access",
+      "pos": [
+        1604.2,
+        550.0
+      ],
+      "edge": "e_r_5_1_r_5_2",
+      "weight": 0.1355,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_304",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        704.2
+      ],
+      "edge": "e_r_5_2_r_4_2",
+      "weight": 0.1902,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_305",
+      "kind": "parking_access",
+      "pos": [
+        1595.8,
+        550.0
+      ],
+      "edge": "e_r_5_2_r_5_1",
+      "weight": 0.1394,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_306",
+      "kind": "parking_access",
+      "pos": [
+        1604.2,
+        850.0
+      ],
+      "edge": "e_r_5_2_r_5_3",
+      "weight": 0.1837,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_307",
+      "kind": "parking_access",
+      "pos": [
+        1429.63,
+        1350.12
+      ],
+      "edge": "e_r_5_3_axis_w_ramp",
+      "weight": 0.5112,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_308",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        1004.2
+      ],
+      "edge": "e_r_5_3_r_4_3",
+      "weight": 0.1923,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_309",
+      "kind": "parking_access",
+      "pos": [
+        1595.8,
+        850.0
+      ],
+      "edge": "e_r_5_3_r_5_2",
+      "weight": 0.1255,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_310",
+      "kind": "parking_access",
+      "pos": [
+        1604.2,
+        1158.41
+      ],
+      "edge": "e_r_5_3_r_5_4",
+      "weight": 0.1867,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_311",
+      "kind": "parking_access",
+      "pos": [
+        1450.0,
+        1304.2
+      ],
+      "edge": "e_r_5_4_r_4_4",
+      "weight": 0.2084,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_312",
+      "kind": "parking_access",
+      "pos": [
+        1595.8,
+        1158.41
+      ],
+      "edge": "e_r_5_4_r_5_3",
+      "weight": 0.3016,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_313",
+      "kind": "parking_access",
+      "pos": [
+        1604.2,
+        1451.0
+      ],
+      "edge": "e_r_5_4_r_5_5",
+      "weight": 0.2175,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_314",
+      "kind": "parking_access",
+      "pos": [
+        1595.8,
+        1451.0
+      ],
+      "edge": "e_r_5_5_r_5_4",
+      "weight": 0.2512,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_315",
+      "kind": "parking_access",
+      "pos": [
+        4454.48,
+        4466.7
+      ],
+      "edge": "e_ra_ne_r0_ra_ne_r1",
+      "weight": 0.2838,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_316",
+      "kind": "parking_access",
+      "pos": [
+        3407.52,
+        4461.6
+      ],
+      "edge": "e_ra_ne_r0_ring_N",
+      "weight": 0.1662,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_317",
+      "kind": "parking_access",
+      "pos": [
+        4433.3,
+        4451.74
+      ],
+      "edge": "e_ra_ne_r1_ra_ne_r2",
+      "weight": 0.2248,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_318",
+      "kind": "parking_access",
+      "pos": [
+        4432.14,
+        3412.36
+      ],
+      "edge": "e_ra_ne_r1_ring_E",
+      "weight": 0.0961,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_319",
+      "kind": "parking_access",
+      "pos": [
+        4094.76,
+        4106.47
+      ],
+      "edge": "e_ra_ne_r2_m_0_0",
+      "weight": 0.2547,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_320",
+      "kind": "parking_access",
+      "pos": [
+        4455.34,
+        3412.51
+      ],
+      "edge": "e_ring_E_ra_ne_r1",
+      "weight": 0.0876,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_321",
+      "kind": "parking_access",
+      "pos": [
+        2367.44,
+        263.5
+      ],
+      "edge": "e_ra_s_r0_ra_s_r1",
+      "weight": 0.2741,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_322",
+      "kind": "parking_access",
+      "pos": [
+        1312.87,
+        261.6
+      ],
+      "edge": "e_ra_s_r0_ra_sw_r0",
+      "weight": 0.4467,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_323",
+      "kind": "parking_access",
+      "pos": [
+        2343.37,
+        274.31
+      ],
+      "edge": "e_ra_s_r1_ra_s_r2",
+      "weight": 0.2782,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_324",
+      "kind": "parking_access",
+      "pos": [
+        3404.41,
+        250.84
+      ],
+      "edge": "e_ra_s_r1_ring_SE",
+      "weight": 0.0401,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_325",
+      "kind": "parking_access",
+      "pos": [
+        2349.2,
+        930.26
+      ],
+      "edge": "e_ra_s_r2_d_3_0",
+      "weight": 0.2313,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_326",
+      "kind": "parking_access",
+      "pos": [
+        2334.53,
+        234.53
+      ],
+      "edge": "e_ra_s_r2_ra_s_r3",
+      "weight": 0.3049,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_327",
+      "kind": "parking_access",
+      "pos": [
+        2361.6,
+        114.88
+      ],
+      "edge": "e_fringe_ring_S_ra_s_r3",
+      "weight": 0.0838,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_328",
+      "kind": "parking_access",
+      "pos": [
+        1312.87,
+        238.4
+      ],
+      "edge": "e_ra_sw_r0_ra_s_r0",
+      "weight": 0.3823,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_329",
+      "kind": "parking_access",
+      "pos": [
+        254.44,
+        252.18
+      ],
+      "edge": "e_r_0_0_r_park_hub",
+      "weight": 0.1516,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_330",
+      "kind": "parking_access",
+      "pos": [
+        233.3,
+        253.32
+      ],
+      "edge": "e_ra_sw_r1_ra_sw_r2",
+      "weight": 0.6316,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_331",
+      "kind": "parking_access",
+      "pos": [
+        250.0,
+        1304.2
+      ],
+      "edge": "e_r_1_4_r_0_4",
+      "weight": 0.2387,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_332",
+      "kind": "parking_access",
+      "pos": [
+        170.22,
+        175.67
+      ],
+      "edge": "e_ra_sw_r2_r_0_0",
+      "weight": 0.6174,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_333",
+      "kind": "parking_access",
+      "pos": [
+        257.27,
+        234.91
+      ],
+      "edge": "e_ra_sw_r2_ra_sw_r0",
+      "weight": 0.3562,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_334",
+      "kind": "parking_access",
+      "pos": [
+        4455.34,
+        3412.51
+      ],
+      "edge": "e_ring_E_ra_ne_r1",
+      "weight": 0.0876,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_335",
+      "kind": "parking_access",
+      "pos": [
+        4438.4,
+        1299.33
+      ],
+      "edge": "e_ring_E_ring_SE",
+      "weight": 0.0437,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_336",
+      "kind": "parking_access",
+      "pos": [
+        1299.25,
+        4438.4
+      ],
+      "edge": "e_ring_NW_ring_N",
+      "weight": 0.0426,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_337",
+      "kind": "parking_access",
+      "pos": [
+        238.4,
+        3400.95
+      ],
+      "edge": "e_ring_NW_ring_W",
+      "weight": 0.0412,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_338",
+      "kind": "parking_access",
+      "pos": [
+        2341.6,
+        4094.45
+      ],
+      "edge": "e_ring_N_axis_n_drop",
+      "weight": 0.1978,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 1.6
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_339",
+      "kind": "parking_access",
+      "pos": [
+        3407.52,
+        4438.4
+      ],
+      "edge": "e_ring_N_ra_ne_r0",
+      "weight": 0.1747,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_340",
+      "kind": "parking_access",
+      "pos": [
+        1299.25,
+        4461.6
+      ],
+      "edge": "e_ring_N_ring_NW",
+      "weight": 0.0426,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_341",
+      "kind": "parking_access",
+      "pos": [
+        3404.7,
+        274.04
+      ],
+      "edge": "e_ring_SE_ra_s_r1",
+      "weight": 0.0442,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_342",
+      "kind": "parking_access",
+      "pos": [
+        4461.6,
+        1299.33
+      ],
+      "edge": "e_ring_SE_ring_E",
+      "weight": 0.0397,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_343",
+      "kind": "parking_access",
+      "pos": [
+        596.11,
+        2344.8
+      ],
+      "edge": "e_ring_W_axis_w_zip",
+      "weight": 0.0895,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.0
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_344",
+      "kind": "parking_access",
+      "pos": [
+        250.0,
+        1304.2
+      ],
+      "edge": "e_r_1_4_r_0_4",
+      "weight": 0.2387,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 0.3
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_parking_access_345",
+      "kind": "parking_access",
+      "pos": [
+        261.6,
+        3400.95
+      ],
+      "edge": "e_ring_W_ring_NW",
+      "weight": 0.0412,
+      "lateral_anchor": {
+        "side": "kerb",
+        "lateral_offset_m": 3.1
+      },
+      "land_use": "parking"
+    },
+    {
+      "id": "poi_v2_lot_mall",
+      "kind": "parking_lot",
+      "pos": [
+        4250.0,
+        4250.0
+      ],
+      "edge": "e_m_0_1_m_lot",
+      "polygon": [
+        [
+          4160.0,
+          4195.0
+        ],
+        [
+          4340.0,
+          4195.0
+        ],
+        [
+          4340.0,
+          4305.0
+        ],
+        [
+          4160.0,
+          4305.0
+        ]
+      ],
+      "capacity": 24,
+      "lane_seam": [
+        {
+          "lane": "e_m_1_0_m_lot_1",
+          "pos": 239.6
+        }
+      ],
+      "parked_cars": [
+        {
+          "pos": [
+            4190.0,
+            4220.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            4225.0,
+            4220.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            4260.0,
+            4220.0
+          ],
+          "angle": 180.0
+        },
+        {
+          "pos": [
+            4295.0,
+            4220.0
+          ],
+          "angle": 180.0
+        },
+        {
+          "pos": [
+            4190.0,
+            4240.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            4225.0,
+            4240.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            4260.0,
+            4240.0
+          ],
+          "angle": 180.0
+        },
+        {
+          "pos": [
+            4295.0,
+            4240.0
+          ],
+          "angle": 180.0
+        }
+      ],
+      "boardable_car": {
+        "id": "v2_mall_shop_0",
+        "exit_route": [
+          "e_m_lot_m_0_1",
+          "e_m_0_1_m_0_0",
+          "e_m_0_0_ra_ne_r2",
+          "e_ra_ne_r2_ra_ne_r0",
+          "e_ra_ne_r0_ring_N",
+          "e_ring_N_fringe_ring_N"
+        ]
+      },
+      "hidden": false,
+      "building": "bldg_mall_0",
+      "zone": "zone_retail"
+    },
+    {
+      "id": "poi_v2_garage_mall",
+      "kind": "parking_lot",
+      "pos": [
+        4280.0,
+        4280.0
+      ],
+      "edge": "e_m_lot_m_garage_stub",
+      "polygon": [
+        [
+          4260.0,
+          4260.0
+        ],
+        [
+          4300.0,
+          4260.0
+        ],
+        [
+          4300.0,
+          4300.0
+        ],
+        [
+          4260.0,
+          4300.0
+        ]
+      ],
+      "capacity": 10,
+      "lane_seam": [
+        {
+          "lane": "e_m_lot_m_garage_stub_1",
+          "pos": 16.88
+        }
+      ],
+      "parked_cars": [],
+      "hidden": true,
+      "building": "bldg_garage_0",
+      "zone": "zone_retail"
+    },
+    {
+      "id": "poi_v2_garage_downtown",
+      "kind": "parking_lot",
+      "pos": [
+        2890.0,
+        2850.0
+      ],
+      "edge": "e_d_5_5_d_garage_stub",
+      "polygon": [
+        [
+          2870.0,
+          2830.0
+        ],
+        [
+          2910.0,
+          2830.0
+        ],
+        [
+          2910.0,
+          2870.0
+        ],
+        [
+          2870.0,
+          2870.0
+        ]
+      ],
+      "capacity": 10,
+      "lane_seam": [
+        {
+          "lane": "e_d_5_5_d_garage_stub_1",
+          "pos": 14.05
+        }
+      ],
+      "parked_cars": [],
+      "hidden": true,
+      "building": "bldg_garage_1",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "poi_v2_lot_residential_0",
+      "kind": "parking_lot",
+      "pos": [
+        1000.0,
+        360.0
+      ],
+      "edge": "e_r_3_1_r_lot0_stub",
+      "polygon": [
+        [
+          988.0,
+          348.0
+        ],
+        [
+          1012.0,
+          348.0
+        ],
+        [
+          1012.0,
+          372.0
+        ],
+        [
+          988.0,
+          372.0
+        ]
+      ],
+      "capacity": 6,
+      "lane_seam": [
+        {
+          "lane": "e_r_3_1_r_lot0_stub_1",
+          "pos": 16.4
+        }
+      ],
+      "parked_cars": [
+        {
+          "pos": [
+            994.0,
+            357.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            1006.0,
+            357.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            994.0,
+            363.0
+          ],
+          "angle": 0.0
+        }
+      ],
+      "hidden": false,
+      "zone": "zone_residential"
+    },
+    {
+      "id": "poi_v2_lot_residential_1",
+      "kind": "parking_lot",
+      "pos": [
+        1340.0,
+        1000.0
+      ],
+      "edge": "e_r_4_3_r_lot1_stub",
+      "polygon": [
+        [
+          1328.0,
+          988.0
+        ],
+        [
+          1352.0,
+          988.0
+        ],
+        [
+          1352.0,
+          1012.0
+        ],
+        [
+          1328.0,
+          1012.0
+        ]
+      ],
+      "capacity": 6,
+      "lane_seam": [
+        {
+          "lane": "e_r_4_3_r_lot1_stub_1",
+          "pos": 16.4
+        }
+      ],
+      "parked_cars": [
+        {
+          "pos": [
+            1334.0,
+            997.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            1346.0,
+            997.0
+          ],
+          "angle": 0.0
+        },
+        {
+          "pos": [
+            1334.0,
+            1003.0
+          ],
+          "angle": 0.0
+        }
+      ],
+      "hidden": false,
+      "zone": "zone_residential"
+    },
+    {
+      "id": "poi_v2_park",
+      "kind": "park",
+      "pos": [
+        400.0,
+        400.0
+      ],
+      "edge": "e_r_0_0_r_park_hub",
+      "polygon": [
+        [
+          100.0,
+          100.0
+        ],
+        [
+          700.0,
+          100.0
+        ],
+        [
+          700.0,
+          700.0
+        ],
+        [
+          100.0,
+          700.0
+        ]
+      ],
+      "path_edges": [
+        "e_r_0_0_r_park_hub",
+        "e_r_0_1_r_park_hub",
+        "e_r_0_2_r_park_hub",
+        "e_r_1_0_r_park_hub",
+        "e_r_1_2_r_park_hub",
+        "e_r_2_0_r_park_hub",
+        "e_r_2_1_r_park_hub",
+        "e_r_2_2_r_park_hub",
+        "e_r_park_hub_r_0_0",
+        "e_r_park_hub_r_0_1",
+        "e_r_park_hub_r_0_2",
+        "e_r_park_hub_r_1_0",
+        "e_r_park_hub_r_1_2",
+        "e_r_park_hub_r_2_0",
+        "e_r_park_hub_r_2_1",
+        "e_r_park_hub_r_2_2"
+      ],
+      "meet_areas": [
+        {
+          "id": "meet_area_park_0",
+          "pos": [
+            400.0,
+            400.0
+          ],
+          "group_size": 4,
+          "talk_duration": {
+            "min_s": 30,
+            "max_s": 180
+          }
+        },
+        {
+          "id": "meet_area_park_1",
+          "pos": [
+            250.0,
+            250.0
+          ],
+          "group_size": 3,
+          "talk_duration": {
+            "min_s": 20,
+            "max_s": 120
+          }
+        },
+        {
+          "id": "meet_area_park_2",
+          "pos": [
+            250.0,
+            400.0
+          ],
+          "group_size": 3,
+          "talk_duration": {
+            "min_s": 20,
+            "max_s": 120
+          }
+        },
+        {
+          "id": "meet_area_plaza_0",
+          "pos": [
+            3550.0,
+            2350.0
+          ],
+          "group_size": 6,
+          "talk_duration": {
+            "min_s": 30,
+            "max_s": 200
+          }
+        }
+      ],
+      "dwell_points": [
+        {
+          "pos": [
+            250.0,
+            250.0
+          ]
+        },
+        {
+          "pos": [
+            250.0,
+            400.0
+          ]
+        },
+        {
+          "pos": [
+            250.0,
+            550.0
+          ]
+        },
+        {
+          "pos": [
+            400.0,
+            250.0
+          ]
+        },
+        {
+          "pos": [
+            400.0,
+            550.0
+          ]
+        },
+        {
+          "pos": [
+            550.0,
+            250.0
+          ]
+        },
+        {
+          "pos": [
+            550.0,
+            400.0
+          ]
+        },
+        {
+          "pos": [
+            550.0,
+            550.0
+          ]
+        }
+      ],
+      "zone": "zone_park"
+    },
+    {
+      "id": "poi_v2_venue_mall",
+      "kind": "venue",
+      "venue_type": "mall",
+      "pos": [
+        4250.0,
+        4340.0
+      ],
+      "edge": "e_ra_ne_r2_m_0_0",
+      "weight": 1.0,
+      "capacity": 600,
+      "building": "bldg_mall_0",
+      "service_door": "poi_v2_entrance_mall",
+      "zone": "zone_retail"
+    },
+    {
+      "id": "poi_v2_entrance_mall",
+      "kind": "building_entrance",
+      "pos": [
+        4431.865000000001,
+        4431.9225
+      ],
+      "edge": "e_ra_ne_r2_m_0_0",
+      "facing": [
+        0.0,
+        -1.0
+      ],
+      "weight": 0.5,
+      "land_use": "commercial",
+      "building": "bldg_mall_0",
+      "inside_dwell": {
+        "min_s": 300,
+        "max_s": 2400
+      },
+      "legitimate_sink": true
+    },
+    {
+      "id": "poi_v2_dwell_plaza",
+      "kind": "dwell_spot",
+      "pos": [
+        3550.0,
+        2350.0
+      ],
+      "edge": "e_d_6_3_ring_E",
+      "weight": 0.7,
+      "capacity": 30,
+      "land_use": "open_space",
+      "meet_area": "meet_area_plaza_0",
+      "group_size": 6,
+      "talk_duration": {
+        "min_s": 30,
+        "max_s": 200
+      },
+      "duration_profile": {
+        "min_s": 60,
+        "max_s": 900
+      }
+    },
+    {
+      "id": "poi_v2_venue_restaurant_0",
+      "kind": "venue",
+      "venue_type": "restaurant",
+      "pos": [
+        3350.0,
+        2025.0
+      ],
+      "edge": "e_q_0_0_q_1_0",
+      "weight": 0.9,
+      "capacity": 12,
+      "building": "bldg_restaurant_0",
+      "service_door": "poi_v2_entrance_restaurant_0",
+      "scenario_template": "waiter_v1",
+      "table_cluster": [
+        {
+          "id": "poi_v2_table_r0_0",
+          "pos": [
+            3360.0,
+            2025.0
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r0_1",
+          "pos": [
+            3345.0,
+            2033.66
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r0_2",
+          "pos": [
+            3345.0,
+            2016.34
+          ],
+          "capacity": 4
+        }
+      ],
+      "zone": "zone_dining"
+    },
+    {
+      "id": "poi_v2_venue_restaurant_1",
+      "kind": "venue",
+      "venue_type": "restaurant",
+      "pos": [
+        3750.0,
+        2025.0
+      ],
+      "edge": "e_q_2_0_q_3_0",
+      "weight": 0.9,
+      "capacity": 16,
+      "building": "bldg_restaurant_1",
+      "service_door": "poi_v2_entrance_restaurant_1",
+      "scenario_template": "waiter_v1",
+      "table_cluster": [
+        {
+          "id": "poi_v2_table_r1_0",
+          "pos": [
+            3760.0,
+            2025.0
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r1_1",
+          "pos": [
+            3750.0,
+            2035.0
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r1_2",
+          "pos": [
+            3740.0,
+            2025.0
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r1_3",
+          "pos": [
+            3750.0,
+            2015.0
+          ],
+          "capacity": 4
+        }
+      ],
+      "zone": "zone_dining"
+    },
+    {
+      "id": "poi_v2_venue_restaurant_2",
+      "kind": "venue",
+      "venue_type": "restaurant",
+      "pos": [
+        3225.0,
+        2550.0
+      ],
+      "edge": "e_q_0_3_q_0_2",
+      "weight": 0.9,
+      "capacity": 12,
+      "building": "bldg_restaurant_2",
+      "service_door": "poi_v2_entrance_restaurant_2",
+      "scenario_template": "waiter_v1",
+      "table_cluster": [
+        {
+          "id": "poi_v2_table_r2_0",
+          "pos": [
+            3235.0,
+            2550.0
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r2_1",
+          "pos": [
+            3220.0,
+            2558.66
+          ],
+          "capacity": 4
+        },
+        {
+          "id": "poi_v2_table_r2_2",
+          "pos": [
+            3220.0,
+            2541.34
+          ],
+          "capacity": 4
+        }
+      ],
+      "zone": "zone_dining"
+    },
+    {
+      "id": "poi_v2_entrance_restaurant_0",
+      "kind": "building_entrance",
+      "pos": [
+        3261.79,
+        2048.4
+      ],
+      "edge": "e_q_0_0_q_1_0",
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "weight": 0.5,
+      "land_use": "commercial",
+      "building": "bldg_restaurant_0",
+      "inside_dwell": {
+        "min_s": 600,
+        "max_s": 3600
+      },
+      "legitimate_sink": true
+    },
+    {
+      "id": "poi_v2_entrance_restaurant_1",
+      "kind": "building_entrance",
+      "pos": [
+        3654.7,
+        2048.4
+      ],
+      "edge": "e_q_2_0_q_3_0",
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "weight": 0.5,
+      "land_use": "commercial",
+      "building": "bldg_restaurant_1",
+      "inside_dwell": {
+        "min_s": 600,
+        "max_s": 3600
+      },
+      "legitimate_sink": true
+    },
+    {
+      "id": "poi_v2_entrance_restaurant_2",
+      "kind": "building_entrance",
+      "pos": [
+        3248.4,
+        2646.8
+      ],
+      "edge": "e_q_0_3_q_0_2",
+      "facing": [
+        0.0,
+        1.0
+      ],
+      "weight": 0.5,
+      "land_use": "commercial",
+      "building": "bldg_restaurant_2",
+      "inside_dwell": {
+        "min_s": 600,
+        "max_s": 3600
+      },
+      "legitimate_sink": true
+    }
+  ],
+  "schema": "pois/v2"
+}

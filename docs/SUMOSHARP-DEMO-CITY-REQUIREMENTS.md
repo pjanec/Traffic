@@ -13,6 +13,15 @@ demonstrate its features. Ordered by criticality.
 The weave (PED-REALISM-1 W1–W4) is done and behind `EnableWeave` — this box is where it gets turned on
 in a real showcase, and where the remaining V2 behaviors need productizing.
 
+**Status (2026-07-20): the box is COMPLETE and packaged.** All four stages built + pushed on SumoData
+branch `claude/subarea-handoff-docs-a3f1jd`; handed over as a tgz (`demo_city_handoff.tgz` — `kernel/`
++ `box/` + both docs). It is fully synthetic (scanned clean of place tokens). You can bake and drive it
+today. **The one thing that blocks you on first contact: your recorder throws
+`FormatException: unknown POI kind` on the new `parking_lot`/`park` kinds** — `PedPoiReader.cs` /
+`PedNetworkParser` must learn them before it will load `box/pois.json` unfiltered (see R2/R5). Our own
+2D replay worked around this by feeding the recorder a v1-kinds-only POI list; that is the temporary
+seam, not a fix.
+
 ---
 
 ## R1 — Navmesh baker robustness on composed geometry *(critical, gates everything)*
@@ -32,6 +41,34 @@ components** (ideally 1 + the isolated park island bridged at its gates), with u
   dialed density (not routing-limited); the park path graph connects to the street sidewalks at its
   gate nodes.
 
+### What the bakes actually showed (concrete R1 datapoints — resolved vs. still on you)
+
+Both artifacts are built and baked through your recorder (`e9ac56c`):
+
+- **`kernel/` → `components=1, unreachableSkips=0`.** Every junction type + roundabout + zipper +
+  allway_stop + the ped-only park baked into ONE component, first try. The P8-1 fragmentation is
+  **geometry-shape, not present in regular synthetic geometry** — confirmed.
+- **`box/` (full 5×5 km) → 1 main component (~96% of ~1049 polygons) + small residuals.** The park (the
+  flagged risk) bakes clean into the main component via its 8 gates. Two classes of residual remain, and
+  **the split between "our bug" and "your baker" is the useful part:**
+  - *Ours, fixed:* several arterial-speed (16.67 m/s) edges — roundabout legs, zipper internals, the
+    turn-lane-drop, fringe stubs — had **no explicit sidewalk width**, so netconvert's 15 m/s
+    sidewalk-guess threshold silently dropped their sidewalks, isolating the mall district + two
+    roundabouts. We now stamp explicit widths; those merged into the main component. (Heads-up for your
+    own real-net handling: **arterial-speed edges lose guessed sidewalks** — a silent navmesh hole.)
+  - *Yours, R1:* residual fragments — the **dining-plaza interior (36-poly)**, three single-polygon
+    dining-corner artifacts, and a **7-poly ring-NW-corner** stretch — trace to netconvert's own
+    **walkingArea splitting at heterogeneous-approach junctions**, which `PolygonGraph.cs`'s documented
+    anti-shortcut invariant **correctly refuses to bridge**. This is a baker-level limitation, not a
+    citygen shortcut. **Demo impact:** the dining-plaza meet-&-talk spot won't populate from
+    cross-district demand while its interior is a separate component. This is the concrete, shareable,
+    geometry-free repro for the net-connectivity-based stitching in R1 — the plaza interior in `box/` is
+    the minimal case. **Update:** we tried the citygen-side mitigation (homogenising the plaza's
+    approaches) — it did **not** move the residual (re-bake byte-identical), which *confirms* this is a
+    baker-level limitation, not something the net author can paper over. So R1 stands as a real ask.
+    Full box re-bake after all Stage-3 edges: **`components=6, unreachableSkips=0`** (1 main ≈ 1027 polys
+    + the plaza-36 + three 1-poly + one 7-poly residuals).
+
 ## R2 — Data-driven micro-scenario registry *(headline behavior: waiter)*
 
 Replace the hardcoded `WaiterScenario`/`SceneGen` anchors with a registry keyed off our data. A
@@ -40,8 +77,10 @@ id), and `table_cluster` (`[{id,pos,capacity}]`). The registry instantiates the 
 peds arrive via the door, sit at a table, are served, dwell, leave. IG-deterministic like the rest.
 
 - **We provide:** the venue records + door + table geometry + cross-refs in `pois/v2`.
-- **You build:** the template→instance registry + `waiter_v1`; confirm it reads the add-file POIs
-  (`PedNetworkParser` `<poi>`/`<param>` path may need extending).
+- **You build:** the template→instance registry + `waiter_v1`; **first extend `PedPoiReader.cs` /
+  `PedNetworkParser` to parse the new `parking_lot` and `park` POI kinds** — today the recorder throws
+  `FormatException: unknown POI kind` on them, so nothing loads the full box until this lands. Confirmed
+  empirically against the unmodified recorder.
 
 ## R3 — Shared parked-car representation + productized drive-away *(headline behavior: shop & drive off)*
 
@@ -54,7 +93,11 @@ Turn the `LotCoupling` POC into a data-driven, both-directions coupling on our `
 - **Walk → board → drive off:** a ped walks to `boardable_car`, boards, the car departs on `exit_route`.
 - Needs the **shared parked-car representation** both sessions flagged (so the parked dressing, the
   boardable car, and the SUMO parkingArea occupant are one entity, IG-consistent).
-- **We provide:** the lot polygon + seam + car poses + boardable-car id + exit route.
+- **We provide:** the lot polygon + seam + car poses + boardable-car id + exit route. The **mall
+  surface lot** has a full `boardable_car` + `exit_route` (two-way access, verified in SUMO: 6 shopping
+  trips ran the full arrive→park→dwell→drive-away cycle). The **hidden garages + quiet-area lots** are
+  dead-end stubs, so their churn is modeled as *separate* arriving/departing vehicles (a same-car round
+  trip is impossible on a dead-end); no `boardable_car` there.
 - **You build:** the productized coupling + the shared car rep + its IG-determinism contract.
 
 ## R4 — Hidden-garage birth/death (occluded) *(the "underground garage" realism requirement)*
@@ -87,6 +130,11 @@ gates.)
 `EnableWeave` on in the showcase scenario. Confirm the weave sources per-edge half-width from this net's
 **baked sidewalk width** (our sidewalks carry real 2 m / 4 m widths, so the band should visibly vary),
 and that server==IG holds on the composed net at demo density. This box is the visual proof of W1–W4.
+
+**Note — not yet shown.** Our 2D replay ran the recorder at its default (`EnableWeave` **off**), so the
+peds in it are the old pass-through low-power peds, *not* the weave. Turning `EnableWeave` on (and
+confirming the band varies with our 2/4 m sidewalks) is the first thing that makes this box the visible
+proof of the weave — do it early; it needs nothing further from us.
 
 ## R8 — Density coupling *(parked; list for completeness)*
 
