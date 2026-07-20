@@ -1379,6 +1379,190 @@ internal static class SceneGen
     }
 
     // ---------------------------------------------------------------------------------------
+    // Scene -- "City: cars + weaving pedestrians" (W1-W4, docs/PEDESTRIAN-WEAVE-PRODUCTION-DESIGN.md):
+    // the plain-and-simple "realworld" mixed scene -- a routed O-D pedestrian crowd on the junction's
+    // real sidewalks/crossings/walkingareas (the SAME PedDemand + PedLodManager path as the OD-routing
+    // / lively-crowd demos) with the deterministic lateral WEAVE turned ON, co-simulated with real cars
+    // driving cross-traffic through the junction (the exact Engine + Krauss seam BuildCrossingGate/
+    // BuildCarAvoidsPedestrian use). This is the "before/after" the whole weave effort is about: without
+    // weave, low-power peds walk exact centrelines and opposing/overtaking peds literally pass THROUGH
+    // each other on a shared sidewalk; with weave, each ped's pose is offset onto its own deterministic
+    // half of the walkable width (a pure function of route+seed+baked width+time -- server==IG, no
+    // neighbour queries), so the crowd threads the sidewalks with few overlaps. Cars are ordinary Engine
+    // vehicles on their own carriageway; the pedestrians are the star.
+    // ---------------------------------------------------------------------------------------
+    internal static ScenePayload BuildWeaveCity(string scenarioDir)
+    {
+        var netPath = Path.Combine(scenarioDir, "net.net.xml");
+        var walkableAddPath = Path.Combine(scenarioDir, "walkable.add.xml");
+        var network = BuildNetwork(NetworkParser.Parse(netPath));
+
+        var pedNetwork = PedNetworkParser.Load(netPath, walkableAddPath);
+        network = WithCrossings(network, pedNetwork, netPath);
+        var polygons = WalkablePolygonBaker.Bake(pedNetwork);
+        var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons));
+
+        // Same four arms' near/far sidewalk OD points as BuildOdRouting/BuildLivelyCrowd -- demand
+        // crisscrosses every arm, so opposing and overtaking peds share each sidewalk (the case the
+        // weave exists to resolve).
+        const double cx = 120.0, cy = 120.0;
+        var odPoints = new[]
+        {
+            new Vec2(cx - 7.4, cy + 20.0), new Vec2(cx + 7.4, cy + 20.0),  // north arm
+            new Vec2(cx + 20.0, cy - 7.4), new Vec2(cx + 20.0, cy + 7.4),  // east arm
+            new Vec2(cx - 7.4, cy - 20.0), new Vec2(cx + 7.4, cy - 20.0),  // south arm
+            new Vec2(cx - 20.0, cy - 7.4), new Vec2(cx - 20.0, cy + 7.4),  // west arm
+        };
+
+        var config = new Sim.Pedestrians.Demand.PedDemandConfig
+        {
+            Origins = odPoints,
+            Destinations = odPoints,
+            SpawnRatePerSecond = 0.7,
+            PopulationCap = 20,
+            Seed = 20260720UL,
+            MaxSpeed = 1.3,
+            Radius = 0.3,
+            ArrivalRadius = 0.6,
+            // Weave rides the lively low-power path (W2): a mild liveliness block routes spawns through
+            // AddPedLively so each Walk leg carries the baked per-vertex sidewalk half-width, and the
+            // weave then offsets each ped within it. Off would leave peds on the bare centreline.
+            Liveliness = new Sim.Pedestrians.Demand.PedLivelinessConfig
+            {
+                PauseProbability = 0.2,
+                MinPauseSeconds = 2.0,
+                MaxPauseSeconds = 4.0,
+                MaxPausesPerTrip = 1,
+                PauseAnimTag = "idle",
+            },
+            EnableWeave = true,
+        };
+
+        var publisher = new PedPublisher();
+        var manager = new PedLodManager(nav, publisher, arriveRadius: 0.3, dwellSeconds: 1.0);
+        var demand = new Sim.Pedestrians.Demand.PedDemand(config, nav, manager, startTime: 0.0);
+        var field = new InterestField(); // no interest sources -- everyone stays low-power (weaving PathArc/timeline)
+        var noEntities = Array.Empty<WorldDisc>();
+
+        // ----- the cars: real Engine + Krauss driving, cross-traffic through the junction -----
+        var engine = new Engine();
+        engine.LoadNetwork(netPath);
+        var vtype = engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
+
+        // Through-and-turn routes across the junction, rotated so consecutive spawns use DIFFERENT
+        // entry arms (never two cars stacked on the same entry edge at spawn). An unroutable pair
+        // (should not happen on this symmetric net) is dropped from the rotation the first time it
+        // fails to spawn, rather than crashing the demo.
+        var carRoutes = new List<(string From, string To)>
+        {
+            ("nc", "cs"), ("wc", "ce"), ("sc", "cn"), ("ec", "cw"), // straight-through, all four arms
+            ("nc", "ce"), ("sc", "cw"),                              // a couple of turns for variety
+        };
+
+        const double Dt = 0.2;
+        const int Decimate = 2;
+        const int steps = 600;              // 120 s simulated, decimated to 300 recorded frames
+        const int CarSpawnEverySteps = 12;  // a fresh car ~every 2.4 s, cycling arms
+
+        var slotByHandle = new Dictionary<uint, int>();
+        var frames = new List<FramePayload>();
+        var discsKeyedPerFrame = new List<List<(string Key, double[] Disc)>>();
+        var carCursor = 0;
+
+        var now = 0.0;
+        for (var step = 0; step < steps; step++)
+        {
+            if (carRoutes.Count > 0 && step % CarSpawnEverySteps == 0)
+            {
+                var idx = carCursor % carRoutes.Count;
+                var (from, to) = carRoutes[idx];
+                carCursor++;
+                try
+                {
+                    engine.SpawnVehicle(vtype, from, to, departPos: 5.0, departSpeed: 0.0, departLane: 0);
+                }
+                catch (InvalidOperationException)
+                {
+                    carRoutes.RemoveAt(idx); // unroutable pair -- drop it so we don't retry every cycle
+                }
+            }
+
+            engine.Step();
+            demand.Step(now, Dt, field, noEntities);
+            now += Dt;
+
+            if (step % Decimate != 0)
+            {
+                continue;
+            }
+
+            // --- cars: fixed slot per stable handle, absent handles null out ---
+            var handles = engine.VehicleHandles;
+            var px = engine.PosX;
+            var py = engine.PosY;
+            var pa = engine.Angle;
+            for (var i = 0; i < handles.Length; i++)
+            {
+                if (!slotByHandle.ContainsKey(handles[i].Index))
+                {
+                    slotByHandle[handles[i].Index] = slotByHandle.Count;
+                }
+            }
+
+            var v = new double[slotByHandle.Count][];
+            for (var i = 0; i < handles.Length; i++)
+            {
+                v[slotByHandle[handles[i].Index]] = new[] { R(px[i]), R(py[i]), R(pa[i]) };
+            }
+
+            // --- pedestrians: PositionOf is ALREADY the woven pose (weave lives inside the shared
+            // ActivityTimeline evaluator, W1) -- no ad-hoc render offset here; the weave IS the offset.
+            var discs = new List<(string, double[])>(demand.LiveIds.Count);
+            foreach (var id in demand.LiveIds)
+            {
+                var pos = manager.PositionOf(id, now);
+                var animTag = manager.AnimTagOf(id, now);
+                var kind = animTag == ActivityTimeline.WalkAnimTag ? KindPedestrian : KindPedPaused;
+                discs.Add(($"ped{id}", new[] { R(pos.X), R(pos.Y), 0.3, (double)kind }));
+            }
+
+            frames.Add(new FramePayload(v, Array.Empty<double[]?>()));
+            discsKeyedPerFrame.Add(discs);
+        }
+
+        NormalizeVehicleSlots(frames, slotByHandle.Count);
+        AssignStableDiscSlots(frames, discsKeyedPerFrame);
+
+        // Frame a junction-centred window (not the whole net): the OD crowd + crossings live within
+        // ~20 m of the centre, so a ~55 m half-window fills the view with the pedestrians and the cars
+        // threading the intersection, instead of letting the net's long empty approach arms dominate.
+        // Cars still drive IN from the arms (they just enter the frame late), same watchable-crop
+        // discipline the tighter ped scenes use.
+        const double half = 55.0;
+        var minX = cx - half;
+        var minY = cy - half;
+        var maxX = cx + half;
+        var maxY = cy + half;
+
+        return new ScenePayload(
+            "City: cars + weaving pedestrians",
+            "A routed O-D pedestrian crowd on the junction's real sidewalks, crossings, and "
+            + "walkingareas -- with the deterministic lateral WEAVE turned on -- sharing the scene with "
+            + "cars driving cross-traffic through the junction (real Engine + Krauss). This is what the "
+            + "weave is for: without it, low-power pedestrians walk exact centrelines and opposing / "
+            + "overtaking peds pass straight THROUGH each other on a shared sidewalk; with it, each "
+            + "ped's pose is offset onto its own deterministic half of the baked walkable width (a pure "
+            + "function of route + seed + width + time -- server == IG, no neighbour queries), so the "
+            + "crowd threads the sidewalks with few overlaps. Purple = walking, yellow = paused; boxes "
+            + "= cars.",
+            new double[] { R(minX), R(minY), R(maxX), R(maxY) },
+            network,
+            new double[] { 5.0, 1.8 },
+            Dt * Decimate,
+            frames.ToArray());
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Scene -- "Dodge / reroute" (docs/PEDESTRIAN-POC-PLAN.md POC-5; docs/PEDESTRIAN-TASKS.md P2-2):
     // two distinct obstacle-avoidance mechanisms sharing one crowd. (1) LOCAL dodge: a bidirectional
     // pedestrian stream on a straight sidewalk swerves around a static box obstacle purely via

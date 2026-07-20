@@ -318,9 +318,9 @@ try ped-remote "Remote (over the wire)" \
 try ped-weave "Deterministic weave — no pass-through (on/off)" \
   "Two counterflowing pedestrian streams share one sidewalk. Toggle the weave to see opposing flows separate (on) versus collapse onto the centreline and pass through each other (off), with a live overlapping-% counter and sliders for crowd density and sidewalk width (the band fills the baked width, ~2x wider on a 4 m arterial). Runs a faithful in-browser port of the engine's LateralWeave (SplitMix64-seeded, pure function of route arc-length), self-checked against the C# engine on load -- the same determinism that makes server==IG bit-for-bit (PED-REALISM-1 W1-W4, LateralWeave)." \
   "Pedestrians" demo_static docs/weave-demo/index.html ped-weave
-try ped-weave-city "Weaving crowd (demo-city)" \
-  "A real Sim.Viz recorder run of the weaving low-power crowd on a ~440 m block of the synthetic 5x5 km demo-city (weave on): peds thread the real baked sidewalks with few overlaps despite no neighbour lookups, every pose a pure deterministic function of route+seed+width+time (amber rings mark any pair within 0.5 m). Play/pause + speed; reload replays identically (SubareaFcdRecorder --weave)." \
-  "Pedestrians" demo_static docs/weave-demo/city.html ped-weave-city
+try ped-weave-city "City: cars + weaving pedestrians" \
+  "A routed O-D pedestrian crowd on the junction's real sidewalks, crossings, and walkingareas -- with the deterministic lateral weave turned ON -- sharing the scene with cars driving cross-traffic through the junction (real Engine + Krauss). This is what the weave is for: without it, low-power peds walk exact centrelines and opposing/overtaking peds pass straight through each other on a shared sidewalk; with it, each ped's pose is offset onto its own deterministic half of the baked walkable width (a pure function of route+seed+width+time -- server==IG, no neighbour queries), so the crowd threads the sidewalks with few overlaps. Purple = walking, yellow = paused; boxes = cars (PedDemand EnableWeave + Engine, W1-W4)." \
+  "Pedestrians" demo_ped weave-city ped-weave-city
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \

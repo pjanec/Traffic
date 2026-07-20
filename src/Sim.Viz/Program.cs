@@ -45,6 +45,7 @@ internal static class Program
             Console.Error.WriteLine("       Sim.Viz --ped-social <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-waiter <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-lively-crowd <outPath>");
+            Console.Error.WriteLine("       Sim.Viz --ped-weave-city <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-remote <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-subarea-fcd <outPath.fcd.xml> [--dial d] [--seconds s] [--box <dir>]");
             return args.Length == 0 ? 2 : 0;
@@ -66,6 +67,7 @@ internal static class Program
             "--ped-social" => RunPedSocial(args),
             "--ped-waiter" => RunPedWaiter(args),
             "--ped-lively-crowd" => RunPedLivelyCrowd(args),
+            "--ped-weave-city" => RunPedScene(args, "--ped-weave-city", SceneGen.BuildWeaveCity),
             "--ped-remote" => RunPedRemote(args),
             "--ped-subarea-fcd" => RunPedSubareaFcd(args),
             "--ped-weave-csv" => RunPedWeaveCsv(args),
