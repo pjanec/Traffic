@@ -18,6 +18,14 @@ public enum PedPoiKind
     DwellSpot,
     TransitStop,
     ParkingAccess,
+
+    // pois/v2 (SUBAREA-DEMO-CITY-DESIGN.md §3) -- the composed demo-city added two polygon-anchored kinds.
+    // Read here as ORDINARY base POIs (id/kind/pos/edge/weight) so the v2 box loads unfiltered; the v2-only
+    // structure (parking_lot's polygon/lane_seam/boardable_car, park's path_edges/meet_areas) is deliberately
+    // NOT consumed yet -- the micro-scenario/drive-away productization (R2/R3) is parked (see
+    // docs/PEDESTRIAN-R2-SCENARIO-REGISTRY-DESIGN.md). Present so the reader tolerates them, not so they act.
+    ParkingLot,
+    Park,
 }
 
 public sealed record PedPoi(

@@ -32,8 +32,14 @@ public static class PedPoiReader
                 Id: p.GetProperty("id").GetString() ?? throw new FormatException("POI missing id"),
                 Kind: ParseKind(p.GetProperty("kind").GetString()),
                 Pos: new Vec2(pos[0].GetDouble(), pos[1].GetDouble()),
-                Edge: p.GetProperty("edge").GetString() ?? throw new FormatException("POI missing edge"),
-                Weight: p.GetProperty("weight").GetDouble(),
+                // Edge/weight are tolerant for pois/v2: the polygon-anchored kinds (parking_lot, park) may
+                // carry no O/D `weight` (they are not sidewalk O/D endpoints) -- default 0 rather than throw.
+                Edge: p.TryGetProperty("edge", out var e) && e.ValueKind == JsonValueKind.String
+                    ? e.GetString()!
+                    : throw new FormatException("POI missing edge"),
+                Weight: p.TryGetProperty("weight", out var w) && w.ValueKind == JsonValueKind.Number
+                    ? w.GetDouble()
+                    : 0.0,
                 Facing: p.TryGetProperty("facing", out var f) && f.ValueKind == JsonValueKind.Array
                     ? new Vec2(f[0].GetDouble(), f[1].GetDouble())
                     : null,
@@ -62,6 +68,8 @@ public static class PedPoiReader
         "dwell_spot" => PedPoiKind.DwellSpot,
         "transit_stop" => PedPoiKind.TransitStop,
         "parking_access" => PedPoiKind.ParkingAccess,
-        _ => throw new FormatException($"unknown POI kind '{kind}' (expected building_entrance|venue|dwell_spot|transit_stop|parking_access)"),
+        "parking_lot" => PedPoiKind.ParkingLot, // pois/v2: tolerated as a base POI (R3 productization parked)
+        "park" => PedPoiKind.Park,               // pois/v2: tolerated as a base POI (R5 park wiring parked)
+        _ => throw new FormatException($"unknown POI kind '{kind}' (expected building_entrance|venue|dwell_spot|transit_stop|parking_access|parking_lot|park)"),
     };
 }

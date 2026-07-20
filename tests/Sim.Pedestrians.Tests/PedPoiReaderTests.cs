@@ -50,6 +50,40 @@ public class PedPoiReaderTests
         Assert.All(pois.Where(p => p.Kind == PedPoiKind.BuildingEntrance), p => Assert.NotNull(p.Facing));
     }
 
+    private static string RepoDir()
+    {
+        var dir = System.AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "Traffic.sln")))
+        {
+            dir = Path.GetDirectoryName(dir);
+        }
+
+        Assert.NotNull(dir);
+        return dir!;
+    }
+
+    [Fact]
+    public void LoadJson_ReadsTheDemoCityBox_Pois_v2_WithoutThrowing()
+    {
+        // The composed demo-city box carries pois/v2 -- incl. the new polygon-anchored `parking_lot`/`park`
+        // kinds that used to throw `FormatException: unknown POI kind` (the first-contact blocker). The reader
+        // must now load all 458 records unfiltered, tolerating the missing-weight polygon kinds.
+        var box = Path.Combine(RepoDir(), "scenarios", "_ped", "demo_city", "box");
+        var pois = PedPoiReader.LoadJson(Path.Combine(box, "pois.json"));
+
+        Assert.Equal(458, pois.Count);
+        var byKind = pois.GroupBy(p => p.Kind).ToDictionary(g => g.Key, g => g.Count());
+        Assert.Equal(5, byKind[PedPoiKind.ParkingLot]);
+        Assert.Equal(1, byKind[PedPoiKind.Park]);
+        Assert.Equal(25, byKind[PedPoiKind.Venue]);
+        Assert.Equal(346, byKind[PedPoiKind.ParkingAccess]);
+
+        // The polygon kinds legitimately have no O/D weight -> defaulted to 0, not an exception.
+        Assert.All(pois, p => Assert.True(p.Weight >= 0.0));
+        Assert.All(pois.Where(p => p.Kind is PedPoiKind.ParkingLot or PedPoiKind.Park),
+            p => Assert.False(string.IsNullOrEmpty(p.Edge)));
+    }
+
     [Fact]
     public void EveryNormalEdgePoi_SitsOnABakedSidewalk()
     {
