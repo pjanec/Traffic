@@ -22,9 +22,14 @@ evidence). NEEDs: `SUMOSHARP-NEED-dense-flow-gridlock-vs-vanilla.md`,
       byte-identical; anchor `scenarios/76-parking-lot-reuse` (cap-1, veh0 pulls out → veh1 reuses lot 0)
       matches vanilla golden. Full suite green (656 pass). Full `demo_city/box` LOADS + runs to t=800 with
       no "lot index out of range"; two box runs byte-identical (deterministic).
-- [ ] **Stage 3 — Gap 1** reroute-on-wrong-lane (replace drop-lane clamp with reroute; approach trigger).
-      Dense synthetic: teleports ≈ 0, halting drains, arrivals ≈ vanilla. Suite green + byte-identical +
-      determinism. New anchor. (May need multiple passes; cooperative-LC escalation only if needed.)
+- [~] **Stage 3 — Gap 1** reroute-on-wrong-lane. PASS 1 DONE + REVERTED (see design §2.3.1). Reroute
+      (live-weight cost) drains the 2× gridlock fully (halting 45→34, meanSpeed 0→~8, arrived ≈292) —
+      confirms the clamp=gridlock diagnosis — BUT over-fires (~100 cars at 1×), can loop (veh 58 stuck on
+      109_1 loops 140–308×: every path returns to 109_1), and raises the low-density teleport floor
+      (1×: 5→12–21), failing the ≤5 guard and hurting the calibration knee. ROOT: it is a **lane-completion**
+      problem (car never reaches 109_0), not routing — reroute can't fix it. Reverted; branch green.
+      NEXT PASS = candidate 2/3: complete/commit the strategic exit-lane change earlier so cars are on a
+      connecting lane at the junction; keep the dead-lane reroute only as a bounded last-resort fallback.
 - [ ] **Stage 4** — end-to-end: full box (and crop if reachable) on SumoSharp ≈ vanilla (teleports ≈ 0,
       knee within tolerance). Hand-off note back to SumoData.
 

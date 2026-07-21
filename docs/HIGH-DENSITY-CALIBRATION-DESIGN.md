@@ -113,6 +113,41 @@ cooperative lane-changing (target-lane followers open a gap — the retired `inf
 behavior here); revisit cooperative LC only if reroute alone leaves material gridlock. Also consider
 earlier/longer best-lanes lookahead so the exit-lane change starts far enough upstream to complete.
 
+### 2.3.1 MEASURED (2026-07-21): reroute-only is INSUFFICIENT — escalate to lane-completion (2.3 escalation)
+Candidate 1 (reroute-on-dead-lane) was fully implemented and measured on the 2× dense synthetic, then
+**reverted** — it is a band-aid over a deeper lane-assignment problem, not a clean fix:
+- **It does help the dense case:** replacing the drop-lane clamp with a reroute (via a connection the
+  current lane has, costed by the LIVE smoothed edge weights `_edgeWeights.Effort` — free-flow cost sent
+  cars back into the jam and *inflated* teleports 5→16) drained the 2× gridlock fully (halting 45→34,
+  meanSpeed 0→~8, arrived ≈292 ≥ vanilla's 290). So the diagnosis (clamp = gridlock driver) is confirmed.
+- **But it over-fires and can loop, regressing low density.** At 1× density the reroute fired for **87–109
+  vehicles** (not "a handful") and some vehicles **looped forever**: veh 58, stuck on `109_1`, reroutes →
+  its every path to the destination goes back through `109` and it lands on `109_1` again → reroutes …
+  (308× with free-flow, 140× after a U-turn/reverse-edge skip; avoiding the current edge in the tail broke
+  the loop but forced worse paths that wedged). Net at 1×: teleports **5→12–21**, arrivals 287→268–284.
+  Because it **raises the low-density teleport floor**, it *hurts* the calibration knee (calibration stops
+  early when teleport% is already high at low density) — the opposite of the goal — and it fails the
+  committed `LowDensityTeleportTests` guard (≤5).
+- **Root finding — it is a lane-completion problem, not a routing one.** veh 58 keeps landing on `109_1`
+  and can never reach `109_0` (the lane its route needs) nor avoid `109`; no reroute can fix that. In
+  vanilla the car simply *changes onto `109_0`* (its best-lanes/cooperative-LC is not route-locked and
+  commits earlier). So the real fix is **candidate 2/3**: complete the strategic exit-lane change /
+  commit to the route's exit lane far enough upstream, so the car is on the RIGHT lane at the junction
+  and never strands. The reroute should remain only as a **last-resort fallback** for a genuinely
+  unreachable exit lane (a true topology drop), gated so it fires for a *handful*, not ~100 cars.
+- **Reverted artifacts (for the next pass):** the reroute lived in `Engine.cs` as `TryRerouteFromDeadLane`
+  (wired into `TryReResolveFromActualLane`'s drop-lane branch), `EdgeFreeFlowCost`, using
+  `_edgeWeights.Effort` + a U-turn skip. Determinism/parity were sound (route-dict writes lock-guarded,
+  never read during the region-parallel execute; inert for every committed golden). It is the *policy*
+  (reroute vs complete-the-LC) that was wrong, not the plumbing.
+
+**Next pass (candidate 2/3):** investigate why so many cars reach junctions on a lane with no connection
+to their next route edge even at 1× — the pool pins ONE exit lane (chasing a downstream bestLaneOffset
+hint) and the strategic LC onto it commits too late / does not fire when the target lane is momentarily
+occupied. Make the exit-lane change start earlier (best-lanes lookahead) and/or complete under light
+occupancy (cooperative gap), so the car is on a connecting lane at the junction. Keep the dead-lane
+reroute as a bounded fallback. Re-measure teleports at BOTH 1× (must stay ≤5) and 2× (drain, ≈vanilla).
+
 ### 2.4 Success criteria (Gap 1)
 On the 2× dense synthetic: SumoSharp teleports ≈ 0 (was 10), no permanent gridlock (halting drains toward
 0 like vanilla, not stuck at ~45), arrivals ≈ vanilla (≈290, was 275). Full `dotnet test Traffic.sln`
