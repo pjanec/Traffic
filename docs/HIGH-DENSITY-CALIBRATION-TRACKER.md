@@ -35,11 +35,13 @@ evidence). NEEDs: `SUMOSHARP-NEED-dense-flow-gridlock-vs-vanilla.md`,
         (`DeadLaneRerouteWaitSeconds`), + U-turn skip + a per-car cap. This keeps 1× EXACTLY at baseline
         (5 tp / 287 arr, guard green) while improving 2× (teleports **10→3**, arrivals **275→281**, halting
         45→42). LANDED: full suite 656 green, all goldens byte-identical, deterministic.
-      - STILL OPEN: 2× does not fully drain (~7 cars still stuck, meanSpeed 0) — the gate that protects 1×
-        is too slow to prevent the 2× jam forming. Full drainage needs the ROOT fix: **candidate 2/3 —
-        make the strategic exit-lane change complete/commit reliably under density** (cooperative gap /
-        earlier commitment) so the substrate stops being fragile and the instant reroute (or no reroute) works
-        without cascading. That is the next pass.
+      - STILL OPEN: 2× does not fully drain. **ROOT CAUSE + EXACT FIX NOW DIAGNOSED from SUMO source** —
+        see `docs/GAP1-RESUME.md` (single entry point) and design §2.3.4. It is `ignore-route-errors` +
+        lane-continuation: SUMO plans the car's move along its ACTUAL lane's connection (`30_1→44`) and
+        crosses WHILE MOVING; SumoSharp pins the pool exit lane and HOLDS the car (→ queue → gridlock). The
+        fix = port `getBestLanesContinuation` "continue along the lane you're on" semantics (byte-identical
+        for goldens by construction). NOT congestion rerouting (124 is cheaper than 44 in vanilla) and NOT
+        cooperative LC (retired). **Next session: implement per GAP1-RESUME.md; do not re-investigate.**
 - [ ] **Stage 4** — end-to-end: full box (and crop if reachable) on SumoSharp ≈ vanilla (teleports ≈ 0,
       knee within tolerance). Hand-off note back to SumoData.
 
