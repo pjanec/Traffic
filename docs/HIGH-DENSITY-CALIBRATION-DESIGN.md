@@ -210,6 +210,47 @@ cascade disappears, and the instant reroute (or no reroute at all) drains 2× wi
 landed gated reroute as the bounded last-resort fallback. Re-measure teleports/halting at BOTH 1× (≤5) and
 2× (drain, ≈vanilla) every iteration; this is parity-sensitive (touches strategic LC) so guard the goldens.
 
+### 2.3.4 THE ACTUAL SUMO MECHANISM (2026-07-21, read from /sumo source — supersedes the guesses above)
+Course-correction (owner prompt): stop inventing heuristics that *reproduce* vanilla's results; **read the
+SUMO source and port what it actually does** (CLAUDE.md rule 4). Doing so overturns the earlier hypotheses:
+- **It is NOT congestion rerouting.** vanilla's own `--device.rerouting.output` at the decision instant
+  shows the `124` corridor is CHEAPER than the `44` corridor (edge 124 traveltime 1.74, 148 = 0.29 vs
+  edge 44 = 3.16, 55 = 3.92). A cost-based rerouter would KEEP 124. So congestion weights are not what
+  sends veh 295 down `44`. (SumoSharp's periodic rerouter is a faithful port — `RerouteEdgeWeights` +
+  `UpdatePeriodicReroutes` — and correctly keeps 124 too; it is not the bug.)
+- **It IS `ignore-route-errors` + lane-continuation.** SUMO plans each vehicle's move along the
+  continuation of **its actual current lane** (`MSVehicle::getBestLanesContinuation`, used to build
+  `myLFLinkLanes` in `planMoveInternal`), NOT along the route's ideal lane. So veh 295, stuck on `30_1`,
+  simply plans `30_1 → 44` (the connection its lane HAS) and drives across the junction **while still
+  moving** — it never waits for the impossible `30_1 → 124`. `MSVehicle::executeMove`
+  (`/sumo/src/microsim/MSVehicle.cpp:4344-4346`) only hits *"there is no connection to the next edge"*
+  (→ emergency/teleport) when the lane has NO onward link at all; a lane with SOME link just follows it.
+  The `device.rerouting` device then re-syncs the now-off-route vehicle to a valid route from `44`
+  onward — which is why turning rerouting OFF gives 10 teleports (the car goes off-route via `44` but has
+  no device to repair the route): **measured vanilla rerouting off = 10 tp / 289 arr, identical to
+  SumoSharp; rerouting on = 0 tp / 290 arr.** Both mechanisms are needed: lane-continuation for the smooth
+  cross, rerouting to repair the route after.
+- **SumoSharp's exact gap:** it PINS the pool exit lane (`30_0` for `124`) and HOLDS the car when it can't
+  converge onto it, so the car stops at the junction, blocks its `30_1` queue, and gridlocks. It should
+  instead do what SUMO does — plan the crossing along the car's ACTUAL lane's connection (`30_1 → 44`)
+  when the pool lane is unreachable, so the car flows through, THEN let the (already-faithful) reroute
+  repair the route. This is the real, SUMO-faithful Gap-1 fix, and it explains why the reactive dead-lane
+  reroute is only a partial patch (it fires at the lane end AFTER the car has already stopped/queued,
+  reproducing the *destination* but not the *smooth-cross* that prevents the jam).
+
+**THE fix to implement (SUMO-faithful, replaces candidates a/b/c above).** Make the vehicle's junction
+continuation follow its ACTUAL lane when that lane cannot reach the next route edge — i.e. resolve the
+lane-sequence pool / best-lanes continuation from the current lane's real connections (port
+`getBestLanesContinuation`'s "continue along the lane you are on" semantics), rather than pinning the
+route's ideal exit lane and holding. Then the vehicle plans a valid link (`30_1→44`) in the PLAN phase and
+crosses while moving; the existing periodic reroute repairs the route from the new edge. Parity guard: for
+every committed golden the car IS on its pool exit lane at each junction (they never strand), so
+"continue along the actual lane" == "continue along the pool lane" — byte-identical. Locus: the pool /
+continuation resolution feeding `TryStrategicLaneChange` + the junction link selection in Plan, and the
+boundary-crossing in `ExecuteMoveVehicle`; the reactive `TryRerouteFromDeadLane` can then be simplified to
+just the route-repair (or removed in favour of the periodic reroute). Measure 1× (≤5) and 2× (drain) and
+diff every golden.
+
 ### 2.4 Success criteria (Gap 1)
 On the 2× dense synthetic: SumoSharp teleports ≈ 0 (was 10), no permanent gridlock (halting drains toward
 0 like vanilla, not stuck at ~45), arrivals ≈ vanilla (≈290, was 275). Full `dotnet test Traffic.sln`
