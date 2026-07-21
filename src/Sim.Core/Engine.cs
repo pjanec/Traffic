@@ -5249,7 +5249,7 @@ public sealed partial class Engine : IEngine
             var target = _network!.LanesByHandle[targetHandle];
             var neighLead = neighbors.GetNeighborLeader(v, targetHandle);
             var neighFollow = neighbors.GetNeighborFollower(v, targetHandle);
-            if (IsTargetLaneSafe(v, neighLead, neighFollow, dt))
+            if (IsTargetLaneSafe(v, neighLead, neighFollow, dt) && !IsTargetLaneOverlapped(v, targetHandle, neighbors, dt))
             {
                 CommitLaneChange(v, targetHandle, target.Id);
                 return true;
@@ -7583,30 +7583,49 @@ public sealed partial class Engine : IEngine
         ReadOnlySpan<int> downstream = downstreamBuf;
 #endif
 
-        if (!TryFindCrossJunctionLeader(
+        // LANE-CHANGE-OVERLAP (docs/LANE-CHANGE-OVERLAP-DESIGN.md §3 Stage 2): the pool span above is the
+        // sequence of EXIT lanes ego converges onto via intra-edge lane changes, which can differ from the
+        // ARRIVAL lanes it physically enters at each junction (the C2-v arrival-vs-exit distinction at
+        // ~line 9011). When they differ (a multi-lane route with an intra-edge change), the pool scan
+        // looks at the wrong lane and misses a leader on ego's actual arrival lane, so ego crosses the
+        // junction ON TOP of it (design §2 -- the residual dense-junction overlaps). SUMO's cross-junction
+        // getLeader walks the physical path, so scan the ARRIVAL span too and take the tighter follow
+        // speed. Purely ADDITIVE braking (Math.Min): it can only ever SLOW ego, matching SUMO's own
+        // arrival-lane braking. Byte-identical wherever arrival == exit for every downstream slot (the
+        // arrival span then equals the pool span -> same leader/gap/speed), which is every route with no
+        // intra-edge lane change.
+        var poolFollow = TryFindCrossJunctionLeader(
                 ego.Kinematics.Speed, ego.VType, ego, ego.LaneHandle, ego.Kinematics.Pos,
-                downstream, new NeighborRearmost(neighbors, ego), dt, out var leader, out var gap))
-        {
-            return double.PositiveInfinity;
-        }
+                downstream, new NeighborRearmost(neighbors, ego), dt, out var leader, out var gap)
+            ? FollowSpeedFor(
+                ego.VType, ego.Kinematics.Speed, gap, leader.Kinematics.Speed, leader.VType.Decel,
+                laneVehicleMaxSpeed, dt, time, ref ego.AccControlMode, ref ego.AccLastUpdateTime,
+                ref ego.CaccControlMode, ego.Acceleration, hasPred: true,
+                predIsCacc: leader.VType.CarFollowModel == "CACC", ego.LevelOfService, _config!.Ballistic)
+            : double.PositiveInfinity;
 
-        return FollowSpeedFor(
-            ego.VType,
-            egoSpeed: ego.Kinematics.Speed,
-            gap: gap,
-            predSpeed: leader.Kinematics.Speed,
-            predMaxDecel: leader.VType.Decel,
-            laneVehicleMaxSpeed: laneVehicleMaxSpeed,
-            dt: dt,
-            time: time,
-            accControlMode: ref ego.AccControlMode,
-            accLastUpdateTime: ref ego.AccLastUpdateTime,
-            caccControlMode: ref ego.CaccControlMode,
-            egoAcceleration: ego.Acceleration,
-            hasPred: true,
-            predIsCacc: leader.VType.CarFollowModel == "CACC",
-            levelOfService: ego.LevelOfService,
-            ballistic: _config!.Ballistic);
+#if NET8_0_OR_GREATER
+        ReadOnlySpan<int> arrivalDownstream = CollectionsMarshal.AsSpan(_laneSeqArrival)
+            .Slice(downstreamStart, downstreamCount);
+#else
+        Span<int> arrivalBuf = downstreamCount <= 64 ? stackalloc int[downstreamCount] : new int[downstreamCount];
+        for (int i = 0; i < downstreamCount; i++)
+        {
+            arrivalBuf[i] = _laneSeqArrival[downstreamStart + i];
+        }
+        ReadOnlySpan<int> arrivalDownstream = arrivalBuf;
+#endif
+        var arrivalFollow = TryFindCrossJunctionLeader(
+                ego.Kinematics.Speed, ego.VType, ego, ego.LaneHandle, ego.Kinematics.Pos,
+                arrivalDownstream, new NeighborRearmost(neighbors, ego), dt, out var aLeader, out var aGap)
+            ? FollowSpeedFor(
+                ego.VType, ego.Kinematics.Speed, aGap, aLeader.Kinematics.Speed, aLeader.VType.Decel,
+                laneVehicleMaxSpeed, dt, time, ref ego.AccControlMode, ref ego.AccLastUpdateTime,
+                ref ego.CaccControlMode, ego.Acceleration, hasPred: true,
+                predIsCacc: aLeader.VType.CarFollowModel == "CACC", ego.LevelOfService, _config!.Ballistic)
+            : double.PositiveInfinity;
+
+        return Math.Min(poolFollow, arrivalFollow);
     }
 
     // Shared cross-junction downstream-leader scan (used by CrossJunctionLeaderConstraint during
@@ -9418,7 +9437,7 @@ public sealed partial class Engine : IEngine
                 // bare `IsTargetLaneSafe(...)` gate for scenario 12 and every other
                 // obstacle-free scenario/test.
                 var neighFollow = postMoveNeighbors.GetNeighborFollower(v, leftLane.Handle);
-                if (IsTargetLaneSafe(v, neighLead, neighFollow, dt) && !TargetLaneBlockedByObstacle(v, leftLane, time, dt))
+                if (IsTargetLaneSafe(v, neighLead, neighFollow, dt) && !TargetLaneBlockedByObstacle(v, leftLane, time, dt) && !IsTargetLaneOverlapped(v, leftLane.Handle, postMoveNeighbors, dt))
                 {
                     targetLaneId = leftLane.Id;
                     targetLaneHandle = leftLane.Handle;
@@ -9593,21 +9612,19 @@ public sealed partial class Engine : IEngine
             // braking 13.89->11.52 m/s). Adding the LEADER veto collapses that divergence (a straight
             // 2-lane control: max pos error 82.28 m -> 2.37 m; first divergence t=8 s -> t=72 s).
             //
-            // DELIBERATE SCOPE (documented deviation, CLAUDE.md rule 4): the FOLLOWER half of
-            // checkChange is NOT applied here, only the leader half. In SUMO a change blocked by the
-            // target-lane follower is resolved by COOPERATIVE lane-changing (MSLCM_LC2013's
-            // informBlocker/saveBlockerLength -- the follower slows to make room), which this engine
-            // does not model. Porting the follower block WITHOUT its cooperative counterpart is LESS
-            // faithful to SUMO's flow, not more: it over-brakes into gridlock a saturated -L2 grid
-            // that SUMO (and this engine) otherwise drain to 0 stuck (verified: the both-halves veto
-            // regressed scenarios/_diag/willpass-saturation from 0 to 30 stuck; the leader-only veto
-            // keeps it at 0). The follower block + cooperative LC is the evidence-gated follow-up
-            // (docs/HIGH-DENSITY-P2G-DESIGN.md §7); the residual it leaves (a keep-right SUMO blocks on
-            // the follower, ~2.4 m on the control) is accepted behaviourally per the owner steer.
-            //
-            // `neighLead` is already fetched above (the keep-right incentive read); pass it with a null
-            // follower so IsTargetLaneSafe evaluates the leader gap only.
-            if (IsTargetLaneSafe(v, neighLead, null, dt))
+            // LANE-CHANGE-OVERLAP (docs/LANE-CHANGE-OVERLAP-DESIGN.md §3 Stage 1): the FOLLOWER half of
+            // checkChange is now applied here too (previously keep-right passed a null follower -- a
+            // documented reduction in HIGH-DENSITY-P2G-DESIGN.md §4.1, made because a follower veto
+            // WITHOUT cooperative LC once regressed the saturated grid 0->30 stuck). That gridlock trap
+            // is obsolete: the serve-path junction traffic-light fixes (HIGH-DENSITY-P2G2-...-DESIGN.md
+            // §0) removed the root gridlock, so re-measurement this session shows the full leader+
+            // follower+overlap block keeps willpass-saturation at 0 stuck while removing the keep-right
+            // follower-side cut-ins. The overlap block (IsTargetLaneOverlapped) additionally catches an
+            // occupant AT ego's exact position -- the dominant overlap source, invisible to both the
+            // leader and follower lookups (design §2). `neighLead` is already fetched above; fetch the
+            // real follower and apply the full block, mirroring every other change path.
+            var neighFollowKr = neighbors.GetNeighborFollower(v, rightLane.Handle);
+            if (IsTargetLaneSafe(v, neighLead, neighFollowKr, dt) && !IsTargetLaneOverlapped(v, rightLane.Handle, neighbors, dt))
             {
                 // D5: deliberately kept INLINE, NOT routed through the command buffer. The caller
                 // (DecideSpeedGainChanges) re-reads `v.LaneHandle` immediately after this call
@@ -10058,7 +10075,7 @@ public sealed partial class Engine : IEngine
         // (LCA_URGENT's real blocker-cooperation machinery, `.cpp:1467-1517`, is not ported).
         var neighLead = neighbors.GetNeighborLeader(v, neighborLane.Handle);
         var neighFollow = neighbors.GetNeighborFollower(v, neighborLane.Handle);
-        if (!IsTargetLaneSafe(v, neighLead, neighFollow, dt) || TargetLaneBlockedByObstacle(v, neighborLane, time, dt))
+        if (!IsTargetLaneSafe(v, neighLead, neighFollow, dt) || TargetLaneBlockedByObstacle(v, neighborLane, time, dt) || IsTargetLaneOverlapped(v, neighborLane.Handle, neighbors, dt))
         {
             return false;
         }
@@ -10144,6 +10161,45 @@ public sealed partial class Engine : IEngine
         }
 
         return true;
+    }
+
+    // LANE-CHANGE-OVERLAP (docs/LANE-CHANGE-OVERLAP-DESIGN.md §3 Stage 1): SUMO's checkChange
+    // LCA_OVERLAPPING block (MSLaneChanger.cpp:767/780 -- a change is blocked when neighFollow.second < 0
+    // OR neighLead.second < 0, i.e. a target-lane neighbour's BODY overlaps ego's slot). IsTargetLaneSafe
+    // above ports the secure-gap test but NOT this overlap block, and -- critically -- the lane-change
+    // neighbour lookup (GetNeighborLeader skips pos<=egoPos, GetNeighborFollower skips pos>=egoPos)
+    // classifies an occupant at ego's EXACT position as neither leader nor follower, so the secure-gap
+    // veto never sees it. In a saturated grid, vehicles on adjacent lanes stop at the same stop-line arc
+    // position, so this exact-tie blind spot is the DOMINANT overlap source (design §2). This scans the
+    // target lane's pos-sorted bucket directly and blocks if ANY occupant's body [pos-len, pos] overlaps
+    // ego's projected slot [egoPos-len, egoPos] -- the faithful negative-gap block, robust to the tie the
+    // leader/follower lookup misses. Reads only the frozen snapshot + immutable network; ego's fields
+    // otherwise. Inert (returns false) when the target lane carries no body-overlapping occupant -- every
+    // committed golden at a change, so byte-identical.
+    private bool IsTargetLaneOverlapped(VehicleRuntime ego, int targetLaneHandle, LaneNeighborQuery neighbors, double dt)
+    {
+        var occupants = neighbors.OnLane(targetLaneHandle);
+        var egoFront = ego.Kinematics.Pos;
+        var egoBack = egoFront - ego.VType.Length;
+        for (var i = 0; i < occupants.Count; i++)
+        {
+            var o = occupants[i];
+            if (ReferenceEquals(o, ego))
+            {
+                continue;
+            }
+
+            var oFront = o.Kinematics.Pos;
+            var oBack = oFront - o.VType.Length;
+            // Bodies overlap iff each front is ahead of the other's back (strict: a bumper-to-bumper
+            // touch, gap == 0, is not an overlap -- matches SUMO's strict `neigh.second < 0`).
+            if (oBack < egoFront && egoBack < oFront)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // B5-ii (TASKS.md "Cross-lane blocker vetoing lane changes"): generalizes IsTargetLaneSafe's

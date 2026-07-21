@@ -28,9 +28,12 @@ public class LaneChangeOverlapDiagTests
     private const double OverlapDistance = 5.5; // metres; < one vehicle length -> a genuine overlap
     private const int Steps = 200;
 
-    [Fact(Skip = "KNOWN GAP — cooperative lane-changing not ported. See docs/LANE-CHANGE-OVERLAP-SPEC.md. "
-        + "Unskip as the acceptance gate once the fix lands; it must then read 0 overlaps "
-        + "(measured today: ~197 same-lane overlaps here vs 0 in vanilla SUMO 1.20.0).")]
+    [Fact(Skip = "IN PROGRESS — the lane-change overlap fix (docs/LANE-CHANGE-OVERLAP-DESIGN.md) has landed "
+        + "the checkChange LCA_OVERLAPPING block + keep-right follower veto + the arrival-lane cross-junction "
+        + "leader fix, cutting overlaps 197 -> 2 (both-stopped 186 -> 0) with 0 stuck and every golden "
+        + "byte-identical. The last 2 are NOT lane-change overlaps: a junction MERGE and a 1-step "
+        + "car-following reaction, both ECS frozen-snapshot artifacts (design §3 Stage 3). Unskip and assert "
+        + "== 0 once Stage 3 lands. Do NOT loosen the 5.5 m threshold to pass it.")]
     public void WillpassSaturation_NoSameLaneOverlaps()
     {
         var overlaps = CountOverlaps(out var bothStopped);
