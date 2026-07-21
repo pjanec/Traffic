@@ -554,7 +554,9 @@
       var p = worldToScreen(lane.shape[i * 2], lane.shape[i * 2 + 1]);
       if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
     }
-    ctx.strokeStyle = "#4a4d55";
+    // Pedestrian-only lanes (sidewalks) draw as a lighter "concrete" band so the footpath reads
+    // distinctly from the carriageway (SumoData NEED: cars-on-sidewalk / sidewalk-shading).
+    ctx.strokeStyle = lane.ped ? "#8a8f99" : "#4a4d55";
     // True width, floored to ~2.5 px so roads read as roads when zoomed out.
     ctx.lineWidth = Math.max(2.5, lane.width * camera.scale);
     ctx.lineCap = "butt";

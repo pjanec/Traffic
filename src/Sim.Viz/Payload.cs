@@ -18,7 +18,10 @@ namespace Sim.Viz;
 // Network geometry -- identical shape to the original single-scenario payload so template.js's
 // proven lane-band / lane-marking / traffic-light / signal drawing is reused verbatim. Shapes are
 // FLAT [x0,y0,x1,y1,...] arrays (what the existing draw code indexes as shape[i*2]).
-internal sealed record LanePayload(string Id, string EdgeId, int Index, double Width, double[] Shape);
+// `Ped` = this is a pedestrian-only lane (a sidewalk: allows no road vehicle). The front-end draws it as
+// a lighter "concrete" band so the footpath reads distinctly from the carriageway (SumoData NEED: cars on
+// sidewalk / sidewalk-shading). Defaults false -> every existing (car) lane draws exactly as before.
+internal sealed record LanePayload(string Id, string EdgeId, int Index, double Width, double[] Shape, bool Ped = false);
 
 internal sealed record JunctionPayload(string Id, double[] Shape);
 
@@ -105,7 +108,7 @@ internal static class PayloadBuilder
                 flat[p * 2 + 1] = R(y);
             }
 
-            lanes[i] = new LanePayload(lane.Id, lane.EdgeId, lane.Index, lane.Width, flat);
+            lanes[i] = new LanePayload(lane.Id, lane.EdgeId, lane.Index, lane.Width, flat, Ped: !lane.AllowsRoadVehicle);
         }
 
         var junctions = new List<JunctionPayload>();

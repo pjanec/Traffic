@@ -64,7 +64,8 @@ public static class NetworkParser
                     Shape: ParseShape(RequireAttribute(laneEl, "shape")),
                     Width: width,
                     Handle: nextLaneHandle++,
-                    ShapeZ: ParseShapeZ(RequireAttribute(laneEl, "shape")));
+                    ShapeZ: ParseShapeZ(RequireAttribute(laneEl, "shape")),
+                    AllowsRoadVehicle: LaneAllowsRoadVehicle(laneEl.Attribute("allow")?.Value));
 
                 lanes.Add(lane);
                 lanesById[lane.Id] = lane;
@@ -84,6 +85,15 @@ public static class NetworkParser
                 var rightHandle = -1;
                 foreach (var sibling in lanes)
                 {
+                    // A road vehicle never changes onto a non-vehicular (pedestrian-only) lane -- MSLane
+                    // forbids it. Excluding such siblings here means keep-right / lateral placement (which
+                    // read Left/RightNeighbor) can't move a car onto a sidewalk on a [sidewalk, car] edge.
+                    // Inert on a pure-car net (every golden): AllowsRoadVehicle is true for every lane there.
+                    if (!sibling.AllowsRoadVehicle)
+                    {
+                        continue;
+                    }
+
                     if (sibling.Index == lane.Index + 1)
                     {
                         leftHandle = sibling.Handle;
@@ -409,6 +419,29 @@ public static class NetworkParser
     }
 
     private static double DegToRad(double degrees) => degrees * Math.PI / 180.0;
+
+    // A lane is a valid target for a road/rail vehicle unless its `allow` attribute permits ONLY
+    // pedestrians (a sidewalk: `<lane allow="pedestrian">`). No `allow` attribute (or a `disallow="..."`
+    // instead) leaves every vehicle class permitted -> true. Any non-pedestrian token in `allow` (rail,
+    // bus, passenger, ...) means a vehicle may use the lane -> true. Only `allow` listing pedestrian alone
+    // returns false. Mirrors MSLane's SVCPermissions notion of a lane no vehicle class may enter.
+    private static bool LaneAllowsRoadVehicle(string? allowAttr)
+    {
+        if (string.IsNullOrEmpty(allowAttr))
+        {
+            return true;
+        }
+
+        foreach (var tok in allowAttr.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (tok != "pedestrian")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static IReadOnlyList<(double X, double Y)> ParseShape(string shape)
     {

@@ -40,7 +40,14 @@ public sealed record Lane(
     // net's lane shape is 2-D (`x,y` pairs) -- the common case, byte-identical to before. Populated only
     // when the shape carries a 3rd `x,y,z` component; consumed only by the read surface's PosZ column
     // (LaneGeometry.ElevationAtOffset), never by any car-following / lane-change / junction math.
-    IReadOnlyList<double>? ShapeZ = null);
+    IReadOnlyList<double>? ShapeZ = null,
+    // Whether any ROAD/RAIL vehicle may use this lane. False for pedestrian-only lanes (sidewalks:
+    // `<lane allow="pedestrian">`), which MSLane forbids every vehicle class from. Consumed by the
+    // same-edge neighbor precompute (NetworkParser): a road vehicle's left/right neighbor never points
+    // at a non-vehicular lane, so keep-right / lateral placement can't move a car onto a sidewalk. On a
+    // pure-car net (every committed golden) every lane allows road vehicles, so this defaults true and
+    // is byte-identical to before. See NetworkParser.LaneAllowsRoadVehicle.
+    bool AllowsRoadVehicle = true);
 
 public sealed record Edge(
     string Id,
