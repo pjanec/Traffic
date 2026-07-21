@@ -1,8 +1,10 @@
 # R1 — net-connection navmesh stitch (design)
 
-**Status:** design, pre-implementation — for review. **HOW** for `SUMOSHARP-DEMO-CITY-REQUIREMENTS.md` R1
+**Status:** IMPLEMENTED & tested. **HOW** for `SUMOSHARP-DEMO-CITY-REQUIREMENTS.md` R1
 ("navmesh baker robustness … stitch portals from the net's own lane/walkingArea/crossing connectivity").
-The **WHAT** is that requirement + the box's 6-component bake. No code yet.
+The mechanism landed as `PolygonGraph.AddNetConnectionAdjacency` (`src/Sim.Pedestrians/Navigation/Bake/`)
+and is proven by `NavConnectionStitchTests` (a hermetic three-party-corner witness); the Q3 ped-isolated-
+component warning ships in `SubareaFcdRecorder`. The **WHAT** is that requirement + the box's split-bake.
 
 ## 1. Diagnosis — the box's 6 components are THREE different failures, not one
 

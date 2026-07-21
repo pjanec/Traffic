@@ -52,6 +52,21 @@ One demo per feature, grouped by category (the gallery's landing page uses the s
 | City scale | Scaled town (~30 vehicles) | A 3x3-grid town at ~30 concurrent vehicles — engine run rendered against the SUMO aggregate-parity reference. |
 | City scale | Large multilane city (~400 vehicles) | A larger organic multilane city network under ~400 concurrent vehicles. |
 | City scale | Signalized city (~1000 vehicles) | A mixed signalized city network at ~1000 concurrent vehicles, exercising traffic lights at city scale. |
+| Pedestrians | Crossing gate (car stops for pedestrian) | Pedestrians queue at a signalized crosswalk while the light is red, then surge across on the walk phase; a car halts for a pedestrian in its lane — emergent ORCA avoidance, not a scripted stop. |
+| Pedestrians | Sim-LOD promotion (low-power to full ORCA) | A moving interest source promotes nearby low-power dead-reckoned pedestrians to reactive full-ORCA agents and demotes them once it passes. |
+| Pedestrians | Origin-destination routed crowd | A Poisson O-D crowd routed across the junction's real sidewalks, crossings, and walkingareas on the baked navmesh. |
+| Pedestrians | Obstacle dodge | A bidirectional pedestrian stream swerves around a static box obstacle via reciprocal ORCA avoidance. |
+| Pedestrians | Crossing reroute | A blocker appears over a crossing and the affected pedestrians recompute a detour through the walkingarea ring. |
+| Pedestrians | Parking lot (car/pedestrian mutual avoidance) | A car maneuvers among parked cars while pedestrians weave and board/alight — mutual car↔pedestrian yielding. |
+| Pedestrians | Liveliness (activity timeline replay) | Deterministic activity timelines: each pedestrian walks, pauses (sips), sits at a table, and steps inside a building (rendering no disc while hidden). |
+| Pedestrians | Meet & talk (pre-scheduled two-ped interaction) | Converging pairs meet, step aside, and talk — authored into both timelines up front, with no runtime negotiation. |
+| Pedestrians | Waiter (micro-scenario actor) | A looping templated waiter emerges from a door, serves open-air tables, and disappears inside between rounds. |
+| Pedestrians | Lively crowd (routed + activity timelines) | The routed O-D crowd with seeded pause beats spliced into each trip, so it occasionally stops in place — still low-power, still server==IG. |
+| Pedestrians | Remote (over the wire) | The crowd rendered purely from the replication stream (DR-error-gated publish → byte loopback → reconstructor), server==IG with no promotion pop. |
+| Pedestrians | Deterministic weave — no pass-through (on/off) | Two counterflowing streams share one sidewalk; toggle the deterministic weave to see opposing flows separate versus collapse onto the centreline and pass through each other. |
+| Pedestrians | City: cars + weaving pedestrians | A routed weaving crowd on a real intersection's sidewalks/crossings sharing the scene with cars driving cross-traffic through the junction. |
+| Pedestrians | Dense city: cars + weaving pedestrians | A busy ~900 m block of the synthetic demo-city: hundreds of weaving pedestrians on the real sidewalks plus a dense car flow on the signalized road grid. |
+| Panic evacuation | Panic evacuation (district, routed on foot) | A deterministic ambient crowd panics on incident proximity and routes to its nearest safe zone along the real sidewalk grid (bending around blocks, not radially through them). |
 
 The curated set is defined in `scripts/gen-demos.sh`; only demos that actually generate are listed
 on the gallery's landing page (a broken demo is skipped and logged, never faked).

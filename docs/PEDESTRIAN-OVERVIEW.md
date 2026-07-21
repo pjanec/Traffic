@@ -1,9 +1,11 @@
 # PEDESTRIAN-OVERVIEW.md — the WHAT of the pedestrian subsystem
 
-**Status: design investigation, for review. No code yet.** This is the requirements/scope doc
-(the WHAT). `PEDESTRIAN-DESIGN.md` holds the HOW (mechanisms, architecture, the determinism &
-networking argument); `PEDESTRIAN-POC-PLAN.md` holds the experiments that de-risk the design before
-we commit to it. Read this first.
+**Status: LARGELY IMPLEMENTED & tested — this doc is the original requirements/scope (the WHAT), kept
+as the rationale of record.** The subsystem described here is built and behavior/property-tested (214
+green); for the *current* state — what exists, where the code is, how to run it, what is parked — read
+**[`PEDESTRIANS.md`](PEDESTRIANS.md)** (the front door) and **`PEDESTRIAN-TRACKER.md`** (the done/parked
+map). This doc still holds the WHAT; `PEDESTRIAN-DESIGN.md` holds the HOW (mechanisms, architecture, the
+determinism & networking argument); `PEDESTRIAN-POC-PLAN.md` holds the de-risking experiments.
 
 This subsystem is on the **live-reactivity axis**, not the SUMO-parity axis (see `DESIGN.md` §"Two
 futures"). It is validated by **behavioral / property tests**, never by golden FCD. The parity lane

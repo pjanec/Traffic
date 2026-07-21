@@ -34,6 +34,15 @@ doesn't have. Highlights below; precise scope after that.
   emergency-vehicle give-way, opposite-direction overtaking, laneless/shaped mixed traffic, and a full
   **panic-evacuation** model (localized incident → flee → jam → abandon car → foot exodus, layered on
   the unchanged parity core).
+- **🚶 A from-scratch pedestrian crowd layer.** Not a port of SUMO's person model — an independent,
+  **network-distributable** crowd subsystem: a navmesh baked from the SUMO net, Poisson O-D demand, a
+  two-level LOD (cheap dead-reckoned "ambient" peds vs. reactive full-ORCA ones, promoted on demand),
+  activity-timeline liveliness (pause / sit / step inside), crosswalk signals, and a **deterministic
+  lateral weave** so dense crowds thread shared sidewalks without passing through each other. Every
+  low-power pedestrian's pose is a **pure function of `(route, seed, width, time)`**, so the server and
+  every remote image-generator reconstruct it **bit-for-bit identically** — a route is broadcast *once*
+  and thousands of ambient peds cost ~O(1) each over a tiny bandwidth budget. Default-off, so the
+  vehicle parity goldens are byte-unchanged. Full index: [`docs/PEDESTRIANS.md`](docs/PEDESTRIANS.md).
 - **👁️ Three ways to watch it run.** A self-contained **offline HTML replay** (Canvas 2D, no server, no
   SUMO); a **live dead-reckoned browser viewer** (`Sim.LiveHost` — the zero-install shareable demo,
   poses extrapolated between low-rate updates); and a **native 10k-scale C# viewer** (`Sim.Viewer` —
@@ -44,9 +53,10 @@ doesn't have. Highlights below; precise scope after that.
 ## Documentation & live demos
 
 - **▶ Live demo gallery — interactive, in-browser, zero install:** **https://pjanec.github.io/SumoSharp/**
-  — 38 self-contained replays, **one per feature** (car-following, same- & opposite-direction
+  — 50+ self-contained replays, **one per feature** (car-following, same- & opposite-direction
   overtaking, roundabouts, traffic lights, emergency vehicles, rail, rerouting, panic evacuation,
-  city-scale, …). One click each; regenerated automatically by CI. Index + local-run script
+  **pedestrian crowds & the deterministic weave**, city-scale, …). One click each; regenerated
+  automatically by CI. Index + local-run script
   (`scripts/gen-demos.sh`): [`docs/DEMOS.md`](docs/DEMOS.md).
 - **📦 The NuGet packages & how they fit together:** [`docs/PACKAGES.md`](docs/PACKAGES.md) — the
   à-la-carte package map, "which packages do I install?", and composition diagrams. Runnable
@@ -102,7 +112,7 @@ dotnet test                     # 465 passed, 3 skipped  (offline; no SUMO, no n
 ### See it run (from a fresh checkout)
 
 ```bash
-# 1) Interactive gallery — ~38 self-contained replays, one per feature. Any machine, no GPU.
+# 1) Interactive gallery — 50+ self-contained replays, one per feature. Any machine, no GPU.
 scripts/gen-demos.sh            # builds Sim.Viz/Sim.Run/Sim.ExtDemo, writes site/index.html
 #   then open site/index.html in a browser  (or just visit https://pjanec.github.io/SumoSharp/)
 
@@ -227,9 +237,14 @@ snapshot** (order-independent, no arrival-time race).
 ## What is *not* simulated
 
 **Hard out of scope** — consumed as pre-processed input or simply not a goal:
-`netconvert` / OSM parsing / route import · emissions / electric / fuel models · **persons /
-pedestrians / containers** (peds appear only as junction foes) · public transport (`<busStop>`, dwell,
-schedules) · mesoscopic model · **TraCI** runtime control · GUI internals.
+`netconvert` / OSM parsing / route import · emissions / electric / fuel models · SUMO's own **person
+model** (`MSPModel_Striping` / `<person>` walk-parity) · **containers** · public transport (`<busStop>`,
+dwell, schedules) · mesoscopic model · **TraCI** runtime control · GUI internals.
+
+> **Pedestrians are simulated — just not as a SUMO port.** SumoSharp does not reproduce SUMO's person
+> trajectories; instead it has an independent, network-distributable **pedestrian crowd layer** (navmesh
+> + O-D demand + LOD + liveliness + a deterministic weave), on the live-reactivity axis and validated by
+> behavioral tests. See *Extras → Pedestrians* below and [`docs/PEDESTRIANS.md`](docs/PEDESTRIANS.md).
 
 **Deferred within scope** (characterized, intentionally not built yet):
 cooperative lane changes · the full **sublane / lateral model** (`MSLCM_SL2015`, continuous lateral
@@ -316,6 +331,39 @@ every other scenario is byte-identical.
   drift.
 - Deferred (diagnosed in `docs/OV-REMAINING.md`): a cross-lane hard-brake backstop, return-gap enforcement,
   and a coupled OV2/OV4 decision enabling a true reduced-clearance side-by-side pass.
+
+### Pedestrians (a from-scratch, network-distributable crowd layer)
+
+An independent pedestrian subsystem — **not** a port of SUMO's `MSPModel` person model, and on the
+**live-reactivity axis, not the parity axis** (validated by behavioral/property tests, never golden
+FCD). Every pedestrian feature is **default-off / inert-when-absent**, so the vehicle parity goldens and
+the determinism hash are byte-unchanged when peds are unused. Suite: **214 tests, green**.
+
+- **Navmesh from the SUMO net** — sidewalks / crossings / walkingAreas bake into walkable polygons with
+  per-vertex half-width (`WalkablePolygonBaker` → `SumoNavMesh`); A* routing; three additive connectivity
+  passes (area-overlap, sidewalk continuation, and a stitch from the net's declared ped `<connection>`s)
+  fold a real crop's split junctions into one connected component. Alternate DotRecast provider, cross-checked.
+- **Poisson O-D demand** routed over the navmesh, seeded (SplitMix64, never `System.Random`), with a
+  **density knob** (peds-per-walkable-km, LoS-C-capped) and **weighted POI + fringe endpoints** so peds
+  appear/vanish only at legitimate edges.
+- **Two-level LOD** — cheap **dead-reckoned "ambient"** peds (`PathArcMotion`, O(1)) vs. reactive
+  **full-ORCA** peds, promoted/demoted on demand by a movable multi-source **interest field**.
+- **Liveliness** — activity timelines (walk / pause / sit / step inside a building), pre-scheduled two-ped
+  meet-and-talk, and templated actors (a looping waiter) — all still low-power.
+- **Deterministic lateral weave** — dense low-power crowds are offset onto their own half of each
+  sidewalk (a pure function of `route, seed, width, time`), so opposing/overtaking peds thread shared
+  sidewalks **without passing through each other** — at O(1) per ped, no neighbour queries.
+- **Reacts with traffic** — signalized crosswalk gates (queue → surge on the walk phase), cars stopping
+  for a ped in their lane (`Engine.CrowdSource`), obstacle dodge + dynamic-blocker reroute, and parking-lot
+  board/alight with mutual car↔ped avoidance.
+- **`server == IG` by construction, over the wire.** Because a low-power ped's pose is a pure function of
+  its inputs, the sim server and every remote **image-generator** reconstruct it **bit-for-bit** — a
+  route/timeline is broadcast *once*, ambient peds emit **zero per-step bytes**, and a DR-error gate +
+  global bandwidth governor keep even the reactive peds within a fixed budget. Proven bit-identical across
+  an in-process byte loopback **and** real CycloneDDS (`Sim.Replication.Dds` / `Sim.PedDdsLoopback`, both
+  out of `Traffic.sln`). The native raylib viewer draws the crowd reconstructed **from the wire** with
+  ground-truth rings so the parity is literally visible.
+- **Full feature index, code map, API, how-to-run, and what's parked: [`docs/PEDESTRIANS.md`](docs/PEDESTRIANS.md).**
 
 ### Panic evacuation (localized incident → foot exodus)
 
@@ -493,7 +541,7 @@ true-size oriented vehicle boxes colored by vClass; play/pause/scrub/speed, zoom
 
 ### Live demos
 
-A curated, auto-generated gallery of these replays — **one per feature, 38 in all** — is deployed to
+A curated, auto-generated gallery of these replays — **one per feature, 50+ in all** — is deployed to
 GitHub Pages: **https://pjanec.github.io/SumoSharp/**. CI regenerates it on every change to the
 scenarios or the engine (`src/**`). The full categorized list is in [`docs/DEMOS.md`](docs/DEMOS.md);
 generate the same gallery locally with `scripts/gen-demos.sh`, then open `site/index.html`.
@@ -545,6 +593,25 @@ dotnet run           --project src/Sim.Viz -- scenarios/_bench/city-organic-L2 -
 | `scenarios/_bench/city-organic` | organic town, 49 junctions incl. a roundabout, ~180 concurrent (pre-rendered) |
 | `scenarios/_bench/city-organic-L2` | **2-lane** town, 274 junctions, ~406 concurrent — multi-lane at scale |
 | `scenarios/_bench/city-mixed-1k` | 1,064 junctions (262 TLS), ~1,000 concurrent, ~98% flowing |
+
+### Pedestrian demos
+
+Self-contained HTML replays of the pedestrian crowd layer (see *Pedestrians* above and
+[`docs/PEDESTRIANS.md`](docs/PEDESTRIANS.md)). No SUMO, no server, no GPU.
+
+```bash
+# dense demo-city block: hundreds of weaving pedestrians + a car flow on the real signalized grid
+dotnet run -c Release --project src/Sim.Viz -- --ped-dense-city ped-dense-city.html
+# one intersection: routed weaving crowd + cross-traffic cars
+dotnet run -c Release --project src/Sim.Viz -- --ped-weave-city ped-weave-city.html
+# the crowd rendered purely from the replication wire (server == IG), promotion pop-free
+dotnet run -c Release --project src/Sim.Viz -- --ped-remote ped-remote.html
+# more: --ped-od-routing --ped-lively-crowd --ped-crossing-gate --ped-lod-promotion
+#       --ped-dodge --ped-reroute --ped-parking --ped-liveliness --ped-social --ped-waiter
+```
+
+The 14 pedestrian gallery entries are registered under the **Pedestrians** category in
+`scripts/gen-demos.sh`; the offline pedestrian test suite is `dotnet test tests/Sim.Pedestrians.Tests`.
 
 ### Panic-evacuation demos
 
@@ -607,15 +674,21 @@ src/
   Sim.Viz/        offline HTML replay generator (Canvas 2D; incl. the evac scenes)
   Sim.LiveHost/   live dead-reckoned browser viewer (WebSocket; the zero-install demo)
   Sim.Replication/     transport-agnostic frame codec + adaptive publish policy + DR model
-  Sim.Replication.Dds/ CycloneDDS topic types (state / geometry / traffic-light) — out of Traffic.sln
+  Sim.Replication.Dds/ CycloneDDS topic types (vehicle state / geometry / traffic-light / pedestrian) — out of Traffic.sln
   Sim.Viewer.Core/ native-viewer engine host + DDS pub/sub + DrClock (headless-testable)
   Sim.Viewer/     native 10k-scale desktop viewer (raylib-cs + Dear ImGui) — out of Traffic.sln
   Sim.ExtDemo/    external-agent demo runner (combined FCD)
   Sim.Evac/       panic-evacuation layer (parity-exempt; drives the core via public seams)
   Sim.EvacProfile/ evac per-phase cost profiler + crowd-solver micro-benchmark
+  Sim.Pedestrians/ the from-scratch pedestrian crowd layer — navmesh bake, O-D demand, two-level LOD,
+                  activity-timeline liveliness, deterministic weave, and the server==IG replication seam
+  Sim.Pedestrians.Nav.DotRecast/ alternate DotRecast navmesh provider (cross-checked against SumoNavMesh)
+  Sim.PedDdsLoopback/ live CycloneDDS server==IG proof for pedestrians — out of Traffic.sln
+  Sim.BenchPedLod/ · Sim.BenchPedNet/ · Sim.BenchCrowd/  pedestrian micro-benchmarks
   Sim.Bench/      determinism + micro-benchmark oracle
   Sim.BenchCity/  scaled-city benchmark runner (RTF / RSS / stuck detector)
-scenarios/        committed parity scenarios (inputs + goldens + tolerance + provenance) and _bench/ demos
+scenarios/        committed parity scenarios (inputs + goldens + tolerance + provenance), _bench/ demos,
+                  and _ped/ pedestrian scenarios (poc0-crossing-plaza, demo_city, sub-area/evac nets)
 sumo/             vendored SUMO 1.20.0 source (read-only algorithm reference; never edited)
 scripts/          golden regeneration & benchmark generation (network side; needs SUMO)
 docs/             design, specs, the perf/optimization ledger, and open-issue notes
@@ -625,7 +698,8 @@ LICENSE           EPL-2.0 OR GPL-2.0-or-later (dual); version.json — project v
 Key docs: **`docs/DESIGN.md`** (architecture of record — read this for the "why"), **`docs/TASKS.md`** (the work
 queue / feature ledger), **`CLAUDE.md`** (contributor rules), **`docs/RAIL-SUPPORT.md`**,
 **`docs/EXTERNAL-AGENTS-VIZ.md`**, **`docs/BENCHMARK_SPEC.md`**, **`docs/C4-VII-REMAINING.md`** (open junction work),
-**`docs/PANIC-EVAC-OVERVIEW.md`** (the panic-evacuation feature index), **`docs/SUMOSHARP-NATIVE-VIEWER.md`**
+**`docs/PANIC-EVAC-OVERVIEW.md`** (the panic-evacuation feature index), **`docs/PEDESTRIANS.md`** (the
+pedestrian-subsystem front door — capabilities, code map, API, what's parked), **`docs/SUMOSHARP-NATIVE-VIEWER.md`**
 (native raylib + DDS viewer) and **`docs/SUMOSHARP-DEADRECKONING.md`** (the dead-reckoning / replication stack).
 
 ---
@@ -633,10 +707,14 @@ queue / feature ledger), **`CLAUDE.md`** (contributor rules), **`docs/RAIL-SUPPO
 ## Status
 
 The car-following, lane-change, junction/right-of-way, traffic-light, rail, emergency-vehicle and
-external-agent subsystems are implemented and parity-tested (**440 passing scenarios/checks**). Known
-open item: box-blocking on *pathological* tight unmarked single-lane rings under saturation (diagnosed,
+external-agent subsystems are implemented and parity-tested (**649 passing parity checks**, +3 skipped).
+The **pedestrian crowd layer** (navmesh, O-D demand, two-level LOD, liveliness, deterministic weave,
+server==IG replication) is on the live-reactivity axis and behavior/property-tested (**214 passing**);
+because it is default-off, the vehicle parity goldens and determinism hash are unaffected. Known open
+item: box-blocking on *pathological* tight unmarked single-lane rings under saturation (diagnosed,
 deferred — normal roundabouts flow fine). Phase 2 (the laneless/sublane heterogeneous model) is
-designed-for but not built.
+designed-for but not built; the pedestrian navmesh connectivity thresholds are provisional pending
+real-net (non-synthetic) re-validation.
 
 ---
 
