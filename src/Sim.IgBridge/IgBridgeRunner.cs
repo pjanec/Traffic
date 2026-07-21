@@ -61,6 +61,30 @@ public readonly struct DespawnInfo
     public string Id { get; }
 }
 
+// The RAW (unsmoothed) engine pose of one vehicle this tick -- SUMO's own x/y/z + navi Angle, straight
+// from the SoA spans. This is the "before" baseline the metrics pass (T1.5) reconstructs and compares the
+// IgBridge-smoothed stream against: fed to the IG raw, it carries the instant lane changes and
+// junction-heading snaps IgBridge exists to remove.
+public readonly struct RawVehiclePose
+{
+    public RawVehiclePose(VehicleHandle handle, string id, double x, double y, double z, float headingDeg)
+    {
+        Handle = handle;
+        Id = id;
+        X = x;
+        Y = y;
+        Z = z;
+        HeadingDeg = headingDeg;
+    }
+
+    public VehicleHandle Handle { get; }
+    public string Id { get; }
+    public double X { get; }
+    public double Y { get; }
+    public double Z { get; }
+    public float HeadingDeg { get; }
+}
+
 // Stage [1]/[2] of the pipeline (docs/IGBRIDGE-DECISIONS.md §2): the fixed-10 Hz core loop + per-entity
 // ring buffers. Loads the box network demand-less (Sim.Ingest.DemandParser rejects the box demand's
 // departPos="base"/parking stops -- see RouteDemand), replays the real routes via explicit-edge
@@ -81,6 +105,7 @@ public sealed class IgBridgeRunner
     private readonly Dictionary<VehicleHandle, (double Length, double Width)> _dims = new();
     private readonly List<SpawnInfo> _spawnedThisTick = new();
     private readonly List<DespawnInfo> _despawnedThisTick = new();
+    private readonly List<RawVehiclePose> _rawPosesThisTick = new();
     private HashSet<VehicleHandle> _live = new();
     private int _cursor;
 
@@ -122,6 +147,7 @@ public sealed class IgBridgeRunner
     public IReadOnlyCollection<VehicleHandle> LiveVehicles => _live;
     public IReadOnlyList<SpawnInfo> SpawnedThisTick => _spawnedThisTick;
     public IReadOnlyList<DespawnInfo> DespawnedThisTick => _despawnedThisTick;
+    public IReadOnlyList<RawVehiclePose> RawVehiclePosesThisTick => _rawPosesThisTick;
 
     public string IdOf(VehicleHandle handle)
         => _idByHandle.TryGetValue(handle, out var id) ? id : handle.ToString();
@@ -141,6 +167,7 @@ public sealed class IgBridgeRunner
     {
         _spawnedThisTick.Clear();
         _despawnedThisTick.Clear();
+        _rawPosesThisTick.Clear();
 
         // 1) spawn all vehicles whose depart time has arrived (demand is depart-sorted).
         var now = _engine.CurrentTime;
@@ -182,6 +209,10 @@ public sealed class IgBridgeRunner
         var drModels = _engine.DrModels;
         var lengths = _engine.VehicleLengths;
         var widths = _engine.VehicleWidths;
+        var rawX = _engine.PosX;
+        var rawY = _engine.PosY;
+        var rawZ = _engine.PosZ;
+        var rawAngle = _engine.Angle;
         var t = _engine.CurrentTime;
         Span<int> upcoming = stackalloc int[UpcomingLanes.Count];
 
@@ -203,6 +234,9 @@ public sealed class IgBridgeRunner
                 handle, (DrModel)drModels[i], laneHandles[i], pos[i], posLat[i], speed[i], accel[i],
                 latSpeed: 0.0, new UpcomingLanes(upcoming[..n]));
             history.Append(new TimestampedSample(t, record));
+
+            // Raw (unsmoothed) engine pose for this tick -- the metrics "before" baseline (T1.5).
+            _rawPosesThisTick.Add(new RawVehiclePose(handle, IdOf(handle), rawX[i], rawY[i], rawZ[i], rawAngle[i]));
         }
 
         // 4) despawn: present last tick, gone now.

@@ -43,14 +43,19 @@ public sealed class IgBridgeSession
 
     private readonly Queue<IgSample> _ring = new();
     private readonly int _ringCapacity;
+    private readonly List<IgSample>? _retained; // full in-memory stream for offline analysis (opt-in)
     private double _nextEmit;
 
-    public IgBridgeSession(IgBridgeRunner runner, IgEmitConfig emit, IgTraceWriter trace, int ringCapacity = 20000)
+    // `retainAll`: keep every emitted record in memory (AllEmitted) for the analysis/metrics pass. Off by
+    // default -- the real IgBridge streams to the network and keeps only the bounded ring.
+    public IgBridgeSession(IgBridgeRunner runner, IgEmitConfig emit, IgTraceWriter trace,
+        int ringCapacity = 20000, bool retainAll = false)
     {
         _runner = runner;
         _emit = emit;
         _trace = trace;
         _ringCapacity = ringCapacity;
+        _retained = retainAll ? new List<IgSample>() : null;
         _emitDt = 1.0 / emit.EmitHz;
         _frameDt = (float)_emitDt;
         _nextEmit = _emitDt; // first emit instant is one emit-step in (t=0 has no motion yet)
@@ -58,6 +63,9 @@ public sealed class IgBridgeSession
 
     public int EmittedCount { get; private set; }
     public IReadOnlyCollection<IgSample> Ring => _ring;
+
+    // The full emitted stream (only when constructed with retainAll: true; empty otherwise).
+    public IReadOnlyList<IgSample> AllEmitted => (IReadOnlyList<IgSample>?)_retained ?? Array.Empty<IgSample>();
 
     // Drain every emit instant that has become resolvable (tau <= newestSampleTime - lookahead). Call once
     // after each IgBridgeRunner.Tick().
@@ -283,6 +291,7 @@ public sealed class IgBridgeSession
     private void Emit(in IgSample s)
     {
         _trace.Write(s);
+        _retained?.Add(s);
         _ring.Enqueue(s);
         if (_ring.Count > _ringCapacity)
         {
