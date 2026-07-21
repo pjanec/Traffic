@@ -5,12 +5,23 @@ using Sim.IgBridge;
 // reconstructed through the IG's 2-sample rule, so "no artifacts" is MEASURED (R8/§9.3). Side-by-side
 // render is T1.4.
 var repoRoot = FindRepoRoot();
-var boxDir = Path.Combine(repoRoot, "scenarios", "_ped", "demo_city", "box");
-var cfg = new IgBridgeConfig(Path.Combine(boxDir, "net.xml"), Path.Combine(boxDir, "scenario.rou.xml"))
+// Scenario is selectable via IGBRIDGE_SCENARIO (a path under scenarios/). Default: the clean 6x6 grid
+// "subarea-box" -- a Manhattan grid with explicit turning routes and clean edge-start spawns, a far better
+// smoothness test bed than the demo_city "box" (which spawns near junctions and has no clean turns).
+var scenarioRel = Environment.GetEnvironmentVariable("IGBRIDGE_SCENARIO") ?? "_ped/subarea-box";
+var scDir = Path.Combine(repoRoot, "scenarios", scenarioRel.Replace('/', Path.DirectorySeparatorChar));
+var netPath = FindScenarioFile(scDir, "net.xml", "*.net.xml");
+var rouPath = FindScenarioFile(scDir, "scenario.rou.xml", "*.rou.xml");
+// Synthetic pedestrian crowd off by default (IGBRIDGE_PEDS=1 to enable); the grid has no scenario peds and
+// the focus here is vehicle turn smoothness.
+var enablePeds = Environment.GetEnvironmentVariable("IGBRIDGE_PEDS") == "1";
+var cfg = new IgBridgeConfig(netPath, rouPath)
 {
     StepLength = 0.1,
     Seed = 42,
+    EnablePeds = enablePeds,
 };
+Console.WriteLine($"scenario={scenarioRel}  net={Path.GetFileName(netPath)}  rou={Path.GetFileName(rouPath)}  peds={enablePeds}");
 var emit = new IgEmitConfig { EmitHz = 20.0, LookaheadSeconds = 0.1 };
 var igCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, RenderHz = 60.0 };
 
@@ -20,7 +31,7 @@ var outDir = Path.Combine(repoRoot, "artifacts", "igbridge");
 Directory.CreateDirectory(outDir);
 var tracePath = Path.Combine(outDir, "trace.jsonl");
 
-Console.WriteLine($"box={boxDir}");
+Console.WriteLine($"scenarioDir={scDir}");
 
 // One run: write the smoothed trace, retain the smoothed stream in memory, and collect the raw engine
 // stream (10 Hz x/y/angle) as the metrics "before" baseline.
@@ -118,6 +129,16 @@ static IReadOnlyDictionary<string, IReadOnlyList<ReconPose>> OnlyModel(
     }
 
     return result;
+}
+
+// Resolve a scenario input file: prefer the exact conventional name, else the first glob match.
+static string FindScenarioFile(string dir, string exact, string glob)
+{
+    var p = Path.Combine(dir, exact);
+    if (File.Exists(p)) return p;
+    var hits = Directory.GetFiles(dir, glob);
+    if (hits.Length > 0) return hits[0];
+    throw new FileNotFoundException($"no {exact} or {glob} in {dir}");
 }
 
 static string FindRepoRoot()

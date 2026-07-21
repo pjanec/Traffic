@@ -26,6 +26,9 @@ public sealed class IgBridgeConfig
     // synthesized over the same box net, mirroring SceneGen.BuildLiveCity's ped setup minus its
     // System.Random-seeded demand generator -- see PedStream's class remarks for why a monotonic trip
     // cursor replaces that RNG. ----
+    // Synthetic ped crowd on/off. Off = a clean vehicle-only stream (e.g. the grid test bed, which has no
+    // scenario peds of its own). On = the deterministic PathArc crowd over the net's sidewalks.
+    public bool EnablePeds { get; init; } = true;
     public double PedMaxSpeed { get; init; } = 1.3;      // matches BuildLiveCity's PedDemandConfig.MaxSpeed
     public double PedRadius { get; init; } = 0.3;        // matches BuildLiveCity's PedDemandConfig.Radius
     public double PedArriveRadius { get; init; } = 0.3;  // PedestrianWorld ctor default
@@ -111,7 +114,8 @@ public sealed class IgBridgeRunner
 
     // Separate ped lifecycle/reconstruction stack (docs task: peds never touch VehicleSampleHistory/
     // DrClock) -- see PedStream.cs. Stepped in lockstep with the vehicle engine inside Tick().
-    private readonly PedStream _pedStream;
+    private readonly PedStream? _pedStream;
+    private static readonly Dictionary<int, PedSampleHistory> EmptyPedHistories = new();
 
     public IgBridgeRunner(IgBridgeConfig config)
     {
@@ -133,7 +137,7 @@ public sealed class IgBridgeRunner
         _vtype = _engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
         _demand = RouteDemand.Parse(config.RouXmlPath);
 
-        _pedStream = new PedStream(config.NetXmlPath, config);
+        _pedStream = config.EnablePeds ? new PedStream(config.NetXmlPath, config) : null;
     }
 
     public NetworkModel Network { get; }
@@ -153,10 +157,10 @@ public sealed class IgBridgeRunner
         => _idByHandle.TryGetValue(handle, out var id) ? id : handle.ToString();
 
     // ---- pedestrian side (PedStream.cs): mirrors the vehicle read API above one-for-one. ----
-    public IReadOnlyDictionary<int, PedSampleHistory> PedHistories => _pedStream.Histories;
-    public IReadOnlyCollection<int> LivePeds => _pedStream.LiveIds;
-    public IReadOnlyList<PedSpawnInfo> PedSpawnedThisTick => _pedStream.SpawnedThisTick;
-    public IReadOnlyList<PedDespawnInfo> PedDespawnedThisTick => _pedStream.DespawnedThisTick;
+    public IReadOnlyDictionary<int, PedSampleHistory> PedHistories => _pedStream?.Histories ?? EmptyPedHistories;
+    public IReadOnlyCollection<int> LivePeds => _pedStream?.LiveIds ?? Array.Empty<int>();
+    public IReadOnlyList<PedSpawnInfo> PedSpawnedThisTick => _pedStream?.SpawnedThisTick ?? Array.Empty<PedSpawnInfo>();
+    public IReadOnlyList<PedDespawnInfo> PedDespawnedThisTick => _pedStream?.DespawnedThisTick ?? Array.Empty<PedDespawnInfo>();
 
     public static string PedIdOf(int id) => PedStream.StringId(id);
 
@@ -193,7 +197,7 @@ public sealed class IgBridgeRunner
         // 1b) advance the ped stream FIRST, sharing this tick's (now, dt) clock with the vehicle
         // engine -- golden step ORDER (SceneGen.BuildLiveCity: `demand.Step(now, dt, ...)` runs before
         // `engine.Step()`). PedStream buffers its own samples internally (see PedStream.Tick).
-        _pedStream.Tick(now, _stepLength);
+        _pedStream?.Tick(now, _stepLength);
 
         // 2) one fixed tick.
         _engine.Step();

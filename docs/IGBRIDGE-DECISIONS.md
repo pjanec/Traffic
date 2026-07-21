@@ -260,6 +260,18 @@ car is compared). Guarded on a `vehIds` slot map the IgBridge export emits — i
 All four additions are renderer-side, outside `Sim.Core`'s parity path; the offline `dotnet test` gate and
 every golden stay byte-identical (§6).
 
+### 5.7 Test bed — clean grid (owner: "almost no one is turning; cars born mid-junction; erratic peds")
+The `demo_city/box` scenario is a poor smoothness bed: irregular topology (few clean turns, spawns near
+junctions) and — the "erratic pedestrians" — were **our own** synthetic PathArc crowd, not scenario peds.
+The Host now defaults to `scenarios/_ped/subarea-box`, a clean **6×6 Manhattan grid** (36 priority
+intersections, 11 k vehicles with explicit turning routes, clean edge-start spawns). Knobs:
+`IGBRIDGE_SCENARIO=<path under scenarios/>` picks any scenario with `<vehicle><route edges>` demand;
+`IGBRIDGE_PEDS=1` re-enables the synthetic crowd (off by default — `IgBridgeConfig.EnablePeds`). The grid
+gives **253 clean ~90° turns** (vs 68 in box) so the *median* vehicle turns, with bounded maxes (no U-turn
+outliers): the overshoot fix (§5.6) verifies here at worst-case **1** heading yaw-accel reversal across all
+253 turns, no-slip fidelity intact (drawn rear-bumper slip 11.51° vs ideal 11.57°), rear inside (0.98).
+Scenario selection and the ped toggle are Host/harness only — no `Sim.Core`, no parity impact.
+
 ---
 
 ## 6. Determinism & parity
