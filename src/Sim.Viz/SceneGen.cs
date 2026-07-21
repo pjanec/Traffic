@@ -1813,10 +1813,11 @@ internal static class SceneGen
         var polygons = WalkablePolygonBaker.Bake(pedNetwork);
         var nav = new SumoNavMesh(polygons, new SumoWalkableSpace(polygons), pedNetwork.PedConnections);
 
-        // PINNED crop = SumoData's dining-district fallback bbox (SUMOSHARP-LIVE-CITY-DECISIONS.md Q7); swap
-        // to the co-located downtown hero bbox when their regen lands. (Not the auto-densest pick -- we need
-        // the block that has the hero venues + signalized crossings, not just the most sidewalk.)
-        const double x0 = 3100, y0 = 1900, x1 = 3900, y1 = 2700;
+        // PINNED crop = SumoData's co-located downtown HERO block (SUMOSHARP-LIVE-CITY-DECISIONS.md Q7,
+        // delivered regen): 840x840 m holding 3 restaurants (outdoor terraces) + enterable offices + a dense
+        // signalized TL grid with car traffic -- one crop shows dense cars + LOD crowd + crossing-yield + the
+        // dine/enter/meet set-pieces together. (Not the auto-densest pick.)
+        const double x0 = 2055, y0 = 2055, x1 = 2895, y1 = 2895;
         var cx = (x0 + x1) / 2.0;
         var cy = (y0 + y1) / 2.0;
         bool In(double x, double y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
@@ -1880,13 +1881,16 @@ internal static class SceneGen
             if (poly.Kind != BakedPolygonKind.Crossing) continue;
             if (!InV(poly.Centroid)) continue;
             cropCrossings.Add(poly.Centroid);
-            var promote = poly.HalfWidth + 15.0;
+            // Tight promote radius (only peds actually on/entering the crosswalk go ORCA, so cars yield
+            // there) -- kept small on the dense downtown grid so the LOD contrast survives (a wide radius
+            // on 66 crossings would promote the whole crop).
+            var promote = poly.HalfWidth + 8.0;
             field.Register(new InterestSource(poly.Centroid, promote, 2.0 * promote));
         }
 
-        // (ii) high-realism pocket: one large source at the crop centre -> a visible ORCA district amid the
-        // low-power weave (the LOD contrast).
-        field.Register(new InterestSource(new Vec2(cx, cy), promoteRadius: 100.0, demoteRadius: 140.0));
+        // (ii) high-realism pocket: one source at the crop centre -> a visible ORCA district amid the
+        // low-power weave (the LOD contrast). A pocket (~1/7 of the 840 m crop), not the whole block.
+        field.Register(new InterestSource(new Vec2(cx, cy), promoteRadius: 60.0, demoteRadius: 90.0));
 
         // ---- cars: real Engine on the full net; a dense LOCAL flow on the crop's drivable edges ----
         var engine = new Engine();

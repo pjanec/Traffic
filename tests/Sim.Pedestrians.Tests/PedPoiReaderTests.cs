@@ -65,17 +65,19 @@ public class PedPoiReaderTests
     [Fact]
     public void LoadJson_ReadsTheDemoCityBox_Pois_v2_WithoutThrowing()
     {
-        // The composed demo-city box carries pois/v2 -- incl. the new polygon-anchored `parking_lot`/`park`
+        // The composed demo-city box carries pois/v2 -- incl. the polygon-anchored `parking_lot`/`park`
         // kinds that used to throw `FormatException: unknown POI kind` (the first-contact blocker). The reader
-        // must now load all 458 records unfiltered, tolerating the missing-weight polygon kinds.
+        // must load every record unfiltered, tolerating the missing-weight polygon kinds. Counts track the
+        // live-city regen (SUMOSHARP-LIVE-CITY-DECISIONS.md): the co-located downtown hero block added 3
+        // restaurants + their entrances, so venue 25->28 and total 464->473.
         var box = Path.Combine(RepoDir(), "scenarios", "_ped", "demo_city", "box");
         var pois = PedPoiReader.LoadJson(Path.Combine(box, "pois.json"));
 
-        Assert.Equal(464, pois.Count);
+        Assert.Equal(473, pois.Count);
         var byKind = pois.GroupBy(p => p.Kind).ToDictionary(g => g.Key, g => g.Count());
         Assert.Equal(5, byKind[PedPoiKind.ParkingLot]);
         Assert.Equal(1, byKind[PedPoiKind.Park]);
-        Assert.Equal(25, byKind[PedPoiKind.Venue]);
+        Assert.Equal(28, byKind[PedPoiKind.Venue]);
         Assert.Equal(351, byKind[PedPoiKind.ParkingAccess]);
 
         // The polygon kinds legitimately have no O/D weight -> defaulted to 0, not an exception.

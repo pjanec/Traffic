@@ -118,11 +118,14 @@ orange as it enters the zone / steps onto a crossing.
       `carYieldObservations=20`, `minCarSpeedNearOccupiedCrossing=0.00 m/s`. Density: 105 cars + 160 peds.
       Determinism: two runs byte-identical. Parity untouched: full `dotnet test` green (`CrowdSource` null
       for every golden; hash unmoved).
-- [ ] **T6 — (deferred to hero-crop landing)** register in `gen-demos.sh`; swap the pinned crop constant to
-      SumoData's downtown hero bbox; re-verify. Held so the public gallery isn't fed the sparser
-      dining-district crop.
+- [x] **T6 — hero crop + gallery.** SumoData's regen landed (box updated in place, bakes `components=1`
+      still); pinned crop swapped to the downtown hero bbox `[2055,2055,2895,2895]` (66 crossings, 111 cars,
+      160 peds); promotion footprints tightened (per-crossing `HalfWidth+8`, pocket `60/90`) so the LOD
+      contrast survives the dense grid (peak high-power 117, not 160); `carYieldObservations=408`,
+      `minCarSpeedNearOccupiedCrossing=0.00`. Registered in `gen-demos.sh` (`demo_livecity`, slug `live-city`).
+      `PedPoiReaderTests` demo-city counts updated (464→473, venue 25→28).
 
-**Phase 1 status: COMPLETE** (T1–T5); T6 waits on SumoData's regen.
+**Phase 1 status: COMPLETE** (T1–T6). Phase 2 (deterministic low-power crossing occupancy) next, then Phase 3 (City3D).
 
 ## 6. Explicitly out of scope for Phase 1
 - The Option-B **deterministic low-power occupancy** (cars yield to un-promoted peds cheaply) — that's

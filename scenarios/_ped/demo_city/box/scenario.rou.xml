@@ -168,13 +168,13 @@
     <vehicle id="65" depart="52.99" departLane="best" departSpeed="max">
         <route edges="e_m_garage_stub_m_lot e_m_lot_m_1_0 e_m_1_0_m_0_0 e_m_0_0_ra_ne_r2 e_ra_ne_r2_ra_ne_r0 e_ra_ne_r0_ring_N e_ring_N_axis_n_drop e_axis_n_drop_d_3_6 e_d_3_6_d_3_5 e_d_3_5_d_3_4 e_d_3_4_d_3_3 e_d_3_3_d_2_3 e_d_2_3_d_1_3 e_d_1_3_d_0_3 e_d_0_3_ring_W" />
     <stop parkingArea="pa_e_d_0_3_ring_W" duration="100000" /></vehicle>
-    <vehicle id="66" depart="53.80" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_3_d_2_2_0" depart="53.69" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_W_ring_W e_ring_W_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_2_2 e_d_2_2_d_1_2 e_d_1_2_d_0_2 e_d_0_2_d_0_3 e_d_0_3_ring_W e_ring_W_fringe_ring_W" /><stop parkingArea="pa_e_d_2_3_d_2_2" duration="127" /></vehicle><vehicle id="66" depart="53.80" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_r_5_4_r_5_3 e_r_5_3_axis_w_ramp e_axis_w_ramp_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_3_3 e_d_3_3_d_3_4 e_d_3_4_d_3_5 e_d_3_5_d_3_6 e_d_3_6_axis_n_drop e_axis_n_drop_ring_N e_ring_N_fringe_ring_N" />
     <stop parkingArea="pa_e_r_5_4_r_5_3" duration="5" /></vehicle>
     <vehicle id="v2_reslot0_leave_0" depart="54.56" departSpeed="max" departPos="stop" departLane="1"><route edges="e_r_lot0_stub_r_3_1 e_r_3_1_r_2_1 e_r_2_1_r_2_0 e_r_2_0_r_1_0 e_r_1_0_r_0_0 e_r_0_0_ra_sw_r2 e_ra_sw_r2_ra_sw_r0 e_ra_sw_r0_ra_s_r0 e_ra_s_r0_ra_s_r1 e_ra_s_r1_ra_s_r2 e_ra_s_r2_ra_s_r3 e_ra_s_r3_fringe_ring_S" /><stop parkingArea="pa_v2_reslot0_out" duration="5" /></vehicle><vehicle id="68" depart="55.43" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_d_2_0_d_1_0 e_d_1_0_d_1_1 e_d_1_1_d_1_2 e_d_1_2_d_1_3 e_d_1_3_d_0_3 e_d_0_3_ring_W e_ring_W_ra_sw_r1 e_ra_sw_r1_ra_sw_r2 e_ra_sw_r2_r_0_0 e_r_0_0_r_1_0 e_r_1_0_r_2_0 e_r_2_0_r_3_0 e_r_3_0_r_3_1 e_r_3_1_r_3_2 e_r_3_2_r_4_2 e_r_4_2_r_4_1" />
     <stop parkingArea="pa_e_d_2_0_d_1_0" duration="5" /><stop parkingArea="pa_e_r_4_2_r_4_1" duration="100000" /></vehicle>
-    <vehicle id="69" depart="56.25" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_3_d_3_3_0" depart="56.10" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_W_ring_W e_ring_W_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_3_3 e_d_3_3_d_3_4 e_d_3_4_d_2_4 e_d_2_4_d_1_4 e_d_1_4_d_0_4 e_d_0_4_d_0_3 e_d_0_3_ring_W e_ring_W_fringe_ring_W" /><stop parkingArea="pa_e_d_2_3_d_3_3" duration="171" /></vehicle><vehicle id="69" depart="56.25" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_r_4_2_r_3_2 e_r_3_2_r_3_3 e_r_3_3_r_4_3 e_r_4_3_r_5_3 e_r_5_3_axis_w_ramp e_axis_w_ramp_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_1_4 e_d_1_4_d_1_5 e_d_1_5_d_0_5" />
     <stop parkingArea="pa_e_r_4_2_r_3_2" duration="5" /><stop parkingArea="pa_e_d_1_5_d_0_5" duration="100000" /></vehicle>
     <vehicle id="70" depart="57.06" departLane="1" departSpeed="max" departPos="stop">
@@ -189,7 +189,7 @@
     <vehicle id="73" depart="59.51" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_r_1_2_r_0_2 e_r_0_2_r_0_1 e_r_0_1_r_0_0 e_r_0_0_r_1_0 e_r_1_0_r_2_0 e_r_2_0_r_3_0 e_r_3_0_r_3_1 e_r_3_1_r_4_1" />
     <stop parkingArea="pa_e_r_1_2_r_0_2" duration="5" /><stop parkingArea="pa_e_r_3_1_r_4_1" duration="100000" /></vehicle>
-    <vehicle id="75" depart="61.14" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_2_d_3_2_0" depart="59.79" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_S_ra_s_r3 e_ra_s_r3_ra_s_r0 e_ra_s_r0_ra_s_r1 e_ra_s_r1_ra_s_r2 e_ra_s_r2_d_3_0 e_d_3_0_d_3_1 e_d_3_1_d_3_2 e_d_3_2_d_3_3 e_d_3_3_d_2_3 e_d_2_3_d_2_2 e_d_2_2_d_3_2 e_d_3_2_d_3_1 e_d_3_1_d_3_0 e_d_3_0_ra_s_r2 e_ra_s_r2_ra_s_r3 e_ra_s_r3_fringe_ring_S" /><stop parkingArea="pa_e_d_2_2_d_3_2" duration="201" /></vehicle><vehicle id="75" depart="61.14" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_ring_W_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_0_4 e_d_0_4_d_1_4 e_d_1_4_d_1_3 e_d_1_3_d_0_3 e_d_0_3_ring_W e_ring_W_ra_sw_r1 e_ra_sw_r1_ra_sw_r2 e_ra_sw_r2_r_0_0 e_r_0_0_r_0_1 e_r_0_1_r_0_2 e_r_0_2_r_1_2 e_r_1_2_r_2_2 e_r_2_2_r_2_1 e_r_2_1_r_2_0 e_r_2_0_r_1_0 e_r_1_0_r_0_0 e_r_0_0_ra_sw_r2" />
     <stop parkingArea="pa_e_ring_W_axis_w_zip" duration="5" /><stop parkingArea="pa_e_r_0_0_ra_sw_r2" duration="100000" /></vehicle>
     <vehicle id="v2_reslot1_leave_0" depart="62.71" departSpeed="max" departPos="stop" departLane="1"><route edges="e_r_lot1_stub_r_4_3 e_r_4_3_r_3_3 e_r_3_3_r_2_3 e_r_2_3_r_2_2 e_r_2_2_r_2_1 e_r_2_1_r_2_0 e_r_2_0_r_1_0 e_r_1_0_r_0_0 e_r_0_0_ra_sw_r2 e_ra_sw_r2_ra_sw_r0 e_ra_sw_r0_ra_s_r0 e_ra_s_r0_ra_s_r1 e_ra_s_r1_ra_s_r2 e_ra_s_r2_ra_s_r3 e_ra_s_r3_fringe_ring_S" /><stop parkingArea="pa_v2_reslot1_out" duration="5" /></vehicle><vehicle id="77" depart="62.77" departLane="1" departSpeed="max" departPos="stop">
@@ -687,10 +687,10 @@
     <vehicle id="263" depart="214.40" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_ra_s_r0_ra_sw_r0 e_ra_sw_r0_ra_sw_r1 e_ra_sw_r1_ra_sw_r2 e_ra_sw_r2_ra_sw_r0 e_ra_sw_r0_ra_s_r0 e_ra_s_r0_ra_s_r1 e_ra_s_r1_ra_s_r2 e_ra_s_r2_d_3_0 e_d_3_0_d_4_0" />
     <stop parkingArea="pa_e_ra_s_r0_ra_sw_r0" duration="5" /><stop parkingArea="pa_e_d_3_0_d_4_0" duration="100000" /></vehicle>
-    <vehicle id="264" depart="215.21" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_3_d_2_2_1" depart="214.58" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_W_ring_W e_ring_W_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_2_2 e_d_2_2_d_1_2 e_d_1_2_d_0_2 e_d_0_2_d_0_3 e_d_0_3_ring_W e_ring_W_fringe_ring_W" /><stop parkingArea="pa_e_d_2_3_d_2_2" duration="124" /></vehicle><vehicle id="264" depart="215.21" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_d_0_3_d_0_4 e_d_0_4_d_1_4 e_d_1_4_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_2_2 e_d_2_2_d_1_2" />
     <stop parkingArea="pa_e_d_0_3_d_0_4" duration="5" /><stop parkingArea="pa_e_d_2_2_d_1_2" duration="100000" /></vehicle>
-    <vehicle id="265" depart="216.03" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_3_d_3_3_1" depart="215.35" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_W_ring_W e_ring_W_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_2_3 e_d_2_3_d_3_3 e_d_3_3_d_3_4 e_d_3_4_d_2_4 e_d_2_4_d_1_4 e_d_1_4_d_0_4 e_d_0_4_d_0_3 e_d_0_3_ring_W e_ring_W_fringe_ring_W" /><stop parkingArea="pa_e_d_2_3_d_3_3" duration="147" /></vehicle><vehicle id="265" depart="216.03" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_d_4_0_d_3_0 e_d_3_0_ra_s_r2 e_ra_s_r2_ra_s_r3 e_ra_s_r3_ra_s_r0 e_ra_s_r0_ra_sw_r0 e_ra_sw_r0_ra_sw_r1 e_ra_sw_r1_ra_sw_r2 e_ra_sw_r2_r_0_0 e_r_0_0_r_1_0 e_r_1_0_r_2_0" />
     <stop parkingArea="pa_e_d_4_0_d_3_0" duration="5" /><stop parkingArea="pa_e_r_1_0_r_2_0" duration="100000" /></vehicle>
     <vehicle id="266" depart="216.84" departLane="1" departSpeed="max" departPos="stop">
@@ -720,7 +720,7 @@
     <vehicle id="274" depart="223.36" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_r_3_3_r_3_4 e_r_3_4_r_4_4 e_r_4_4_r_5_4 e_r_5_4_r_5_3 e_r_5_3_axis_w_ramp e_axis_w_ramp_axis_w_zip e_axis_w_zip_d_0_3 e_d_0_3_d_1_3 e_d_1_3_d_1_2 e_d_1_2_d_1_1 e_d_1_1_d_1_0 e_d_1_0_d_0_0" />
     <stop parkingArea="pa_e_r_3_3_r_3_4" duration="5" /><stop parkingArea="pa_e_d_1_0_d_0_0" duration="100000" /></vehicle>
-    <vehicle id="276" depart="225.00" departLane="1" departSpeed="max" departPos="stop">
+    <vehicle id="v2_dining_dt_pa_e_d_2_2_d_3_2_1" depart="223.76" departSpeed="max" departLane="best" departPos="base"><route edges="e_fringe_ring_S_ra_s_r3 e_ra_s_r3_ra_s_r0 e_ra_s_r0_ra_s_r1 e_ra_s_r1_ra_s_r2 e_ra_s_r2_d_3_0 e_d_3_0_d_3_1 e_d_3_1_d_3_2 e_d_3_2_d_3_3 e_d_3_3_d_2_3 e_d_2_3_d_2_2 e_d_2_2_d_3_2 e_d_3_2_d_3_1 e_d_3_1_d_3_0 e_d_3_0_ra_s_r2 e_ra_s_r2_ra_s_r3 e_ra_s_r3_fringe_ring_S" /><stop parkingArea="pa_e_d_2_2_d_3_2" duration="148" /></vehicle><vehicle id="276" depart="225.00" departLane="1" departSpeed="max" departPos="stop">
         <route edges="e_d_3_0_d_2_0 e_d_2_0_d_1_0 e_d_1_0_d_1_1 e_d_1_1_d_1_2 e_d_1_2_d_1_3 e_d_1_3_d_0_3 e_d_0_3_ring_W e_ring_W_ra_sw_r1 e_ra_sw_r1_ra_sw_r2 e_ra_sw_r2_r_0_0 e_r_0_0_r_1_0 e_r_1_0_r_2_0 e_r_2_0_r_3_0 e_r_3_0_r_3_1 e_r_3_1_r_3_2 e_r_3_2_r_3_3 e_r_3_3_r_4_3 e_r_4_3_r_lot1_stub" />
     <stop parkingArea="pa_e_d_3_0_d_2_0" duration="5" /></vehicle>
     <vehicle id="277" depart="225.81" departLane="1" departSpeed="max" departPos="stop">

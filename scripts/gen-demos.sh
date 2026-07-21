@@ -160,6 +160,14 @@ demo_ped() {
   run src/Sim.Viz "--ped-$mode" "$SITE/$slug.html"
 }
 
+# demo_livecity <slug>
+# The combined live-city demo (--live-city): dense cars + a weaving crowd on the demo-city downtown hero
+# block, with cars yielding to pedestrians promoted onto crossings. Self-contained; no scenario-dir round-trip.
+demo_livecity() {
+  local slug="$1"
+  run src/Sim.Viz --live-city "$SITE/$slug.html"
+}
+
 # demo_static <srcHtml> <slug>
 # Copies a committed, fully self-contained HTML page (its own inline CSS/JS/data) straight into the
 # gallery. Used for pages that are not a Sim.Viz replay-template render -- e.g. the weave demos under
@@ -324,6 +332,9 @@ try ped-weave-city "City: cars + weaving pedestrians" \
 try ped-dense-city "Dense city: cars + weaving pedestrians" \
   "A busy ~900 m block of the synthetic ~4.75 km demo-city: hundreds of pedestrians routed O-D across the real sidewalks/crossings with the deterministic weave ON (every disc is the low-power woven pose -- a pure function of route+seed+baked width+time, server==IG, no neighbour queries), sharing the streets with a dense local car flow on the real signalized road grid (ordinary Engine + Krauss vehicles routed edge-to-edge inside the block). The weave at city density: opposing/overtaking peds thread the same sidewalks without passing through each other, at O(1) per ped -- auto-framed to the densest downtown block of the committed box (PedDemand EnableWeave + Engine, W1-W4)." \
   "Pedestrians" demo_ped dense-city ped-dense-city
+try live-city "Live city: cars yield to crossing pedestrians" \
+  "The combined demo on the demo-city's downtown hero block: dense car traffic (real Engine + Krauss) AND a large weaving pedestrian crowd, coupled -- pedestrians promote to reactive full-ORCA agents on every crosswalk (and in a high-realism pocket) and the cars brake for them via the same emergent-avoidance seam the crossing-gate demo proves, so a car visibly STOPS for a pedestrian on a crossing and resumes once it clears. Grey = low-power weaving ped (O(1), server==IG); orange = promoted full-ORCA; yellow = paused; boxes = cars. The weave keeps the ambient crowd from passing through itself; the LOD promotion is where cars and people negotiate (PED-REALISM-1 + LOD + CrowdSource)." \
+  "Pedestrians" demo_livecity live-city
 
 # Integration & driver behavior
 try ballistic-integration "Ballistic integration" \

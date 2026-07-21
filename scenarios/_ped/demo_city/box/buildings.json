@@ -703,6 +703,81 @@
       "height_m": 6.0,
       "type": "restaurant",
       "zone": "zone_dining"
+    },
+    {
+      "id": "bldg_restaurant_3",
+      "footprint": [
+        [
+          2200.0,
+          2457.0
+        ],
+        [
+          2250.0,
+          2457.0
+        ],
+        [
+          2250.0,
+          2493.0
+        ],
+        [
+          2200.0,
+          2493.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_restaurant_4",
+      "footprint": [
+        [
+          2450.0,
+          2457.0
+        ],
+        [
+          2500.0,
+          2457.0
+        ],
+        [
+          2500.0,
+          2493.0
+        ],
+        [
+          2450.0,
+          2493.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_downtown"
+    },
+    {
+      "id": "bldg_restaurant_5",
+      "footprint": [
+        [
+          2700.0,
+          2457.0
+        ],
+        [
+          2750.0,
+          2457.0
+        ],
+        [
+          2750.0,
+          2493.0
+        ],
+        [
+          2700.0,
+          2493.0
+        ]
+      ],
+      "levels": 1,
+      "height_m": 6.0,
+      "type": "restaurant",
+      "zone": "zone_downtown"
     }
   ]
 }

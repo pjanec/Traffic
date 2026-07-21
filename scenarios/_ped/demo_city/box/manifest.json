@@ -332,7 +332,7 @@
   },
   "compute_budget": "mid",
   "compute_budget_explicit_override": true,
-  "calibration_seconds": 2.9,
+  "calibration_seconds": 2.4,
   "verify": {
     "no_cheating": "pass",
     "birth_violations": 0,
@@ -343,17 +343,25 @@
     "teleports": 2,
     "teleport_pct": 0.24,
     "verify_end": 1700,
-    "verify_seconds": 5.9,
+    "verify_seconds": 4.1,
     "note": null,
     "achieved_vs_target_pct": 84.4
   },
-  "total_seconds": 10.3,
+  "total_seconds": 8.0,
   "timings": {
     "prepare": 0.5,
-    "calibrate": 2.9,
-    "serve": 0.7,
-    "parking": 0.2,
+    "calibrate": 2.4,
+    "serve": 0.6,
+    "parking": 0.3,
     "emit": 0.0,
-    "verify": 5.9
+    "verify": 4.1
+  },
+  "coordinate_frame": {
+    "units": "metres",
+    "net_offset": [
+      -150.0,
+      -150.0
+    ],
+    "note": "SUMO network XY; same frame as net.xml / pois.json / buildings.json / zones.json / edge_fields.json -- no per-file offset (see docs/SUMOSHARP-LIVE-CITY-DATA-RESPONSE.md Q2)"
   }
 }

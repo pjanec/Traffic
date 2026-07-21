@@ -3034,7 +3034,7 @@
     <param key="building" value="&quot;bldg_restaurant_0&quot;" />
     <param key="service_door" value="&quot;poi_v2_entrance_restaurant_0&quot;" />
     <param key="scenario_template" value="&quot;waiter_v1&quot;" />
-    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r0_0&quot;, &quot;pos&quot;: [3360.0, 2025.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r0_1&quot;, &quot;pos&quot;: [3345.0, 2033.66], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r0_2&quot;, &quot;pos&quot;: [3345.0, 2016.34], &quot;capacity&quot;: 4}]" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r0_0&quot;, &quot;pos&quot;: [3353.2, 2046.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r0_1&quot;, &quot;pos&quot;: [3350.0, 2046.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r0_2&quot;, &quot;pos&quot;: [3346.8, 2046.0], &quot;capacity&quot;: 4}]" />
     <param key="zone" value="&quot;zone_dining&quot;" />
   </poi>
   <poi id="poi_v2_venue_restaurant_1" type="venue" x="3750.0" y="2025.0" color="255,80,80" layer="10">
@@ -3045,7 +3045,7 @@
     <param key="building" value="&quot;bldg_restaurant_1&quot;" />
     <param key="service_door" value="&quot;poi_v2_entrance_restaurant_1&quot;" />
     <param key="scenario_template" value="&quot;waiter_v1&quot;" />
-    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r1_0&quot;, &quot;pos&quot;: [3760.0, 2025.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_1&quot;, &quot;pos&quot;: [3750.0, 2035.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_2&quot;, &quot;pos&quot;: [3740.0, 2025.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_3&quot;, &quot;pos&quot;: [3750.0, 2015.0], &quot;capacity&quot;: 4}]" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r1_0&quot;, &quot;pos&quot;: [3754.8, 2046.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_1&quot;, &quot;pos&quot;: [3751.6, 2046.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_2&quot;, &quot;pos&quot;: [3748.4, 2046.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r1_3&quot;, &quot;pos&quot;: [3745.2, 2046.0], &quot;capacity&quot;: 4}]" />
     <param key="zone" value="&quot;zone_dining&quot;" />
   </poi>
   <poi id="poi_v2_venue_restaurant_2" type="venue" x="3225.0" y="2550.0" color="255,80,80" layer="10">
@@ -3056,10 +3056,10 @@
     <param key="building" value="&quot;bldg_restaurant_2&quot;" />
     <param key="service_door" value="&quot;poi_v2_entrance_restaurant_2&quot;" />
     <param key="scenario_template" value="&quot;waiter_v1&quot;" />
-    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r2_0&quot;, &quot;pos&quot;: [3235.0, 2550.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r2_1&quot;, &quot;pos&quot;: [3220.0, 2558.66], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r2_2&quot;, &quot;pos&quot;: [3220.0, 2541.34], &quot;capacity&quot;: 4}]" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_r2_0&quot;, &quot;pos&quot;: [3253.0, 2546.8], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r2_1&quot;, &quot;pos&quot;: [3253.0, 2550.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_r2_2&quot;, &quot;pos&quot;: [3253.0, 2553.2], &quot;capacity&quot;: 4}]" />
     <param key="zone" value="&quot;zone_dining&quot;" />
   </poi>
-  <poi id="poi_v2_entrance_restaurant_0" type="building_entrance" x="3259.12" y="2047.1" color="80,160,255" layer="10">
+  <poi id="poi_v2_entrance_restaurant_0" type="building_entrance" x="3350.0" y="2047.1" color="80,160,255" layer="10">
     <param key="edge" value="&quot;e_q_0_0_q_1_0&quot;" />
     <param key="facing" value="[0.0, 1.0]" />
     <param key="weight" value="0.5" />
@@ -3068,7 +3068,7 @@
     <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
     <param key="legitimate_sink" value="true" />
   </poi>
-  <poi id="poi_v2_entrance_restaurant_1" type="building_entrance" x="3654.7" y="2047.1" color="80,160,255" layer="10">
+  <poi id="poi_v2_entrance_restaurant_1" type="building_entrance" x="3750.0" y="2047.1" color="80,160,255" layer="10">
     <param key="edge" value="&quot;e_q_2_0_q_3_0&quot;" />
     <param key="facing" value="[0.0, 1.0]" />
     <param key="weight" value="0.5" />
@@ -3077,13 +3077,100 @@
     <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
     <param key="legitimate_sink" value="true" />
   </poi>
-  <poi id="poi_v2_entrance_restaurant_2" type="building_entrance" x="3247.1000000000004" y="2644.8" color="80,160,255" layer="10">
+  <poi id="poi_v2_entrance_restaurant_2" type="building_entrance" x="3247.1" y="2550.0" color="80,160,255" layer="10">
     <param key="edge" value="&quot;e_q_0_3_q_0_2&quot;" />
-    <param key="facing" value="[0.0, 1.0]" />
+    <param key="facing" value="[1.0, 0.0]" />
     <param key="weight" value="0.5" />
     <param key="land_use" value="&quot;commercial&quot;" />
     <param key="building" value="&quot;bldg_restaurant_2&quot;" />
     <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_venue_restaurant_dt0" type="venue" x="2225.0" y="2475.0" color="255,80,80" layer="10">
+    <param key="venue_type" value="&quot;restaurant&quot;" />
+    <param key="edge" value="&quot;e_d_3_3_d_2_3&quot;" />
+    <param key="weight" value="0.9" />
+    <param key="capacity" value="12" />
+    <param key="building" value="&quot;bldg_restaurant_3&quot;" />
+    <param key="service_door" value="&quot;poi_v2_entrance_restaurant_dt0&quot;" />
+    <param key="scenario_template" value="&quot;waiter_v1&quot;" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_rdt0_0&quot;, &quot;pos&quot;: [2221.8, 2454.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt0_1&quot;, &quot;pos&quot;: [2225.0, 2454.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt0_2&quot;, &quot;pos&quot;: [2228.2, 2454.0], &quot;capacity&quot;: 4}]" />
+    <param key="zone" value="&quot;zone_downtown&quot;" />
+  </poi>
+  <poi id="poi_v2_venue_restaurant_dt1" type="venue" x="2475.0" y="2475.0" color="255,80,80" layer="10">
+    <param key="venue_type" value="&quot;restaurant&quot;" />
+    <param key="edge" value="&quot;e_d_3_3_d_3_4&quot;" />
+    <param key="weight" value="0.9" />
+    <param key="capacity" value="16" />
+    <param key="building" value="&quot;bldg_restaurant_4&quot;" />
+    <param key="service_door" value="&quot;poi_v2_entrance_restaurant_dt1&quot;" />
+    <param key="scenario_template" value="&quot;waiter_v1&quot;" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_rdt1_0&quot;, &quot;pos&quot;: [2447.0, 2479.8], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt1_1&quot;, &quot;pos&quot;: [2447.0, 2476.6], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt1_2&quot;, &quot;pos&quot;: [2447.0, 2473.4], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt1_3&quot;, &quot;pos&quot;: [2447.0, 2470.2], &quot;capacity&quot;: 4}]" />
+    <param key="zone" value="&quot;zone_downtown&quot;" />
+  </poi>
+  <poi id="poi_v2_venue_restaurant_dt2" type="venue" x="2725.0" y="2475.0" color="255,80,80" layer="10">
+    <param key="venue_type" value="&quot;restaurant&quot;" />
+    <param key="edge" value="&quot;e_d_5_3_d_4_3&quot;" />
+    <param key="weight" value="0.9" />
+    <param key="capacity" value="12" />
+    <param key="building" value="&quot;bldg_restaurant_5&quot;" />
+    <param key="service_door" value="&quot;poi_v2_entrance_restaurant_dt2&quot;" />
+    <param key="scenario_template" value="&quot;waiter_v1&quot;" />
+    <param key="table_cluster" value="[{&quot;id&quot;: &quot;poi_v2_table_rdt2_0&quot;, &quot;pos&quot;: [2721.8, 2454.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt2_1&quot;, &quot;pos&quot;: [2725.0, 2454.0], &quot;capacity&quot;: 4}, {&quot;id&quot;: &quot;poi_v2_table_rdt2_2&quot;, &quot;pos&quot;: [2728.2, 2454.0], &quot;capacity&quot;: 4}]" />
+    <param key="zone" value="&quot;zone_downtown&quot;" />
+  </poi>
+  <poi id="poi_v2_entrance_restaurant_dt0" type="building_entrance" x="2225.0" y="2356.5" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_3_3_d_2_3&quot;" />
+    <param key="facing" value="[0.0, -1.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_restaurant_3&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_entrance_restaurant_dt1" type="building_entrance" x="2356.5" y="2475.0" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_3_3_d_3_4&quot;" />
+    <param key="facing" value="[-1.0, 0.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_restaurant_4&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_entrance_restaurant_dt2" type="building_entrance" x="2725.0" y="2356.5" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_5_3_d_4_3&quot;" />
+    <param key="facing" value="[0.0, -1.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_restaurant_5&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 600, &quot;max_s&quot;: 3600}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_entrance_bldg_office_6" type="building_entrance" x="2225.0" y="2343.5" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_2_3_d_3_3&quot;" />
+    <param key="facing" value="[0.0, 1.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_office_6&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 60, &quot;max_s&quot;: 900}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_entrance_bldg_office_9" type="building_entrance" x="2725.0" y="2343.5" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_4_3_d_5_3&quot;" />
+    <param key="facing" value="[0.0, 1.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_office_9&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 60, &quot;max_s&quot;: 900}" />
+    <param key="legitimate_sink" value="true" />
+  </poi>
+  <poi id="poi_v2_entrance_bldg_office_7" type="building_entrance" x="2343.5" y="2725.0" color="80,160,255" layer="10">
+    <param key="edge" value="&quot;e_d_3_5_d_3_4&quot;" />
+    <param key="facing" value="[1.0, 0.0]" />
+    <param key="weight" value="0.5" />
+    <param key="land_use" value="&quot;commercial&quot;" />
+    <param key="building" value="&quot;bldg_office_7&quot;" />
+    <param key="inside_dwell" value="{&quot;min_s&quot;: 60, &quot;max_s&quot;: 900}" />
     <param key="legitimate_sink" value="true" />
   </poi>
 </additional>
