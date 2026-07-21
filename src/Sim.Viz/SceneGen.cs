@@ -1892,6 +1892,26 @@ internal static class SceneGen
         // no ped signal compliance) so the improvement can be quantified against the same demand/seed.
         var yieldEnabled = Environment.GetEnvironmentVariable("LIVECITY_YIELD") != "0";
 
+        // Investigation aid (LIVECITY_DUMP="x,y"): every recorded step, dump the raw engine car state
+        // (lane id, pos, angle, speed) for cars within 45 m of (x,y), plus flag any car whose current lane
+        // is a PEDESTRIAN lane (sidewalk/crossing/walkingarea) -- to tell a sim bug (car actually on a ped
+        // lane / inside a junction on red) from a pure render artifact (spline overshoot on 1 s-apart samples).
+        var dumpEnv = Environment.GetEnvironmentVariable("LIVECITY_DUMP");
+        Vec2? dumpAt = null;
+        if (!string.IsNullOrWhiteSpace(dumpEnv))
+        {
+            var parts = dumpEnv.Split(',');
+            if (parts.Length == 2 && double.TryParse(parts[0], out var dxv) && double.TryParse(parts[1], out var dyv))
+            {
+                dumpAt = new Vec2(dxv, dyv);
+            }
+        }
+
+        var pedLaneIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in pedNetwork.Sidewalks) pedLaneIds.Add(s.Id);
+        foreach (var c in pedNetwork.Crossings) pedLaneIds.Add(c.Id);
+        foreach (var w in pedNetwork.WalkingAreas) pedLaneIds.Add(w.Id);
+
         // Ground-truth signal state per signalized crop crossing (independent of the demand-side signals):
         // (polygon vertices, TL program, controlling linkIndex) so the loop can assert peds only occupy a
         // signalized crossing during its walk phase. Same one-load readers CrosswalkSignals uses.
@@ -2116,6 +2136,30 @@ internal static class SceneGen
                     if (!near) continue;
                     coOccSignalized++;
                     if (!isWalk) coOccSignalizedRed++;
+                }
+            }
+
+            // Investigation dump (env-gated; no effect on the payload -> run stays byte-identical).
+            if (dumpAt is { } d)
+            {
+                var lanes = engine.LaneIds;
+                var spd = engine.Speed;
+                var hh = engine.VehicleHandles;
+                var dpx = engine.PosX;
+                var dpy = engine.PosY;
+                var dpa = engine.Angle;
+                for (var i = 0; i < hh.Length; i++)
+                {
+                    var lane = i < lanes.Length ? lanes[i] : "?";
+                    var onPed = pedLaneIds.Contains(lane);
+                    var ddx = dpx[i] - d.X;
+                    var ddy = dpy[i] - d.Y;
+                    var near = (ddx * ddx) + (ddy * ddy) <= 45.0 * 45.0;
+                    if (!near && !onPed) continue;
+                    Console.WriteLine(
+                        $"[DUMP step={step} carT={(step + 1) * 1.0:F1}s] veh{hh[i].Index} lane={lane}"
+                        + $"{(onPed ? " **PED-LANE**" : "")} pos=({dpx[i]:F1},{dpy[i]:F1}) ang={dpa[i]:F0} spd={spd[i]:F1}"
+                        + $"{(near ? "" : " [far]")}");
                 }
             }
 
