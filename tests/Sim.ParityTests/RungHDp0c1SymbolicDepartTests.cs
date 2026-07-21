@@ -57,6 +57,22 @@ public class RungHDp0c1SymbolicDepartTests
         Assert.Equal(DepartPosSpec.Stop, v.DepartPos.Kind);
     }
 
+    // GAP-3 (docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §4): departPos="base" resolves to SUMO's
+    // DepartPosDefinition::BASE (MSBaseVehicle::basePos), NOT a hardcoded 0. Parsed here as the
+    // Base spec Kind; the concrete basePos is computed at insertion (Engine.BasePos), verified
+    // numerically by RungHDp0c3BaseDepartPosTests.
+    [Fact]
+    public void DepartPos_Base_ParsesAsBaseSpec()
+    {
+        var demand = DemandParser.ParseXml(RouHeader + """
+                <vehicle id="v0" type="car" route="r0" depart="0" departPos="base"/>
+            </routes>
+            """);
+
+        var v = Assert.Single(demand.Vehicles);
+        Assert.Equal(DepartPosSpec.Base, v.DepartPos.Kind);
+    }
+
     [Fact]
     public void NumericDepartAttributes_StillParseAsGiven_WithTheirLiteral()
     {
@@ -127,7 +143,6 @@ public class RungHDp0c1SymbolicDepartTests
     [Theory]
     [InlineData("random")]
     [InlineData("free")]
-    [InlineData("base")]
     [InlineData("last")]
     [InlineData("random_free")]
     [InlineData("speedLimit")]

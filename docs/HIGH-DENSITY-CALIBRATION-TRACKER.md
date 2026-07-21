@@ -8,8 +8,11 @@ evidence). NEEDs: `SUMOSHARP-NEED-dense-flow-gridlock-vs-vanilla.md`,
 - [x] **Stage 0** — reproduce Gap 1 gridlock (2× dense synthetic: vanilla 0 tp/290 arr/drains vs SumoSharp
       10 tp/275 arr/~45 stuck) + root-cause (wrong-lane strand + clamp at `TryReResolveFromActualLane`
       ~9080, no reroute fallback) + rule out overlap fix + confirm Gap 2/Gap 3 sites. Diagnosis committed.
-- [ ] **Stage 1 — Gap 3** departPos="base" → SUMO `basePos` (faithful, not "0"). Suite green + goldens
-      byte-identical; box `"base"` vehicles load.
+- [x] **Stage 1 — Gap 3** departPos="base" → SUMO `basePos` (faithful, not "0"). DONE: `DepartPosSpec.Base`
+      + `Engine.BasePos` (MIN(vType.Length+0.1, laneLength), capped to first-edge stop endPos). Anchor
+      `scenarios/75-base-depart` (veh0→7.1, veh1→3.0) matches vanilla golden to 1e-13. Full suite green (655
+      pass); all pre-existing goldens byte-identical (Base arm inert). Box `"base"` error gone → now blocks
+      only on Gap 2 parking (as predicted).
 - [ ] **Stage 2 — Gap 2** parkingArea runtime lowest-free-lot reuse (MSParkingArea::computeLastFreePos).
       Parking goldens byte-identical; oversubscribed capacity-1 anchor loads; full box loads (with Gap 3).
 - [ ] **Stage 3 — Gap 1** reroute-on-wrong-lane (replace drop-lane clamp with reroute; approach trigger).

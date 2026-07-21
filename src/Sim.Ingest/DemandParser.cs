@@ -5,10 +5,10 @@ namespace Sim.Ingest;
 
 // Parses the rung-1 subset of .rou.xml: <vType>, <route>, <vehicle>. Missing optional
 // attributes fall back to documented SUMO defaults where the value is purely numeric/simple.
-// P0-C1: departSpeed="max", departLane="best", and departPos="stop" (lane <stop> only) are now
-// resolved to their DepartValue.cs spec Kind here (ParseDepartSpeed/ParseDepartLane/
-// ParseDepartPos); their concrete placement/value is still resolved later, at insertion
-// (Engine.cs). Every OTHER symbolic keyword (e.g. departPos="random"/"free"/"base"/"last"/
+// P0-C1: departSpeed="max", departLane="best", and departPos="stop" (lane <stop> only) plus
+// departPos="base" are now resolved to their DepartValue.cs spec Kind here (ParseDepartSpeed/
+// ParseDepartLane/ParseDepartPos); their concrete placement/value is still resolved later, at
+// insertion (Engine.cs). Every OTHER symbolic keyword (e.g. departPos="random"/"free"/"last"/
 // "random_free"/"speedLimit", departLane="free"/"random"/"allowed"/"first", departSpeed="desired"/
 // "random"/"avg") throws a clear InvalidDataException naming the attribute+value -- not silently
 // mishandled, not a raw FormatException.
@@ -575,8 +575,19 @@ public static class DemandParser
             return DepartPosValue.Stop;
         }
 
+        // DepartPosDefinition::BASE -- resolved at insertion to MSBaseVehicle::basePos (see
+        // DepartValue.cs / Engine.TryInsertOnLane). This is also SUMO's DEFAULT departPos, so a
+        // vehicle with no departPos attribute at all behaves identically; we keep the null case as
+        // Given(0.0) for byte-identical parity with every pre-existing golden (none of which used
+        // "base" or relied on the >0 basePos offset) and resolve "base" explicitly here.
+        if (value == "base")
+        {
+            return DepartPosValue.Base;
+        }
+
         throw new InvalidDataException(
-            $"{ownerDesc} has unsupported departPos=\"{value}\" (only a numeric literal or \"stop\" is supported).");
+            $"{ownerDesc} has unsupported departPos=\"{value}\" (only a numeric literal, \"stop\", or \"base\" is supported; " +
+            "\"random\"/\"free\"/\"last\"/\"random_free\"/\"speedLimit\" are not yet ported).");
     }
 
     // Rung 5 + P0-C2: a <stop> is EITHER a plain lane stop (`lane=` with startPos/endPos/duration)

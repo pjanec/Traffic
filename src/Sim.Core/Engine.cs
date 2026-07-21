@@ -3241,6 +3241,25 @@ public sealed partial class Engine : IEngine
         _discardedDepartures++;
     }
 
+    // MSBaseVehicle::basePos(edge) (MSBaseVehicle.cpp:1117): the resolved insertion position for
+    // departPos="base" (and SUMO's DEFAULT). The vehicle's front bumper is placed at
+    // MIN(vType.Length + POSITION_EPS, lane.Length); if the vehicle's FIRST scheduled stop is a
+    // lane <stop> on the depart edge (this insertion lane's edge), the position is further clamped
+    // to MAX(0, stop.endPos) so the vehicle is not inserted past its own stop. Edge-level stop
+    // match mirrors SUMO's `myStops.front().edge == myRoute->begin() && stop.lane->edge ==
+    // route.begin()`. POSITION_EPS == PositionEps (0.1).
+    private double BasePos(VehicleRuntime v, Lane lane)
+    {
+        double result = Math.Min(v.VType.Length + PositionEps, lane.Length);
+        if (v.Def.Stops.Count > 0
+            && _network!.LanesById.TryGetValue(v.Def.Stops[0].LaneId, out var stopLane)
+            && stopLane.EdgeId == lane.EdgeId)
+        {
+            result = Math.Min(result, Math.Max(0.0, v.Def.Stops[0].EndPos));
+        }
+        return result;
+    }
+
     // MSLane::isInsertionSuccess's leader-gap check only (see InsertDepartingVehicles' header
     // comment for the full derivation/scope). Returns true and performs the insertion iff
     // there is no leader on the lane or gap >= 0; otherwise leaves `v` untouched and returns
@@ -3281,6 +3300,13 @@ public sealed partial class Engine : IEngine
             DepartPosSpec.Stop => v.Def.Stops.Count > 0 && v.Def.Stops[0].LaneId == lane.Id
                 ? Math.Max(0.0, v.Def.Stops[0].EndPos)
                 : 0.0,
+            // DepartPosDefinition::BASE -> MSBaseVehicle::basePos (MSBaseVehicle.cpp:1117): front
+            // bumper at MIN(vType.Length + POSITION_EPS, lane.Length), capped to MAX(0, endPos) of
+            // the first scheduled stop WHEN that stop is on the depart edge (myStops.front().edge ==
+            // route.begin() && stop.lane->edge == route.begin()). The edge-level check mirrors SUMO:
+            // any lane <stop> on this insertion lane's edge caps the position, not only a stop on the
+            // exact insertion lane. POSITION_EPS == PositionEps == 0.1.
+            DepartPosSpec.Base => BasePos(v, lane),
             _ => throw new InvalidDataException($"unsupported DepartPosSpec '{v.Def.DepartPos.Kind}'."),
         };
 

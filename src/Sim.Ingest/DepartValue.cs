@@ -9,7 +9,7 @@ namespace Sim.Ingest;
 // parkingArea-based form).
 public enum DepartSpeedSpec { Given, Max }
 public enum DepartLaneSpec { Given, Best }
-public enum DepartPosSpec { Given, Stop }
+public enum DepartPosSpec { Given, Stop, Base }
 
 // (Kind, Literal) pair for departSpeed="...". Literal is meaningful ONLY when Kind == Given (a
 // numeric departSpeed, e.g. "0" or "13.89") -- every scenario before this rung is Given, so
@@ -38,8 +38,15 @@ public readonly record struct DepartLaneValue(DepartLaneSpec Kind, int Literal)
 // stop is on the insertion lane -- else it falls back to BASE (position 0), per SUMO's
 // MSLane::insertVehicle's DepartPosDefinition::STOP case. Lane <stop> only (parkingArea-based
 // stops are P0-C2).
+//
+// Base (DepartPosDefinition::BASE, also SUMO's DEFAULT) carries no literal; it is resolved at
+// insertion time to MSBaseVehicle::basePos (MSBaseVehicle.cpp:1117): the vehicle's FRONT bumper
+// at MIN(vType.Length + POSITION_EPS, lane.Length), further capped to MAX(0, firstStop.EndPos)
+// when the first scheduled stop is on the depart edge. NOT a hardcoded 0 -- the MIN/stop cap only
+// collapses to ~0 for very short shapes.
 public readonly record struct DepartPosValue(DepartPosSpec Kind, double Literal)
 {
     public static DepartPosValue Given(double literal) => new(DepartPosSpec.Given, literal);
     public static readonly DepartPosValue Stop = new(DepartPosSpec.Stop, 0.0);
+    public static readonly DepartPosValue Base = new(DepartPosSpec.Base, 0.0);
 }

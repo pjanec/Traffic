@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GAP-3 acceptance (docs/HIGH-DENSITY-CALIBRATION-DESIGN.md section 4): departPos="base" must
+     resolve to SUMO's DepartPosDefinition::BASE (MSBaseVehicle::basePos), NOT a hardcoded 0. The
+     vType is given length="7" so basePos = MIN(7 + POSITION_EPS(0.1), laneLength) = 7.1 -
+     distinctly non-zero, so a "base equals 0" shortcut would fail the golden.
+       veh0: departPos="base", NO first-edge stop, inserts at 7.1 (front bumper), then cruises.
+       veh1: departPos="base" WITH a first-edge lane stop at endPos=3, so basePos is further
+         capped to MIN(7.1, MAX(0, 3)) = 3 (SUMO caps base to the first-edge stop's endPos), and it
+         inserts at 3.0, exercising the stop-cap branch of basePos.
+     Both depart on E1_0 (the rightmost lane, so no keep-right lane change can occur to confound the
+     lane comparison) and are separated in time (veh1 at t=45, after veh0 has arrived ~t=38) so they
+     never interact. Route "E1" (single edge) so no continuation confound; each simply inserts at
+     basePos and drives to E1's end. Determinism settings match the phase-1 ladder so parity is
+     exact. -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="car" vClass="passenger" length="7" sigma="0"/>
+    <route id="r0" edges="E1"/>
+    <vehicle id="veh0" type="car" route="r0" depart="0" departLane="0" departPos="base" departSpeed="0"/>
+    <vehicle id="veh1" type="car" route="r0" depart="45" departLane="0" departPos="base" departSpeed="0">
+        <stop lane="E1_0" startPos="1" endPos="3" duration="5"/>
+    </vehicle>
+</routes>
