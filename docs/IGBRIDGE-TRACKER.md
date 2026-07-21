@@ -18,7 +18,14 @@ stated success conditions are verified first-hand (per CLAUDE.md: read the diff,
            Host builds+runs on net8; solution green; dotnet test byte-identical (peds 227, parity 654/4).
            Polyfill scoped to ns2.1 only (net6 has IsExternalInit); IgSample schema (New/Upd/Del, planar)
            added. -->
-- [ ] **T0.3** Fixed-10 Hz core loop + per-entity ring buffers + sim clock; determinism test
+- [x] **T0.3** Fixed-10 Hz core loop + per-entity ring buffers + sim clock; determinism test
+      <!-- done: IgBridgeRunner replays box's real 819-route demand demand-less (RouteDemand bypasses
+           DemandParser's departPos="base"/parking reject) at exact 0.1s ticks; PedStream synthesizes a
+           deterministic 40-ped PathArc crowd (monotonic trip cursor, no System.Random) buffered in a
+           SEPARATE PedSampleHistory (not DrClock). 5/5 IgBridge tests: exact cadence + non-vacuous +
+           two-run byte-identical for BOTH vehicle and ped streams. Full gate green, parity 654/4
+           byte-identical. Note: nav-bake makes IgBridge tests ~1m16s. -->
+
 
 ## Stage 1 — reconstruct + emit + FakeIg + baseline
 - [x] **T1.1** `DrClock.ResolveAt(history, sampleT, lanes)` deterministic seam (pure refactor)

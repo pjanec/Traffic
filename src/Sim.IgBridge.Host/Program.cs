@@ -33,6 +33,7 @@ static (string fingerprint, string stats) RunAndFingerprint(IgBridgeConfig cfg, 
     var runner = new IgBridgeRunner(cfg);
     var sb = new StringBuilder();
     int maxLive = 0, totalSpawned = 0, totalDespawned = 0;
+    int maxLivePeds = 0, totalPedSpawned = 0, totalPedDespawned = 0;
     double firstTickTime = double.NaN, lastTickTime = double.NaN;
 
     for (var step = 0; step < steps; step++)
@@ -43,6 +44,9 @@ static (string fingerprint, string stats) RunAndFingerprint(IgBridgeConfig cfg, 
         maxLive = Math.Max(maxLive, runner.LiveVehicles.Count);
         totalSpawned += runner.SpawnedThisTick.Count;
         totalDespawned += runner.DespawnedThisTick.Count;
+        maxLivePeds = Math.Max(maxLivePeds, runner.LivePeds.Count);
+        totalPedSpawned += runner.PedSpawnedThisTick.Count;
+        totalPedDespawned += runner.PedDespawnedThisTick.Count;
     }
 
     // Fingerprint: for every buffered sample of every entity (id-sorted), fold in the quantized state.
@@ -70,6 +74,9 @@ static (string fingerprint, string stats) RunAndFingerprint(IgBridgeConfig cfg, 
             + $"(expect first=0.100, last={0.1 * steps:F3})");
         sb.AppendLine($"maxLiveVehicles={maxLive} totalSpawned={totalSpawned} totalDespawned={totalDespawned} "
             + $"pendingDemand={runner.PendingDemand} distinctEntities={runner.VehicleHistories.Count}");
+        sb.AppendLine($"livePeds={runner.LivePeds.Count} maxLivePeds={maxLivePeds} "
+            + $"totalPedSpawned={totalPedSpawned} totalPedDespawned={totalPedDespawned} "
+            + $"distinctPeds={runner.PedHistories.Count}");
     }
 
     return (fp.ToString(), sb.ToString());

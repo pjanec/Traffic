@@ -57,6 +57,69 @@ public sealed class IgBridgeRunnerTests
         Assert.Contains(runner.VehicleHistories.Values, h => h.Count >= 2); // at least one entity has motion
     }
 
+    [Fact]
+    public void Run_ActuallySpawnsAndBuffersPeds()
+    {
+        var runner = RunN(Steps);
+        // PedStream's population target is 40 (IgBridgeConfig.PedPopulationTarget default); after 15 s
+        // the steady-state population should be well established -- assert the task's >= ~20 floor.
+        Assert.True(runner.LivePeds.Count >= 20, $"only {runner.LivePeds.Count} peds alive");
+
+        // At least one ped must have >= 2 buffered samples with ACTUAL movement (position changed) --
+        // otherwise the ped population would be vacuously "alive" while frozen in place.
+        var moved = false;
+        foreach (var id in runner.LivePeds)
+        {
+            var h = runner.PedHistories[id];
+            if (h.Count < 2)
+            {
+                continue;
+            }
+
+            var first = h[0];
+            var last = h[h.Count - 1];
+            if (Math.Abs(first.X - last.X) > 1e-9 || Math.Abs(first.Y - last.Y) > 1e-9)
+            {
+                moved = true;
+                break;
+            }
+        }
+
+        Assert.True(moved, "no live ped showed any movement across its buffered samples");
+    }
+
+    [Fact]
+    public void Run_IsDeterministic_TwoRunsProduceIdenticalPedStream()
+    {
+        var a = PedFingerprint(RunN(Steps));
+        var b = PedFingerprint(RunN(Steps));
+
+        Assert.False(string.IsNullOrEmpty(a));
+        Assert.Equal(a, b);
+    }
+
+    private static string PedFingerprint(IgBridgeRunner runner)
+    {
+        var fp = new StringBuilder();
+        // id-sorted (numeric, not string, so "p10" doesn't sort before "p2") for a stable fingerprint.
+        foreach (var id in runner.PedHistories.Keys.OrderBy(id => id))
+        {
+            fp.Append(IgBridgeRunner.PedIdOf(id)).Append('|');
+            var h = runner.PedHistories[id];
+            for (var i = 0; i < h.Count; i++)
+            {
+                var s = h[i];
+                fp.Append(s.TimestampSeconds.ToString("R")).Append(',')
+                  .Append(s.X.ToString("R")).Append(',')
+                  .Append(s.Y.ToString("R")).Append(';');
+            }
+
+            fp.Append('\n');
+        }
+
+        return fp.ToString();
+    }
+
     private static IgBridgeRunner RunN(int steps)
     {
         var runner = new IgBridgeRunner(BoxConfig());
