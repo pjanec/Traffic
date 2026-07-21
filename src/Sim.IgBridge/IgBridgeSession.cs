@@ -70,8 +70,12 @@ public sealed class IgBridgeSession
     // vehicle records a per-STAGE row so the jitter source can be localised (PoseResolver front -> position
     // smoother -> kinematic center/heading -> drawn rear bumper). Off (null) by default.
     public string? DebugVehicleId { get; set; }
+    // Multiple ids (comma-set), each accumulating its own row list, so several suspects are captured in one run.
+    public ISet<string>? DebugVehicleIds { get; set; }
     private readonly List<string> _debugRows = new();
+    private readonly Dictionary<string, List<string>> _debugRowsById = new();
     public IReadOnlyList<string> DebugRows => _debugRows;
+    public IReadOnlyDictionary<string, List<string>> DebugRowsById => _debugRowsById;
 
     // The full emitted stream (only when constructed with retainAll: true; empty otherwise).
     public IReadOnlyList<IgSample> AllEmitted => (IReadOnlyList<IgSample>?)_retained ?? Array.Empty<IgSample>();
@@ -216,7 +220,8 @@ public sealed class IgBridgeSession
             var kp = _kinematic.Update(handle, frontX, frontY, laneHeading, speed, dims.Length, realDt, lateralEvent);
             var id = _runner.IdOf(handle);
 
-            if (DebugVehicleId is not null && id == DebugVehicleId)
+            if ((DebugVehicleId is not null && id == DebugVehicleId)
+                || (DebugVehicleIds is not null && DebugVehicleIds.Contains(id)))
             {
                 // rear bumper as the front-anchored template would draw it: center - (Length/2)*dir(heading)
                 var hr = kp.HeadingDeg * Math.PI / 180.0;
@@ -224,13 +229,24 @@ public sealed class IgBridgeSession
                 var dy = Math.Cos(hr);
                 var rearBx = kp.CenterX - dims.Length * 0.5 * dx;
                 var rearBy = kp.CenterY - dims.Length * 0.5 * dy;
-                _debugRows.Add(string.Join(",", new[]
+                var row = string.Join(",", new[]
                 {
                     tau.ToString("F4"), frontX.ToString("F4"), frontY.ToString("F4"), laneHeading.ToString("F4"),
                     kp.FrontX.ToString("F4"), kp.FrontY.ToString("F4"),
                     kp.CenterX.ToString("F4"), kp.CenterY.ToString("F4"), kp.HeadingDeg.ToString("F4"),
                     rearBx.ToString("F4"), rearBy.ToString("F4"), speed.ToString("F4"),
-                }));
+                });
+                if (id == DebugVehicleId)
+                {
+                    _debugRows.Add(row);
+                }
+
+                if (!_debugRowsById.TryGetValue(id, out var list))
+                {
+                    _debugRowsById[id] = list = new List<string>();
+                }
+
+                list.Add(row);
             }
 
             Emit(_vehNewEmitted.Add(handle)

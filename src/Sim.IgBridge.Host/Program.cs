@@ -45,11 +45,17 @@ using (var trace = new IgTraceWriter(tracePath))
         double.TryParse(Environment.GetEnvironmentVariable(k), System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : def;
     var kin = new Sim.Viewer.Motion.KinematicHeadingParams
     {
-        PositionSmoothTime = EnvD("IGBRIDGE_POS_SMOOTH", 0.40),
+        LaneChangeDecayTau = EnvD("IGBRIDGE_LC_TAU", 2.0),
         HeadingSmoothTime = EnvD("IGBRIDGE_HEAD_SMOOTH", 0.0),
     };
     var session = new IgBridgeSession(runner, emit, trace, retainAll: true, kinematics: kin);
-    session.DebugVehicleId = Environment.GetEnvironmentVariable("IGBRIDGE_DEBUG_VEH"); // e.g. "v2"
+    // IGBRIDGE_DEBUG_VEH: one id or a comma-separated list (e.g. "v18,v98,v213,v321"); each gets its own CSV.
+    var dbgIds = (Environment.GetEnvironmentVariable("IGBRIDGE_DEBUG_VEH") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (dbgIds.Length > 0)
+    {
+        session.DebugVehicleIds = new HashSet<string>(dbgIds);
+    }
     for (var step = 0; step < Steps; step++)
     {
         runner.Tick();
@@ -58,12 +64,14 @@ using (var trace = new IgTraceWriter(tracePath))
     }
 
     session.Finish();
-    if (session.DebugVehicleId is not null && session.DebugRows.Count > 0)
     {
-        var dbgPath = Path.Combine(outDir, $"debug_{session.DebugVehicleId}.csv");
         var header = "t,prX,prY,prH,smX,smY,cX,cY,cH,rearX,rearY,speed";
-        File.WriteAllLines(dbgPath, new[] { header }.Concat(session.DebugRows));
-        Console.WriteLine($"debug rows for {session.DebugVehicleId}: {session.DebugRows.Count} -> {dbgPath}");
+        foreach (var kv in session.DebugRowsById)
+        {
+            var dbgPath = Path.Combine(outDir, $"debug_{kv.Key}.csv");
+            File.WriteAllLines(dbgPath, new[] { header }.Concat(kv.Value));
+            Console.WriteLine($"debug rows for {kv.Key}: {kv.Value.Count} -> {dbgPath}");
+        }
     }
     raw.Finish(runner.SimTime);
     smoothed = session.AllEmitted;

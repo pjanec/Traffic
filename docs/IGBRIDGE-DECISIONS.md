@@ -272,6 +272,32 @@ outliers): the overshoot fix (§5.6) verifies here at worst-case **1** heading y
 253 turns, no-slip fidelity intact (drawn rear-bumper slip 11.51° vs ideal 11.57°), rear inside (0.98).
 Scenario selection and the ped toggle are Host/harness only — no `Sim.Core`, no parity impact.
 
+### 5.8 As-built (lane-change "rotation jump" — owner: four cars wobbly / "very sharply entering the lane change")
+On the grid the owner flagged four cars still wobbling. Instrumenting each showed the identical cause: a
+**3.2 m (one lane width) instantaneous lateral jump of the raw front in a single 0.05 s step** — SUMO's
+instant lane change. The engine's lateral-straddle signal misses these (in-junction), so no ease fired and
+the drag turned the snap into a **70–130 °/s "rotation jump."** Earlier attempts to hide it by low-passing
+the whole front (longer g-h τ, or a SmoothDamp) made the front lag the *fast* along-track motion so far it
+tripped the teleport reseed and produced 500–1000 °/s spikes — worse.
+
+**Fix — a bounded, decaying LATERAL error (netcode-style), + a short g-h jitter low-pass.** A single-step
+front jump beyond `LaneChangeSnapMeters` (1.5 m; a turn only advances ~½ m/step, so it never trips) has its
+**cross-track** component absorbed into an error `E`; the tracker input is `raw − E`, which is *continuous*
+(the drawn front never jumps). `E` then decays with `LaneChangeDecayTau` (2.0 s) and is capped at
+`LaneChangeErrorCapMeters` (3.4 m ≈ one lane), so it can never approach the teleport threshold and the reseed
+cannot misfire. **Along-track motion passes through untouched → zero lag → turns stay crisp.** A short-τ
+(0.40 s) g-h then low-passes the faceted-polyline micro-kinks on that continuous input (its velocity term
+keeps zero lag; it no longer sees the snap, so no overshoot). The substepped no-slip drag is unchanged.
+
+**Measured (grid, 120 s).** Lane-change yaw fell from 70–130 °/s to a gentle **~10–25 °/s** (pure lane
+changes); the four flagged cars no longer spike (whole-life max-yaw 70–73 °/s = their genuine 90° turns).
+Fleet-wide the reconstructed maxes dropped further — **yaw-jerk max 16.8 k → 2.6 k, yaw-rate 281 → 74,
+lat-accel 1985 → 101** (all far below raw); the 253-turn no-slip fidelity is intact (drawn rear-bumper slip
+11.17° vs ideal-bicycle 11.28°), rear tracks inside (0.97), and heading yaw-accel reversals are back to
+**median 0 / max 1** (the passthrough-jitter regression from dropping the g-h was fixed by re-adding it on
+the corrected input). A multi-vehicle debug hook (`IGBRIDGE_DEBUG_VEH=v18,v98,…`) captured all four at once.
+Render-side only. Motion 11/11, IgBridge 11/11, parity 654 / 4-skip byte-identical.
+
 ---
 
 ## 6. Determinism & parity

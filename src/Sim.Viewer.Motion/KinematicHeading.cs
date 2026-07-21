@@ -7,27 +7,34 @@ namespace Sim.Viewer.Motion;
 public sealed class KinematicHeadingParams
 {
     public double WheelbaseFactor { get; init; } = 0.6;      // wheelbase / vehicle length
-    public double FrontOverhangFactor { get; init; } = 0.15; // front-axle inset from the front ref / length
     public double HoldSpeed { get; init; } = 0.5;            // below this: hold heading (no spin at stops)
-    public double ReseedJumpMeters { get; init; } = 7.0;     // front jump beyond link+this -> reseed (teleport)
+    public double ReseedJumpMeters { get; init; } = 7.0;     // front jump beyond this -> reseed (teleport)
 
-    // Critically-damped decay time (s) for the projective front-position error (the deviation of the
-    // authoritative front from a straight-line prediction). Turns produce ~no deviation (zero lag);
-    // facet kinks and lateral slides are absorbed and eased over ~2-3x this time. Tuned against the
-    // per-vehicle rear-bumper reversal gate (0.40 -> fleet median 0 visible reversals).
+    // g-h tracking time (s) for the (lane-change-corrected) front position: low-passes the faceted-polyline
+    // micro-kinks that would otherwise ride through as a tail wiggle, while the velocity term keeps zero lag
+    // through turns. Short — the input is already continuous, this only removes jitter.
     public double PositionSmoothTime { get; init; } = 0.40;
 
     // Critically-damped smoothing time (s) for the output HEADING. The drawn body extends a full length
     // from the pivot, so any residual heading micro-step is amplified into a tail wiggle; a light heading
-    // low-pass removes the last of it. 0 disables it.
+    // low-pass removes the last of it. 0 disables it (the substepped drag already yields a clean heading).
     public double HeadingSmoothTime { get; init; } = 0.0;
 
-    // Lane-change ease (docs/IGBRIDGE-DECISIONS.md §5.2). SUMO changes lane instantly; the engine's
-    // lateral-straddle signal marks it. For LaneChangeEaseWindow seconds after that signal, the front
-    // error-decay uses the longer LaneChangeSmoothTime so the ~3.2 m lateral slide is spread into a gentle
-    // ~1.3 s ease (a real car yaws ~10 deg into a lane change, not ~25). Turns are unaffected (no straddle).
-    public double LaneChangeSmoothTime { get; init; } = 0.55;
-    public double LaneChangeEaseWindow { get; init; } = 1.3;
+    // Lane-change model (docs/IGBRIDGE-DECISIONS.md §5.8). SUMO changes lane instantly — the raw front snaps
+    // ~one lane width sideways in a single step. The cross-track part of such a snap is absorbed into a
+    // decaying lateral error so the drawn front never jumps; it then decays with this time constant, spreading
+    // the slide into a gentle yaw (peak ~25 deg/s instead of the raw ~70-130 deg/s "rotation jump"). Larger =
+    // gentler but the body trails the new lane longer.
+    public double LaneChangeDecayTau { get; init; } = 2.0;
+
+    // A single-step jump of the RAW front larger than this (metres) is treated as a lane-change snap whose
+    // cross-track part is absorbed. A turn advances the front only ~½ m/step however sharp, so it never trips
+    // this; a lane-width (~3.2 m) snap always does. Well below a teleport (ReseedJumpMeters), which reseeds.
+    public double LaneChangeSnapMeters { get; init; } = 1.5;
+
+    // Hard cap (metres) on the absorbed lateral error, so back-to-back lane changes stay bounded and the error
+    // can never approach the teleport threshold (which would make the reseed misfire). ~one lane width.
+    public double LaneChangeErrorCapMeters { get; init; } = 3.4;
 }
 
 // One reconstructed rigid-body pose: the vehicle geometric center (what the owner's IG models pivot on),
@@ -68,17 +75,20 @@ public sealed class KinematicHeading
 {
     private struct State
     {
-        public double Fx;   // tracked front reference position (g-h filter)
+        public double Ex;   // decaying LATERAL error absorbed from lane-change snaps (input = raw - E)
+        public double Ey;
+        public double Fx;   // g-h-smoothed front position (facet-jitter low-pass over raw - E)
         public double Fy;
-        public double Fvx;  // tracked front reference velocity (g-h filter)
+        public double Fvx;  // g-h-tracked front velocity
         public double Fvy;
         public double Rx;   // rear-axle position
         public double Ry;
         public double PrevFaX; // previous front-axle position (for substepped drag integration)
         public double PrevFaY;
+        public double PrevInX; // previous RAW front input (for single-step lane-change-snap detection)
+        public double PrevInY;
         public float Deg;   // last (emitted, smoothed) body heading (navi)
         public double DegVel; // angular SmoothDamp velocity for the heading low-pass
-        public double EaseTimer; // seconds of lane-change ease remaining
         public bool Init;
     }
 
@@ -120,54 +130,92 @@ public sealed class KinematicHeading
 
         if (!s.Init)
         {
+            s.PrevInX = frontX;
+            s.PrevInY = frontY;
+            s.Ex = 0.0;
+            s.Ey = 0.0;
+        }
+
+        // (0) LANE-CHANGE handling via a bounded, decaying LATERAL error.
+        //
+        // SUMO changes lane instantly: the raw front leaps ~one lane width (~3.2 m) SIDEWAYS in a single step.
+        // Trying to low-pass the whole (fast-moving) front to hide that makes it lag so far behind the real
+        // motion that it trips the teleport reseed and snaps — the failure mode behind the earlier spikes.
+        // Instead we absorb ONLY the cross-track (lateral) part of such a snap into a bounded error E, so the
+        // DRAWN front (= raw − E) does not jump; E then decays critically, so the body slides into the new
+        // lane over ~LaneChangeDecayTau and yaws gently. ALONG-track motion always passes through untouched —
+        // zero lag — so a real turn (which never snaps sideways, only advances ~½ m/step) is unaffected and
+        // stays crisp. A genuine teleport (raw step > ReseedJumpMeters) clears E and snaps.
+        var stepX = frontX - s.PrevInX;
+        var stepY = frontY - s.PrevInY;
+        s.PrevInX = frontX;
+        s.PrevInY = frontY;
+        var step2 = stepX * stepX + stepY * stepY;
+
+        if (step2 > _p.ReseedJumpMeters * _p.ReseedJumpMeters)
+        {
+            s.Ex = 0.0; // teleport: snap to the new location, no easing
+            s.Ey = 0.0;
+        }
+        else if (s.Init && (lateralEvent || step2 > _p.LaneChangeSnapMeters * _p.LaneChangeSnapMeters))
+        {
+            // Decompose the snap step relative to the current body heading and absorb its CROSS-track part.
+            var (hx, hy) = Dir(s.Deg);
+            var along = stepX * hx + stepY * hy;
+            s.Ex += stepX - along * hx;
+            s.Ey += stepY - along * hy;
+        }
+
+        // Critically-damped exponential decay of the lateral error, capped so successive lane changes stay
+        // bounded (and E can never reach the teleport threshold, so the reseed cannot misfire on it).
+        var decay = Math.Exp(-dt / _p.LaneChangeDecayTau);
+        s.Ex *= decay;
+        s.Ey *= decay;
+        var eMag2 = s.Ex * s.Ex + s.Ey * s.Ey;
+        if (eMag2 > _p.LaneChangeErrorCapMeters * _p.LaneChangeErrorCapMeters)
+        {
+            var k = _p.LaneChangeErrorCapMeters / Math.Sqrt(eMag2);
+            s.Ex *= k;
+            s.Ey *= k;
+        }
+
+        // Input to the front tracker: the raw front with the lane-change lateral error removed. This is
+        // CONTINUOUS (E absorbed the snap), so the tracker below never sees the ~3.2 m jump and cannot lag
+        // into a reseed.
+        var inX = frontX - s.Ex;
+        var inY = frontY - s.Ey;
+
+        if (!s.Init)
+        {
             var (sdx, sdy) = Dir(laneHeadingDeg);
-            s.Fx = frontX;
-            s.Fy = frontY;
+            s.Fx = inX;
+            s.Fy = inY;
             s.Fvx = speed * sdx;
             s.Fvy = speed * sdy;
         }
 
-        // (0) CONSTANT-VELOCITY (g-h) tracking of the FRONT reference. The front is followed by a
-        // critically-damped position+velocity filter: predict it advancing at its OWN tracked velocity, then
-        // correct toward the authoritative front by the gains (g, h). Two properties matter here:
-        //   * ZERO lag on smooth motion — the velocity term carries the front through a turn, so there is no
-        //     deviation to decay and no catch-up lag;
-        //   * the prediction uses the front's OWN velocity, NOT the body heading. The old projective blend
-        //     predicted along the (lagged) body heading s.Deg, which injected a cross-track push whenever the
-        //     heading lagged the travel direction — right after a sharp turn that resonated into a heading
-        //     overshoot/oscillation (the owner's "beginner-driver" wobble). Decoupling the two removes it;
-        //     heading smoothing is left to the rear-axle drag, a stable follower that cannot overshoot.
-        // Cross-track jitter/facets are low-passed by the gains; a teleport (huge residual) snaps.
+        // (1) CONSTANT-VELOCITY (g-h) tracking of the (continuous) front input: predict it advancing at its
+        // own tracked velocity, correct toward the input by critically-damped gains. Zero lag through turns
+        // (the velocity term carries it), while the faceted-polyline micro-kinks that ride through as a tail
+        // wiggle are low-passed. The prediction uses the front's OWN velocity, not the body heading, so it
+        // cannot resonate into a post-turn overshoot. A genuine teleport snaps.
         var predX = s.Fx + s.Fvx * dt;
         var predY = s.Fy + s.Fvy * dt;
-
-        if ((frontX - predX) * (frontX - predX) + (frontY - predY) * (frontY - predY)
+        if ((inX - predX) * (inX - predX) + (inY - predY) * (inY - predY)
             > _p.ReseedJumpMeters * _p.ReseedJumpMeters)
         {
             var (sdx, sdy) = Dir(laneHeadingDeg);
-            s.Fx = frontX;
-            s.Fy = frontY;
+            s.Fx = inX;
+            s.Fy = inY;
             s.Fvx = speed * sdx;
             s.Fvy = speed * sdy;
         }
         else
         {
-            // Lane-change ease: while the engine's lateral-straddle signal is active (or within its window),
-            // use the longer LaneChangeSmoothTime (smaller gains) so the ~3.2 m lateral slide spreads into a
-            // gentle ~1.3 s ease. Turns never set this, so they stay crisp.
-            if (lateralEvent)
-            {
-                s.EaseTimer = _p.LaneChangeEaseWindow;
-            }
-
-            var tau = s.EaseTimer > 0.0 ? _p.LaneChangeSmoothTime : _p.PositionSmoothTime;
-            s.EaseTimer = Math.Max(0.0, s.EaseTimer - dt);
-
-            // g-h gains from the smoothing time; critically damped (h = g^2 / (2 - g)), no overshoot.
-            var g = tau > 1e-6 ? 1.0 - Math.Exp(-dt / tau) : 1.0;
+            var g = _p.PositionSmoothTime > 1e-6 ? 1.0 - Math.Exp(-dt / _p.PositionSmoothTime) : 1.0;
             var h = g * g / (2.0 - g);
-            var rX = frontX - predX;
-            var rY = frontY - predY;
+            var rX = inX - predX;
+            var rY = inY - predY;
             s.Fx = predX + g * rX;
             s.Fy = predY + g * rY;
             s.Fvx += (h / dt) * rX;
@@ -177,8 +225,7 @@ public sealed class KinematicHeading
         var smFrontX = s.Fx;
         var smFrontY = s.Fy;
 
-        // Front axle = the (error-blended) lane front reference. The previous prev-heading overhang inset
-        // was dropped: it fed the drag a laterally-offset front and broke the no-slip constraint.
+        // Front axle = the smoothed drawn front reference.
         var faX = smFrontX;
         var faY = smFrontY;
 
