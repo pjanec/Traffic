@@ -44,9 +44,39 @@ hero bbox **`[2055,2055,2895,2895]`** in `SceneGen.BuildLiveCity`.
   crossing poly) and inserts a `PauseSegment(NextWalkStart−tKerb, "wait")` when the ped would arrive on
   red; no rng. 3 tests green (`tests/…/Crossing/CrosswalkSignalComplianceTests.cs`): signals-ON → **0**
   on-crossing-during-red samples (vs 3328 with signals OFF), byte-identical double-run.
-- **P2b-T3 — gate class-awareness**: NEXT. `BuildLiveCity` passes only UNSIGNALIZED crossing polys to
-  `CrossingOccupancySource` (filter `signals.IsSignalized(edgeId)`); signalized handled by compliance.
-- **P2b-T4 — wire into BuildLiveCity + verify**: TODO.
+- **P2b-T3 — gate class-awareness**: DONE (committed 107407b) — but with a **corrected design**. The
+  original plan (skip signalized crossings in the gate) was WRONG: it removed Phase 2's protection against
+  a **turning car** on a permissive movement crossing a legitimately-walking ped (the TL gives the ped 'G'
+  and the turning car green; the engine doesn't model the yield). Corrected: keep the `CrossingOccupancySource`
+  over **all** crop crossings but feed it only **WALKING** low-power peds (`AnimTagOf == WalkAnimTag`) — a
+  ped WAITING at the kerb (paused, standing just inside the buffered polygon edge) raises no gate, so no
+  phantom stop; a walking ped (incl. clearance-interval) still stops turning cars. `CrosswalkSignals.
+  IsSignalizedLane` + `CrossingTlReader.LoadCrossingLinks` (one-pass net read; the per-crossing reload was
+  prohibitive on the 1.5 MB box net).
+- **P2b-T4 — wire into BuildLiveCity + verify**: DONE (committed 107407b). Verified A/B (`LIVECITY_YIELD`
+  env, same seed): baseline peds-on-red **1400**/2063, jaywalk-into-car near-collisions **30**; full (2b on)
+  peds-on-red **40**/1969, jaywalk-into-car near-collisions **3**. **The reported bug (ped crossing on red
+  while cars have green) is essentially eliminated.** Two runs byte-identical; full gate green
+  (ParityTests 654, Pedestrians 227, DotRecast 2, Host 1); vehicle cost unchanged (~4.2 ms/step).
+
+## Phase 2b status: COMPLETE (T1–T4). Known-deferred residual + a tick defect found
+- **Residual (deferred, pre-existing):** ~54 ped-on-**green** near-collisions remain = turning cars on
+  permissive movements + **coarse-tick tunneling** (a 13 m/s car leaps ~13 m per 1 s engine step, straight
+  past the 4 m-deep crosswalk, so a point-disc gate at the ped can't brake it in time). This is exactly the
+  **tunneling-proof stop-line** the Phase-2 design deferred (needs the crossing→crossed-lane mapping + a
+  virtual stopped leader placed BEFORE the crosswalk). Not introduced by 2b — Phase 2 had it too.
+- **Tick defect found (not yet fixed):** `BuildLiveCity` loops at `Dt=0.5` but `engine.Step()` advances a
+  fixed `StepLength=1.0` (the box `scenario.sumocfg` / `DefaultNetworkConfig`), so **cars advance 1.0 s of
+  motion per 0.5 s frame — they render ~2× too fast**, and the 1 s car step is itself the tunneling driver.
+  The engine's step length isn't settable without a sumocfg that pins it. Options for a follow-up: (a) align
+  `Dt=1.0` (correct speed, choppier, tunneling persists); (b) a finer engine step (needs a sub-1 s sumocfg
+  or an Engine step-length setter); (c) the stop-line (fixes tunneling regardless of tick). **Ask the owner
+  which** before spending on it — it's beyond the P2b (compliance) ask.
+- Diagnostics (printed by `--live-city`): crossing-class split; near-collision metric (car within 2.5 m of
+  a walking crossing ped, split ped-red/green); ped-on-signalized-during-red compliance count; `LIVECITY_YIELD=0`
+  A/B baseline.
+- Test: `tests/Sim.Pedestrians.Tests/Crossing/CrosswalkSignalComplianceTests.cs` (3, on POC-0): signals-ON →
+  0 on-red; signals-OFF → 3328 on-red; byte-identical double-run.
 
 ## P2b-T2 plan (resume here) + the code facts already gathered
 Goal: a low-power ped waits at the kerb until its walk phase, then crosses. Behind an opt-in flag

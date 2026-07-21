@@ -81,14 +81,30 @@ This keeps the low-power ped a pure `ActivityTimeline` — no runtime signal pol
 4. **Determinism + parity:** two runs byte-identical; full `dotnet test` green; hash unmoved.
 
 ## 6. Tasks
-- [ ] **P2b-T1 — `CrosswalkSignalSchedule`** (walk-window / `NextWalkStart`) + hermetic test on POC-0's
-      signalized west crossing (known program).
-- [ ] **P2b-T2 — wait insertion** in `BuildLivelyTimeline` behind `CrosswalkSignals` (inert default) +
-      test (success condition 1).
-- [ ] **P2b-T3 — gate class-awareness:** `CrossingOccupancySource` skips signalized crossings; unsignalized
-      upgraded to a tunneling-proof stop-line (crossed-lane mapping).
-- [ ] **P2b-T4 — wire into `BuildLiveCity`** + verify success conditions 2–4 (no drive-through, flow,
-      determinism, gate green).
+- [x] **P2b-T1 — `CrosswalkSignalSchedule`** (walk-window / `NextWalkStart`) + hermetic test on POC-0's
+      signalized west crossing (known program). Done.
+- [x] **P2b-T2 — wait insertion** in `BuildLivelyTimeline` behind `CrosswalkSignals` (inert default) +
+      test (success condition 1). Done — `CrosswalkSignals` + `InsertCrosswalkWaits`/`SplitWalkAtCrossings`;
+      `CrosswalkSignalComplianceTests` (POC-0): signals-ON → 0 on-red, signals-OFF → 3328 on-red.
+- [x] **P2b-T3 — gate class-awareness:** DONE, but **design corrected**. Skipping signalized crossings (as
+      originally written) was wrong — it drops the car-side protection against a **turning car** crossing a
+      legitimately-walking ped (permissive movement the TL doesn't stop). Instead the gate covers **all**
+      crossings but is fed only **WALKING** low-power peds: a waiting ped at the kerb raises no gate (no
+      phantom stop), a walking ped (incl. clearance) still stops turning cars. The full tunneling-proof
+      stop-line (crossed-lane mapping) is still **deferred** — see §7.
+- [x] **P2b-T4 — wire into `BuildLiveCity`** + verify. Done. A/B (`LIVECITY_YIELD` env): peds-on-red
+      1400→40, jaywalk-into-car near-collisions 30→3 (success condition 1/2 for the RED case). Traffic
+      flows; two runs byte-identical; full gate green (condition 3/4).
+
+### Verified state & the remaining gap (success condition 2, partial)
+The reported artifact — a ped crossing on **red** while cars have green — is essentially eliminated
+(jaywalk-into-car near-collisions 30→3). What remains is ped-on-**green** near-collisions (~54): a turning
+car on a permissive movement, and **coarse-tick tunneling** (a 13 m/s car leaps ~13 m per the engine's 1 s
+`StepLength`, past the 4 m crosswalk, so a point-disc gate can't brake it). Both are **pre-existing** (Phase
+2 had them) and are what §2(c)'s deferred **tunneling-proof stop-line** exists to fix. A separate demo-tick
+defect surfaced: `BuildLiveCity` loops at `Dt=0.5` but the engine steps a fixed `1.0` s, so cars render ~2×
+too fast (and that 1 s step is the tunneling driver). Fixing either is beyond the P2b (compliance) ask and
+should be a follow-up decided with the owner (align `Dt`, a finer engine step, or the stop-line).
 
 ## 7. Out of scope
 - Actuated-TL compliance (none in the box; falls back to the gate).
