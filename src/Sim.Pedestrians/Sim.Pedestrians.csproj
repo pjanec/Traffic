@@ -4,7 +4,11 @@
     <!-- Pedestrians are a SEPARATE engine from the lane-parity core (docs/PEDESTRIAN-DESIGN.md
          §0 Principle 6). This project owns ped-network ingest and (later) the ORCA-backed crowd
          solver; it must never reference Sim.Ingest or any parity source. -->
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- netstandard2.1 alongside net8.0 so the ped subsystem is reusable from a .NET 6 host
+         (docs/IGBRIDGE-DECISIONS.md §1 Q6) and Unity (Mono/IL2CPP)/Godot, exactly like Sim.Core /
+         Sim.Viewer.Motion. net8.0 stays the parity/test target; the netstandard2.1 build only adds
+         reach and pulls the same compiler-support polyfills the other packable libs use. -->
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
@@ -26,6 +30,17 @@
          PedReplicationReceiver) needs Sim.Replication's transport-neutral IPedReplicationSink/Source +
          FrameCodec. Sim.Replication itself stays free of a reverse reference to Sim.Pedestrians. -->
     <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+    <!-- Compiler-support polyfills (init/record/required) for netstandard2.1; compiles away on net8.0
+         (guarded by #if !NET8_0_OR_GREATER), so it cannot affect the net8 parity build. -->
+    <Compile Include="..\Shared\NetstandardPolyfills.cs" Link="NetstandardPolyfills.cs" />
+  </ItemGroup>
+
+  <!-- netstandard2.1 lacks in-box Span<T>/Memory<T> and System.Text.Json; net8.0 has both in the BCL
+       so these package refs apply to the netstandard2.1 build only (JsonDocument.Parse is used by
+       PedPoiReader / SubareaManifest; the pinned 8.0.x line matches the net8 in-box behaviour). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 
   <ItemGroup>

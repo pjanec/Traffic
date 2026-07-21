@@ -129,7 +129,7 @@ public sealed class SumoNavMesh : IPedNavigation
     // `null` or an empty set reproduces the two-argument overload's result exactly (same code path,
     // same deterministic tie-breaks), so that overload's behaviour for every existing caller
     // (POC-1/POC-3) is unchanged byte-for-byte.
-    public IReadOnlyList<Vec2>? FindPath(Vec2 start, Vec2 goal, IReadOnlySet<int>? blockedPolygonIndices)
+    public IReadOnlyList<Vec2>? FindPath(Vec2 start, Vec2 goal, ISet<int>? blockedPolygonIndices)
     {
         var blocked = (blockedPolygonIndices is { Count: > 0 }) ? blockedPolygonIndices : null;
 
@@ -185,7 +185,7 @@ public sealed class SumoNavMesh : IPedNavigation
     // `blocked` (nullable -- the common, unblocked case skips the containment check entirely) polygons
     // are never returned: a blocked polygon is not a legal start/goal location either, not just a
     // non-traversable graph node.
-    private int LocatePolygon(Vec2 p, IReadOnlySet<int>? blocked)
+    private int LocatePolygon(Vec2 p, ISet<int>? blocked)
     {
         var direct = IndexOfContaining(p, blocked);
         if (direct >= 0)
@@ -225,7 +225,7 @@ public sealed class SumoNavMesh : IPedNavigation
         return best;
     }
 
-    private int IndexOfContaining(Vec2 p, IReadOnlySet<int>? blocked)
+    private int IndexOfContaining(Vec2 p, ISet<int>? blocked)
     {
         for (var i = 0; i < _polygons.Count; i++)
         {
@@ -243,7 +243,7 @@ public sealed class SumoNavMesh : IPedNavigation
         return -1;
     }
 
-    private List<int>? FindNodePath(int start, int goal, IReadOnlySet<int>? blocked)
+    private List<int>? FindNodePath(int start, int goal, ISet<int>? blocked)
     {
         var open = new List<int> { start };
         var inOpen = new HashSet<int> { start };

@@ -7,7 +7,12 @@ stated success conditions are verified first-hand (per CLAUDE.md: read the diff,
 **Status:** design phase — awaiting owner sign-off on the trio (DECISIONS / TASKS / TRACKER). No code yet.
 
 ## Stage 0 — retarget, scaffold, prove .NET 6
-- [ ] **T0.1** Retarget `Sim.Pedestrians` → `netstandard2.1;net8.0`; `dotnet test` green + goldens byte-identical
+- [x] **T0.1** Retarget `Sim.Pedestrians` → `netstandard2.1;net8.0`; `dotnet test` green + goldens byte-identical
+      <!-- done: both TFMs build; net8 tests byte-identical (peds 227, parity 654/4skip). Gaps closed:
+           System.Text.Json + System.Memory pkgrefs (ns2.1), NetstandardPolyfills link, ISet<int> for
+           IReadOnlySet<int> (per Sim.Ingest/NetworkRouter precedent), Int64-bits double bridge in
+           ActivityTimelineWire, manual null-guards for ArgumentNullException.ThrowIfNull. -->
+
 - [ ] **T0.2** Scaffold `Sim.IgBridge` (`netstandard2.1;net6.0;net8.0`) + `Sim.IgBridge.Host` (net8); `Sim.IgBridge` builds for net6
 - [ ] **T0.3** Fixed-10 Hz core loop + per-entity ring buffers + sim clock; determinism test
 

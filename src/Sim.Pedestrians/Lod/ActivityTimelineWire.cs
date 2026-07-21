@@ -211,7 +211,10 @@ public static class ActivityTimelineWire
 
     private static void WriteDouble(MemoryStream buffer, Span<byte> scratch, double value)
     {
-        BinaryPrimitives.WriteDoubleLittleEndian(scratch[..8], value);
+        // Via Int64 bits: BinaryPrimitives.WriteDoubleLittleEndian is .NET 5+, absent from
+        // netstandard2.1, but the LE IEEE-754 byte layout is identical to WriteInt64LittleEndian of the
+        // raw double bits -- so the wire format stays byte-identical across both target frameworks.
+        BinaryPrimitives.WriteInt64LittleEndian(scratch[..8], BitConverter.DoubleToInt64Bits(value));
         buffer.Write(scratch[..8]);
     }
 
@@ -236,7 +239,8 @@ public static class ActivityTimelineWire
 
     private static double ReadDouble(ReadOnlySpan<byte> src, ref int o)
     {
-        var v = BinaryPrimitives.ReadDoubleLittleEndian(src.Slice(o, 8));
+        // Int64-bits bridge (see WriteDouble): ReadDoubleLittleEndian is .NET 5+; this is byte-identical.
+        var v = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(src.Slice(o, 8)));
         o += 8;
         return v;
     }
