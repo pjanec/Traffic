@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GAP-2 acceptance (docs/HIGH-DENSITY-CALIBRATION-DESIGN.md section 3): a roadsideCapacity=1
+     parkingArea referenced by TWO vehicles that do NOT overlap in time must load and reuse the
+     single lot (MSParkingArea::computeLastFreePos frees a lot on departure and reassigns the
+     lowest-index free lot on the next arrival). The pre-GAP-2 static load-time assignment gave
+     every occupant a DISTINCT lot index (0, 1, ...) and threw "lot index 1 out of range" at load.
+       veh0: departPos="stop" origin, parks at t=0 in lot 0, pulls out after duration=10 (frees
+         lot 0 at t~=10).
+       veh1: a normally-inserted (moving) vehicle departing at t=20, drives ~195 m to the
+         parkingArea, and must claim the now-free lot 0 (same on-lane position as veh0 had). It then
+         parks-and-STAYS (duration 100000) so the comparison ends with it resident in the reused lot.
+         This keeps the anchor on the GAP-2 mechanism (lot turnover) and off the orthogonal,
+         pre-GAP-2 resume-from-parkingArea eps nuance (a moving vehicle brakes a hair short of its
+         lot endPos, then SUMO snaps to the exact endPos on pull-out; unrelated to lot assignment).
+     Both on the single lane e0_0; veh0 leads and is long gone before veh1 arrives, so no car-
+     following interaction confounds the parked positions. Determinism settings match the phase-1
+     ladder so parity is exact. -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <route id="r0" edges="e0"/>
+    <vehicle id="veh0" type="car" route="r0" depart="0" departPos="stop" departSpeed="0" departLane="0">
+        <stop parkingArea="pa0" duration="10"/>
+    </vehicle>
+    <vehicle id="veh1" type="car" route="r0" depart="20" departPos="0" departSpeed="0" departLane="0">
+        <stop parkingArea="pa0" duration="100000"/>
+    </vehicle>
+</routes>

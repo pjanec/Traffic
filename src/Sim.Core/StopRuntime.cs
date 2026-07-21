@@ -11,7 +11,16 @@ internal sealed class StopRuntime
 {
     public required string LaneId { get; init; }
     public required double StartPos { get; init; }
-    public required double EndPos { get; init; }
+
+    // The brake target / final stop position. For a plain lane stop this is the load-resolved
+    // <stop endPos>, fixed. GAP-2: for a parkingArea stop it is RESOLVED AT RUNTIME to
+    // ParkingArea.LotPosition(AssignedLot) once a lot is claimed (Execute), because the lot a
+    // vehicle actually gets depends on which lots are free WHEN IT PARKS -- not knowable at load
+    // for an area whose occupants turn over across the run (MSParkingArea::computeLastFreePos).
+    // While unclaimed (AssignedLot < 0) it holds the load-time placeholder (0) and the Plan phase
+    // brakes toward a provisional lot computed from the start-of-step occupancy snapshot instead.
+    // Mutable (not init) only for the parking case; plain lane stops set it once and never touch it.
+    public double EndPos;
 
     // MSStop::getMinDuration's fallback (no until/ended modeled): the configured <stop
     // duration="..."/> in seconds, used to (re)initialize RemainingDuration once reached.
@@ -27,6 +36,17 @@ internal sealed class StopRuntime
     // Default false so any StopRuntime built without setting it (there are none post-GAP-3, but the
     // property is not `required` to avoid disturbing any other construction site) is a plain stop.
     public bool IsParking { get; init; }
+
+    // GAP-2: the parkingArea this stop belongs to (StopDef.ParkingAreaId), used to claim/free a lot
+    // in the Engine's per-area occupancy table at runtime. Null for every plain lane stop (IsParking
+    // false), so the lane-stop path is untouched.
+    public string? ParkingAreaId { get; init; }
+
+    // GAP-2: the roadside lot index this stop has claimed, or -1 while unclaimed. Set once (Execute)
+    // when the vehicle parks (MSParkingArea::computeLastFreePos picks the lowest free lot at that
+    // instant); read back to free the exact lot when the vehicle pulls out. -1 for every plain lane
+    // stop.
+    public int AssignedLot = -1;
 
     public bool Reached;
     public double RemainingDuration;

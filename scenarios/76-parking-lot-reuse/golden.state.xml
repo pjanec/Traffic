@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-21 19:39:05 by Eclipse SUMO sumo Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="rou.rou.xml"/>
+        <additional-files value="pa.add.xml"/>
+    </input>
+
+    <output>
+        <precision value="6"/>
+        <fcd-output value="golden.fcd.xml"/>
+        <fcd-output.acceleration value="true"/>
+        <stop-output value="/tmp/s76b_stops.xml"/>
+        <save-state.times value="1"/>
+        <save-state.files value="golden.state.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="60"/>
+        <step-length value="1"/>
+    </time>
+
+    <processing>
+        <step-method.ballistic value="false"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+        <lanechange.duration value="0"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+
+</configuration>
+-->
+
+<snapshot xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/state_file.xsd" version="1.20.0" time="1.000" type="micro">
+    <route id="r0" state="1" edges="e0"/>
+    <delay number="1" begin="2" end="0" depart="0.00" time="0.00"/>
+    <vType id="car" vClass="passenger" sigma="0"/>
+    <vehicle id="veh0" type="car" depart="0.000" departLane="0" departPos="stop" departSpeed="0.000000" route="r0" distance="0 0" speedFactor="1.0000" state="2078 0 0 210.000000 0 0.000000 1000 0 0" pos="210.00 205.00 0.00" speed="0.00 0.00" angle="90.00" posLat="0.00" waitingTime="100000 0">
+        <stop parkingArea="pa0" duration="10.000"/>
+    </vehicle>
+    <vehicle id="veh1" type="car" depart="20.000" departLane="0" departPos="0.000000" departSpeed="0.000000" route="r0" distance="0 0" speedFactor="1.0000" state="2078 9223372036854775807 0 -1.000000 0 0.000000 0 0 0" pos="0.00 0.00 0.00" speed="0.00 0.00" angle="90.00" posLat="0.00" waitingTime="100000 0">
+        <stop parkingArea="pa0" duration="100000.000"/>
+    </vehicle>
+    <lane id="e0_0">
+        <vehicles value="veh0"/>
+    </lane>
+</snapshot>

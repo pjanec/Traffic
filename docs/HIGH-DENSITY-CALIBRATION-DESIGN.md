@@ -159,6 +159,34 @@ arrival ≈ stop-reached time, which for departPos="stop" origins is t=departure
 needs a rough travel estimate) and assign the lowest lot free during that window. Simpler but approximate
 and fragile on arrival-time estimation. Use only if A proves too invasive.
 
+**REFINEMENT (measured 2026-07-21 — locks Option A, rejects B).** The box's failing area
+`pa_e_d_2_2_d_3_2` (cap 1) is used by 3 vehicles whose vanilla `--stop-output` PARK intervals are
+`veh0 [345,546]`, `veh1 [590,738]` — reusing lot 0 (both park at pos 231.40) — with the 3rd never
+reaching it. Crucially the actual **park** times (345, 590) are ~285 s after the **depart** times
+(59.79, 223.76): drive + jam. So load-time interval estimation (B) is unreliable (depart+freeflow ≈ 60
+vs real park 345), and even depart-window overlap ([60,261] vs [224,372]) would falsely force distinct
+lots and overflow. **Only true runtime park-time assignment (A) is correct.** Implemented mechanism:
+- StopRuntime for a parking stop carries `ParkingAreaId` + `AssignedLot` (−1 = unclaimed); its `EndPos`
+  (the brake target) is resolved at RUNTIME, not baked at load. `ResolveParkingAreaStops` stops assigning
+  lot indices — it only fills `LaneId`/`StartPos`/`ParkingAreaId` (no `LotPosition` call at load, so an
+  oversubscribed area no longer throws).
+- Engine runtime state: `Dictionary<string,bool[]> _parkingLotOccupied` per area (capacity-sized).
+- **Plan (read-only, start-of-step snapshot):** `StopLineConstraint` for an unclaimed parking front-stop
+  computes the provisional lot = lowest `i` with `!occupied[i]` and brakes toward `LotPosition(i)`; if the
+  area is FULL it brakes toward `StartPos` and the reached-gate below refuses to mark it reached (wait-
+  when-full, SUMO's "no free pos" path). A claimed stop uses `LotPosition(AssignedLot)`.
+- **ProcessNextStop reached-gate:** a parking stop is marked reached only if a lot is free/assigned (so a
+  full area makes the vehicle wait at `StartPos` instead of parking on air).
+- **Execute (deterministic order, mutates occupancy):** on the reached transition (the existing
+  `stop.IsParking → v.IsParked=true` block) claim the live lowest-free lot, set `AssignedLot` + `EndPos`,
+  mark occupied; on the resume transition (the existing `resumedStop.IsParking → v.IsParked=false` block)
+  free the lot. departPos="stop" origins claim at insertion (they insert already-parked at `LotPosition`).
+- **Parity:** committed goldens (48/66-72) never reuse and never oversubscribe → snapshot lowest-free ==
+  the old static index at every step, so brake target + parked pos are byte-identical (verified by the
+  full suite). Determinism: Plan reads the frozen snapshot; Execute claims/frees in the engine's existing
+  per-step order; the pick is "lowest index" (order-independent). Anchor: `scenarios/76-parking-lot-reuse`
+  (cap-1, veh0 pulls out then veh1 reuses lot 0 @ pos 210).
+
 ### 3.4 Success criteria (Gap 2)
 The full `demo_city/box` (`scenarios/_ped/demo_city/box/scenario.sumocfg`) LOADS on SumoSharp (no "lot
 index out of range") — combined with Gap 3 it runs end-to-end. Committed parking goldens (48/66/67/68/69/

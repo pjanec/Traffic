@@ -13,8 +13,15 @@ evidence). NEEDs: `SUMOSHARP-NEED-dense-flow-gridlock-vs-vanilla.md`,
       `scenarios/75-base-depart` (veh0→7.1, veh1→3.0) matches vanilla golden to 1e-13. Full suite green (655
       pass); all pre-existing goldens byte-identical (Base arm inert). Box `"base"` error gone → now blocks
       only on Gap 2 parking (as predicted).
-- [ ] **Stage 2 — Gap 2** parkingArea runtime lowest-free-lot reuse (MSParkingArea::computeLastFreePos).
-      Parking goldens byte-identical; oversubscribed capacity-1 anchor loads; full box loads (with Gap 3).
+- [x] **Stage 2 — Gap 2** parkingArea runtime lowest-free-lot reuse (MSParkingArea::computeLastFreePos).
+      DONE: lot assignment moved from static load-time to runtime — `_parkingLotOccupied` table,
+      claim-lowest-free on the park (Reached) transition, free on pull-out (Resume), provisional brake
+      target from the start-of-step snapshot in `StopLineConstraint`, wait-when-full reached-gate,
+      departPos="stop" origins claim at insertion. Fixed a regression (scenario 69: the LC-toward-stop
+      `driveToNextStop` distance also read the deferred EndPos). All parking goldens (48/66-72)
+      byte-identical; anchor `scenarios/76-parking-lot-reuse` (cap-1, veh0 pulls out → veh1 reuses lot 0)
+      matches vanilla golden. Full suite green (656 pass). Full `demo_city/box` LOADS + runs to t=800 with
+      no "lot index out of range"; two box runs byte-identical (deterministic).
 - [ ] **Stage 3 — Gap 1** reroute-on-wrong-lane (replace drop-lane clamp with reroute; approach trigger).
       Dense synthetic: teleports ≈ 0, halting drains, arrivals ≈ vanilla. Suite green + byte-identical +
       determinism. New anchor. (May need multiple passes; cooperative-LC escalation only if needed.)

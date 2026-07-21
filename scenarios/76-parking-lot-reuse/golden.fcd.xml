@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2026-07-21 19:39:05 by Eclipse SUMO sumo Version 1.20.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="net.net.xml"/>
+        <route-files value="rou.rou.xml"/>
+        <additional-files value="pa.add.xml"/>
+    </input>
+
+    <output>
+        <precision value="6"/>
+        <fcd-output value="golden.fcd.xml"/>
+        <fcd-output.acceleration value="true"/>
+        <stop-output value="/tmp/s76b_stops.xml"/>
+        <save-state.times value="1"/>
+        <save-state.files value="golden.state.xml"/>
+    </output>
+
+    <time>
+        <begin value="0"/>
+        <end value="60"/>
+        <step-length value="1"/>
+    </time>
+
+    <processing>
+        <step-method.ballistic value="false"/>
+        <collision.action value="none"/>
+        <time-to-teleport value="-1"/>
+        <lanechange.duration value="0"/>
+        <default.action-step-length value="1"/>
+        <default.speeddev value="0"/>
+    </processing>
+
+    <report>
+        <no-step-log value="true"/>
+    </report>
+
+    <random_number>
+        <seed value="42"/>
+    </random_number>
+
+</configuration>
+-->
+
+<fcd-export xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/fcd_file.xsd">
+    <timestep time="0.000">
+        <vehicle id="veh0" x="210.000000" y="-1.600000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="1.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="2.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="3.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="4.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="5.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="6.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="7.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="8.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="9.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="10.000">
+        <vehicle id="veh0" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="210.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="11.000">
+        <vehicle id="veh0" x="212.600000" y="-1.600000" angle="90.000000" type="car" speed="2.600000" pos="212.600000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="12.000">
+        <vehicle id="veh0" x="217.800000" y="-1.600000" angle="90.000000" type="car" speed="5.200000" pos="217.800000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="13.000">
+        <vehicle id="veh0" x="225.600000" y="-1.600000" angle="90.000000" type="car" speed="7.800000" pos="225.600000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="14.000">
+        <vehicle id="veh0" x="236.000000" y="-1.600000" angle="90.000000" type="car" speed="10.400000" pos="236.000000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="15.000">
+        <vehicle id="veh0" x="249.000000" y="-1.600000" angle="90.000000" type="car" speed="13.000000" pos="249.000000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="16.000">
+        <vehicle id="veh0" x="262.890000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="262.890000" lane="e0_0" slope="0.000000" acceleration="0.890000"/>
+    </timestep>
+    <timestep time="17.000">
+        <vehicle id="veh0" x="276.780000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="276.780000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="18.000">
+        <vehicle id="veh0" x="290.670000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="290.670000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="19.000">
+        <vehicle id="veh0" x="304.560000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="304.560000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="20.000">
+        <vehicle id="veh0" x="318.450000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="318.450000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="0.000000" y="-1.600000" angle="90.000000" type="car" speed="0.000000" pos="0.000000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="21.000">
+        <vehicle id="veh0" x="332.340000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="332.340000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="2.600000" y="-1.600000" angle="90.000000" type="car" speed="2.600000" pos="2.600000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="22.000">
+        <vehicle id="veh0" x="346.230000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="346.230000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="7.800000" y="-1.600000" angle="90.000000" type="car" speed="5.200000" pos="7.800000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="23.000">
+        <vehicle id="veh0" x="360.120000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="360.120000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="15.600000" y="-1.600000" angle="90.000000" type="car" speed="7.800000" pos="15.600000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="24.000">
+        <vehicle id="veh0" x="374.010000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="374.010000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="26.000000" y="-1.600000" angle="90.000000" type="car" speed="10.400000" pos="26.000000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="25.000">
+        <vehicle id="veh0" x="387.900000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="387.900000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="39.000000" y="-1.600000" angle="90.000000" type="car" speed="13.000000" pos="39.000000" lane="e0_0" slope="0.000000" acceleration="2.600000"/>
+    </timestep>
+    <timestep time="26.000">
+        <vehicle id="veh0" x="401.790000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="401.790000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="52.890000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="52.890000" lane="e0_0" slope="0.000000" acceleration="0.890000"/>
+    </timestep>
+    <timestep time="27.000">
+        <vehicle id="veh0" x="415.680000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="415.680000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="66.780000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="66.780000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="28.000">
+        <vehicle id="veh0" x="429.570000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="429.570000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="80.670000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="80.670000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="29.000">
+        <vehicle id="veh0" x="443.460000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="443.460000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="94.560000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="94.560000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="30.000">
+        <vehicle id="veh0" x="457.350000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="457.350000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="108.450000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="108.450000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="31.000">
+        <vehicle id="veh0" x="471.240000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="471.240000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="122.340000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="122.340000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="32.000">
+        <vehicle id="veh0" x="485.130000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="485.130000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="136.230000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="136.230000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="33.000">
+        <vehicle id="veh0" x="499.020000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="499.020000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="150.120000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="150.120000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="34.000">
+        <vehicle id="veh0" x="512.910000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="512.910000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="164.010000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="164.010000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="35.000">
+        <vehicle id="veh0" x="526.800000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="526.800000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="177.900000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="177.900000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="36.000">
+        <vehicle id="veh0" x="540.690000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="540.690000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="191.790000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="191.790000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="37.000">
+        <vehicle id="veh0" x="554.580000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="554.580000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="202.359667" y="-1.600000" angle="90.000000" type="car" speed="10.569667" pos="202.359667" lane="e0_0" slope="0.000000" acceleration="-3.320333"/>
+    </timestep>
+    <timestep time="38.000">
+        <vehicle id="veh0" x="568.470000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="568.470000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="208.429333" y="-1.600000" angle="90.000000" type="car" speed="6.069667" pos="208.429333" lane="e0_0" slope="0.000000" acceleration="-4.500000"/>
+    </timestep>
+    <timestep time="39.000">
+        <vehicle id="veh0" x="582.360000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="582.360000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="209.999000" y="-1.600000" angle="90.000000" type="car" speed="1.569667" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="-4.500000"/>
+    </timestep>
+    <timestep time="40.000">
+        <vehicle id="veh0" x="596.250000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="596.250000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="-1.569667"/>
+    </timestep>
+    <timestep time="41.000">
+        <vehicle id="veh0" x="610.140000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="610.140000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="42.000">
+        <vehicle id="veh0" x="624.030000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="624.030000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="43.000">
+        <vehicle id="veh0" x="637.920000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="637.920000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="44.000">
+        <vehicle id="veh0" x="651.810000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="651.810000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="45.000">
+        <vehicle id="veh0" x="665.700000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="665.700000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="46.000">
+        <vehicle id="veh0" x="679.590000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="679.590000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="47.000">
+        <vehicle id="veh0" x="693.480000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="693.480000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="48.000">
+        <vehicle id="veh0" x="707.370000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="707.370000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="49.000">
+        <vehicle id="veh0" x="721.260000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="721.260000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="50.000">
+        <vehicle id="veh0" x="735.150000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="735.150000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="51.000">
+        <vehicle id="veh0" x="749.040000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="749.040000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="52.000">
+        <vehicle id="veh0" x="762.930000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="762.930000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="53.000">
+        <vehicle id="veh0" x="776.820000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="776.820000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="54.000">
+        <vehicle id="veh0" x="790.710000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="790.710000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="55.000">
+        <vehicle id="veh0" x="804.600000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="804.600000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="56.000">
+        <vehicle id="veh0" x="818.490000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="818.490000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="57.000">
+        <vehicle id="veh0" x="832.380000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="832.380000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="58.000">
+        <vehicle id="veh0" x="846.270000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="846.270000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+    <timestep time="59.000">
+        <vehicle id="veh0" x="860.160000" y="-1.600000" angle="90.000000" type="car" speed="13.890000" pos="860.160000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+        <vehicle id="veh1" x="210.000000" y="-4.800000" angle="90.000000" type="car" speed="0.000000" pos="209.999000" lane="e0_0" slope="0.000000" acceleration="0.000000"/>
+    </timestep>
+</fcd-export>

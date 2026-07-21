@@ -185,6 +185,16 @@ public sealed partial class Engine : IEngine
     // (Count==0) every stop-consuming call site already handles.
     private readonly Dictionary<int, Queue<StopRuntime>> _stopsByEntity = new();
 
+    // GAP-2 (docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §3): the parkingArea registry (by id) and the
+    // per-area roadside-lot occupancy table -- the runtime analog of MSParkingArea's occupied-space
+    // bookkeeping. `_parkingLotOccupied[areaId][i]` is true while lot i is claimed by a parked
+    // vehicle. Lots are claimed (lowest free) when a vehicle actually parks and freed when it pulls
+    // out (Execute phase, deterministic order), so an area's lots turn over across the run and a
+    // capacity-N area serves any number of vehicles as long as <= N are parked at once
+    // (MSParkingArea::computeLastFreePos). Empty for every scenario with no parkingArea.
+    private readonly Dictionary<string, ParkingArea> _parkingAreasById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool[]> _parkingLotOccupied = new(StringComparer.Ordinal);
+
     // P1F-2 (HIGH-DENSITY-P1F-DESIGN.md §1C, §2, §5): the persistent teleport transfer queue --
     // the MSVehicleTransfer::myVehicles analog. A vehicle picked for a jam-teleport is lifted off
     // its lane (InTransfer=true) and appended here with the route-edge index of the edge it has
@@ -1194,9 +1204,22 @@ public sealed partial class Engine : IEngine
             }
         }
 
-        // P0-C2: resolve every `<stop parkingArea="X"/>` to a concrete lane stop now that both the
-        // demand (route-files) and the parkingArea registry (additional-files) are known. No-op --
-        // returns the demand unchanged, byte-identical -- when nothing references a parkingArea.
+        // GAP-2: keep the parkingArea registry + an empty per-area occupancy table for the runtime
+        // lowest-free-lot manager (claim on park / free on pull-out). Cleared first so a re-load of
+        // the same Engine instance starts fresh.
+        _parkingAreasById.Clear();
+        _parkingLotOccupied.Clear();
+        foreach (var (id, pa) in parkingAreas)
+        {
+            _parkingAreasById[id] = pa;
+            _parkingLotOccupied[id] = new bool[Math.Max(0, pa.RoadsideCapacity)];
+        }
+
+        // P0-C2/GAP-2: resolve every `<stop parkingArea="X"/>` to a concrete lane stop now that both
+        // the demand (route-files) and the parkingArea registry (additional-files) are known. No-op --
+        // returns the demand unchanged, byte-identical -- when nothing references a parkingArea. The
+        // lot INDEX (and thus EndPos) is NOT chosen here anymore; it is claimed at runtime when the
+        // vehicle parks (see the lot-claim in ExecuteMoves).
         _demand = ResolveParkingAreaStops(_demand, parkingAreas);
 
         InitializeLoaded();
@@ -1210,32 +1233,23 @@ public sealed partial class Engine : IEngine
             ? lane.Length
             : throw new InvalidDataException($"<parkingArea> references unknown lane '{laneId}'.");
 
-    // P0-C2/GAP-3 (docs/SUMOSHARP-SERVE-PATH-DROP-IN.md §3): rewrite every `<stop parkingArea="X"/>`
-    // (carrying only a ParkingAreaId placeholder from DemandParser) into a concrete lane stop --
-    // LaneId=pa.lane, StartPos=pa.startPos, EndPos=this occupant's OWN distinct lot position (see
-    // ParkingArea.LotPosition). After this, departPos="stop" (Engine.cs's TryInsertOnLane) and
-    // ProcessNextStop consume the stop exactly like a plain lane <stop>, unchanged -- StopDef.
-    // ParkingAreaId itself is left untouched by the `with` below (never null'd out), so
-    // StopRuntime.IsParking (set from it in BuildRuntime) still knows this is a parking stop after
-    // resolution. Fast path: if no vehicle references a parkingArea, the demand is returned
-    // untouched (byte-identical), so any scenario without parkingArea stops is unaffected.
-    //
-    // GAP-3 occupant assignment (static, load-time -- NO parkingAreaReroute/finite-dwell turnover,
-    // per the owner's steer, docs/SERVE-PATH-PLAN.md §3a): every occupant of a given parkingArea
-    // gets a DISTINCT lot index, assigned in two passes so the order matches the timeline real SUMO
-    // would observe for the served-scenario shapes this engine supports (park-and-stay sinks +
-    // departPos="stop" pull-out origins ONLY):
-    //   (1) departPos="stop" origins are already parked at t=0 (MSLane::insertVehicle's STOP case)
-    //       -- strictly before any moving vehicle can possibly have driven in and reached its own
-    //       stop (that takes >= 1 simulated step) -- so they claim the lowest lot indices first, in
-    //       vehicle-list (document) order.
-    //   (2) every remaining `<stop parkingArea>` on a normally-inserted (moving) vehicle claims the
-    //       NEXT lot indices, in vehicle-list order.
-    // This is a faithful reproduction of MSParkingArea::computeLastFreePos's "lowest-index free lot"
-    // rule for scenarios where no occupant vacates before a later occupant of the SAME area arrives
-    // (the only shape the served scenarios exercise -- see scenario 67's own design note for how its
-    // timing keeps this unambiguous). A scenario that raced these would need SUMO's full dynamic
-    // reservation system, out of GAP-3's scope.
+    // P0-C2/GAP-2 (docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §3): rewrite every `<stop
+    // parkingArea="X"/>` (carrying only a ParkingAreaId placeholder from DemandParser) into a
+    // concrete lane stop -- LaneId=pa.lane, StartPos=pa.startPos. The lot INDEX (and thus the
+    // EndPos/parked position) is NO LONGER chosen here: which lot a vehicle gets depends on which
+    // lots are free WHEN IT ACTUALLY PARKS, and for an area whose occupants turn over across the run
+    // (a capacity-1 lot reused by several time-separated vehicles) that is not knowable at load.
+    // Lot assignment is therefore deferred to runtime (MSParkingArea::computeLastFreePos: claim the
+    // lowest free lot on park, free it on pull-out -- see the lot-claim/-free in ExecuteMoves and the
+    // provisional brake target in StopLineConstraint). EndPos is left at 0 here as a placeholder.
+    // StopDef.ParkingAreaId is left untouched by the `with` below (never null'd out), so
+    // StopRuntime.IsParking/ParkingAreaId (set from it in BuildRuntime) still identify the stop.
+    // Fast path: if no vehicle references a parkingArea, the demand is returned untouched
+    // (byte-identical), so any scenario without parkingArea stops is unaffected. This replaces the
+    // pre-GAP-2 static two-pass lot assignment (which gave every occupant of the run a DISTINCT lot
+    // index and threw "lot index out of range" on an oversubscribed area); with runtime turnover the
+    // committed single-occupant goldens (48/66-72) still see the lowest-free lot == the old static
+    // index at every step (they never reuse), so they stay byte-identical.
     private static DemandModel ResolveParkingAreaStops(
         DemandModel demand,
         IReadOnlyDictionary<string, ParkingArea> parkingAreas)
@@ -1263,44 +1277,6 @@ public sealed partial class Engine : IEngine
             return demand;
         }
 
-        // Pass 1: assign a distinct lot index to every (vehicleIndex, stopIndex) occupant of each
-        // referenced parkingArea. Keyed by a value-tuple, not the StopDef itself (records don't have
-        // reference identity, and two stops CAN be structurally equal before resolution).
-        var nextLotIndexByPa = new Dictionary<string, int>(StringComparer.Ordinal);
-        var lotIndexByOccupant = new Dictionary<(int VehicleIndex, int StopIndex), int>();
-
-        // Pass 1a: departPos="stop" origins (Def.Stops[0] is always the one TryInsertOnLane reads
-        // for a Stop-kind depart position -- see that method's own DepartPosSpec.Stop arm).
-        for (var vi = 0; vi < demand.Vehicles.Count; vi++)
-        {
-            var v = demand.Vehicles[vi];
-            if (v.DepartPos.Kind == DepartPosSpec.Stop && v.Stops.Count > 0 && v.Stops[0].ParkingAreaId is { } originPaId)
-            {
-                var lotIndex = nextLotIndexByPa.TryGetValue(originPaId, out var n) ? n : 0;
-                lotIndexByOccupant[(vi, 0)] = lotIndex;
-                nextLotIndexByPa[originPaId] = lotIndex + 1;
-            }
-        }
-
-        // Pass 1b: every remaining parkingArea stop (moving vehicles that drive in and park).
-        for (var vi = 0; vi < demand.Vehicles.Count; vi++)
-        {
-            var v = demand.Vehicles[vi];
-            for (var si = 0; si < v.Stops.Count; si++)
-            {
-                var s = v.Stops[si];
-                if (s.ParkingAreaId is not { } paId || lotIndexByOccupant.ContainsKey((vi, si)))
-                {
-                    continue;
-                }
-
-                var lotIndex = nextLotIndexByPa.TryGetValue(paId, out var n) ? n : 0;
-                lotIndexByOccupant[(vi, si)] = lotIndex;
-                nextLotIndexByPa[paId] = lotIndex + 1;
-            }
-        }
-
-        // Pass 2: rewrite each vehicle's stops using its assigned lot index.
         var newVehicles = new List<VehicleDef>(demand.Vehicles.Count);
         for (var vi = 0; vi < demand.Vehicles.Count; vi++)
         {
@@ -1322,16 +1298,9 @@ public sealed partial class Engine : IEngine
             }
 
             var resolvedStops = new List<StopDef>(v.Stops.Count);
-            for (var si = 0; si < v.Stops.Count; si++)
+            foreach (var s in v.Stops)
             {
-                var s = v.Stops[si];
-                if (s.ParkingAreaId is null)
-                {
-                    resolvedStops.Add(s);
-                    continue;
-                }
-
-                resolvedStops.Add(ResolveParkingAreaStop(s, parkingAreas, lotIndexByOccupant[(vi, si)]));
+                resolvedStops.Add(ResolveParkingAreaStop(s, parkingAreas));
             }
 
             newVehicles.Add(v with { Stops = resolvedStops });
@@ -1340,7 +1309,10 @@ public sealed partial class Engine : IEngine
         return demand with { Vehicles = newVehicles };
     }
 
-    private static StopDef ResolveParkingAreaStop(StopDef stop, IReadOnlyDictionary<string, ParkingArea> parkingAreas, int lotIndex)
+    // Resolve a single `<stop parkingArea>` to its lane + startPos, validating the area exists and
+    // its capacity is usable. EndPos is deferred to runtime (lot claimed on park), so it is left 0
+    // here. A plain lane stop passes through untouched.
+    private static StopDef ResolveParkingAreaStop(StopDef stop, IReadOnlyDictionary<string, ParkingArea> parkingAreas)
     {
         if (stop.ParkingAreaId is null)
         {
@@ -1354,14 +1326,96 @@ public sealed partial class Engine : IEngine
                 "declared in any additional-file.");
         }
 
-        // LotPosition throws a clear error if pa.RoadsideCapacity < 1 or lotIndex is out of range
-        // (out-of-scope SUMO branches -- see its own header comment).
+        // Capacity must be >= 1 for the roadside-lot placement to be in scope (a capacity-0 area hits
+        // a different SUMO branch). Surfaced here at load rather than deferred to the first runtime
+        // claim, so an unusable area is rejected loudly and early -- LotPosition(0) does exactly this
+        // capacity check.
+        _ = pa.LotPosition(0);
+
         return stop with
         {
             LaneId = pa.LaneId,
             StartPos = pa.StartPos,
-            EndPos = pa.LotPosition(lotIndex),
+            EndPos = 0.0,
         };
+    }
+
+    // GAP-2: the lowest-index currently-free lot of `areaId`, or -1 if the area is full
+    // (MSParkingArea::computeLastFreePos's "lowest free" pick). Reads the occupancy table only; the
+    // Plan phase treats it as a frozen start-of-step snapshot and Execute mutates it in the engine's
+    // deterministic per-step order, so the pick is order-independent and determinism is preserved.
+    private int LowestFreeParkingLot(string areaId)
+    {
+        if (!_parkingLotOccupied.TryGetValue(areaId, out var occupied))
+        {
+            return -1;
+        }
+
+        for (var i = 0; i < occupied.Length; i++)
+        {
+            if (!occupied[i])
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    // GAP-2: the runtime brake target / parked position of a parkingArea stop. If it has already
+    // claimed a lot, that lot's LotPosition (fixed for the rest of the stop); otherwise the lowest
+    // currently-free lot's LotPosition -- the provisional target a still-approaching vehicle brakes
+    // toward. Returns null iff the area is full and this stop has not yet claimed a lot, in which
+    // case the caller makes the vehicle wait short of the area (SUMO's "no free position" path).
+    private double? ParkingStopEndPos(StopRuntime stop)
+    {
+        if (stop.ParkingAreaId is not { } areaId || !_parkingAreasById.TryGetValue(areaId, out var pa))
+        {
+            return stop.EndPos;
+        }
+
+        var lot = stop.AssignedLot >= 0 ? stop.AssignedLot : LowestFreeParkingLot(areaId);
+        return lot >= 0 ? pa.LotPosition(lot) : null;
+    }
+
+    // GAP-2: claim the lowest free lot of this parking stop's area for the vehicle that just parked,
+    // recording the lot on the stop (so it can be freed exactly on pull-out) and pinning EndPos to
+    // that lot's position. Runs only in Execute, in the engine's deterministic per-step order.
+    private void ClaimParkingLot(StopRuntime stop)
+    {
+        if (stop.ParkingAreaId is not { } areaId
+            || !_parkingAreasById.TryGetValue(areaId, out var pa)
+            || !_parkingLotOccupied.TryGetValue(areaId, out var occupied))
+        {
+            return;
+        }
+
+        var lot = LowestFreeParkingLot(areaId);
+        if (lot < 0)
+        {
+            // The reached-gate (ProcessNextStop) only lets a stop latch Reached when a lot is free,
+            // so this is unreachable in practice; guarded defensively rather than corrupting state.
+            return;
+        }
+
+        occupied[lot] = true;
+        stop.AssignedLot = lot;
+        stop.EndPos = pa.LotPosition(lot);
+    }
+
+    // GAP-2: return this stop's claimed lot to its area's free-set (MSParkingArea::leaveFrom) when the
+    // vehicle pulls out. Idempotent and safe for an unclaimed stop.
+    private void FreeParkingLot(StopRuntime stop)
+    {
+        if (stop.AssignedLot >= 0
+            && stop.ParkingAreaId is { } areaId
+            && _parkingLotOccupied.TryGetValue(areaId, out var occupied)
+            && stop.AssignedLot < occupied.Length)
+        {
+            occupied[stop.AssignedLot] = false;
+        }
+
+        stop.AssignedLot = -1;
     }
 
     // SUMOSHARP-API.md §9: load a network WITHOUT any demand -- the "start empty and spawn everything at
@@ -1762,12 +1816,17 @@ public sealed partial class Engine : IEngine
                 {
                     LaneId = stopDef.LaneId,
                     StartPos = stopDef.StartPos,
+                    // GAP-2: for a parkingArea stop EndPos is resolved at runtime (LotPosition of the
+                    // lot claimed when the vehicle parks), so stopDef.EndPos is a load-time placeholder
+                    // (0) here -- StopLineConstraint/Execute overwrite it. Plain lane stops keep the
+                    // load-resolved endPos exactly.
                     EndPos = stopDef.EndPos,
                     Duration = stopDef.Duration,
                     // GAP-3: StopDef.ParkingAreaId survives ResolveParkingAreaStop's `with` rewrite
                     // (only LaneId/StartPos/EndPos are overridden there), so this is non-null iff the
                     // ORIGINAL XML was `<stop parkingArea=...>` -- never true for a plain lane stop.
                     IsParking = stopDef.ParkingAreaId is not null,
+                    ParkingAreaId = stopDef.ParkingAreaId,
                 });
             }
 
@@ -3251,13 +3310,42 @@ public sealed partial class Engine : IEngine
     private double BasePos(VehicleRuntime v, Lane lane)
     {
         double result = Math.Min(v.VType.Length + PositionEps, lane.Length);
+        // Cap to the first scheduled stop's endPos only for a PLAIN lane stop on the depart edge --
+        // a parkingArea stop's endPos is resolved at runtime (GAP-2, deferred to 0 at load), so it
+        // cannot cap here; SUMO's basePos cap for a parking first-stop on the depart edge is an
+        // unsupported edge case (no committed scenario nor the box exercises it -- the box's base
+        // vehicles reach their parkingArea on a LATER edge).
         if (v.Def.Stops.Count > 0
+            && v.Def.Stops[0].ParkingAreaId is null
             && _network!.LanesById.TryGetValue(v.Def.Stops[0].LaneId, out var stopLane)
             && stopLane.EdgeId == lane.EdgeId)
         {
             result = Math.Min(result, Math.Max(0.0, v.Def.Stops[0].EndPos));
         }
         return result;
+    }
+
+    // GAP-2: the insertion position for a departPos="stop" vehicle. If the first stop is a plain
+    // lane <stop> on the insertion lane, MSLane::insertVehicle places the vehicle at MAX(0, endPos).
+    // If it is a parkingArea stop (an origin that is born already parked), the vehicle is placed at
+    // its LOT position -- the lowest currently-free lot (claimed for real once insertion succeeds,
+    // in TryInsertOnLane); an already-full area falls back to the area StartPos. Any other case
+    // (no first stop on this lane) falls back to BASE (0), exactly as before.
+    private double StopDepartInsertPos(VehicleRuntime v, Lane lane)
+    {
+        if (v.Def.Stops.Count == 0 || v.Def.Stops[0].LaneId != lane.Id)
+        {
+            return 0.0;
+        }
+
+        var s0 = v.Def.Stops[0];
+        if (s0.ParkingAreaId is { } areaId && _parkingAreasById.TryGetValue(areaId, out var pa))
+        {
+            var lot = LowestFreeParkingLot(areaId);
+            return lot >= 0 ? pa.LotPosition(lot) : Math.Max(0.0, pa.StartPos);
+        }
+
+        return Math.Max(0.0, s0.EndPos);
     }
 
     // MSLane::isInsertionSuccess's leader-gap check only (see InsertDepartingVehicles' header
@@ -3297,9 +3385,7 @@ public sealed partial class Engine : IEngine
         double insertPos = v.Def.DepartPos.Kind switch
         {
             DepartPosSpec.Given => v.Def.DepartPos.Literal,
-            DepartPosSpec.Stop => v.Def.Stops.Count > 0 && v.Def.Stops[0].LaneId == lane.Id
-                ? Math.Max(0.0, v.Def.Stops[0].EndPos)
-                : 0.0,
+            DepartPosSpec.Stop => StopDepartInsertPos(v, lane),
             // DepartPosDefinition::BASE -> MSBaseVehicle::basePos (MSBaseVehicle.cpp:1117): front
             // bumper at MIN(vType.Length + POSITION_EPS, lane.Length), capped to MAX(0, endPos) of
             // the first scheduled stop WHEN that stop is on the depart edge (myStops.front().edge ==
@@ -3405,6 +3491,19 @@ public sealed partial class Engine : IEngine
         // GAP-2: remember the resolved depart position for the WHOLE trip (Kinematics.Pos itself
         // advances/wraps as the vehicle moves) -- see VehicleRuntime.DepartPosResolved's own comment.
         v.DepartPosResolved = insertPos;
+
+        // GAP-2: a departPos="stop" origin whose first stop is a parkingArea is born already parked
+        // at its lot -- claim the lot NOW (insertion is a structural/Execute-phase mutation, so this
+        // is safe) so that (a) a second same-step origin sees it taken and lands on the next lot, and
+        // (b) the step-1 Reached transition finds AssignedLot already set and does not re-claim. The
+        // insertPos above was resolved from the SAME lowest-free lot, so position and claim agree.
+        if (isStopDepart
+            && v.Def.Stops[0].ParkingAreaId is not null
+            && GetStops(v) is { Count: > 0 } insStops
+            && insStops.Peek() is { IsParking: true, AssignedLot: < 0 } originStop)
+        {
+            ClaimParkingLot(originStop);
+        }
         // GAP-2 follow-up: seed the running routeLength accumulator at -departPos (SUMO's
         // MSDevice_Tripinfo myRouteLength at NOTIFICATION_DEPARTED) -- see RouteDistanceTraveled.
         v.RouteDistanceTraveled = -insertPos;
@@ -5926,9 +6025,22 @@ public sealed partial class Engine : IEngine
         // pos=205 settles at 204.999, not 205.000 -- reproduced ONLY once this eps term is dropped
         // for IsParking stops). Gated on stop.IsParking (false for every plain lane stop), so
         // byte-identical for every pre-GAP-3 scenario.
-        var newStopDist = stop.IsParking
-            ? stop.EndPos - v.Kinematics.Pos
-            : stop.EndPos + KraussModel.NumericalEps - v.Kinematics.Pos;
+        // GAP-2: a parkingArea stop's brake target is resolved at runtime -- ParkingStopEndPos gives
+        // the claimed lot's position, or (while still approaching) the lowest currently-free lot's
+        // position. If the area is FULL and no lot is claimed yet it returns null: the vehicle brakes
+        // to the area's StartPos and waits there (SUMO's "no free position" path) until a lot frees.
+        // For the committed single-occupant goldens the lowest-free lot at every approach step equals
+        // the old static index, so this is byte-identical.
+        double newStopDist;
+        if (stop.IsParking)
+        {
+            var parkTarget = ParkingStopEndPos(stop);
+            newStopDist = (parkTarget ?? stop.StartPos) - v.Kinematics.Pos;
+        }
+        else
+        {
+            newStopDist = stop.EndPos + KraussModel.NumericalEps - v.Kinematics.Pos;
+        }
         // MSVehicle.cpp:2191 `vMinComfortable = cfModel.minNextSpeed(getSpeed())` -- virtual;
         // IDM overrides minNextSpeed (see IdmModel.MinNextSpeed's own header comment), so this
         // dispatches too, not just the stopSpeed call below. C11-iv: IDMM shares MSCFModel_IDM's
@@ -7455,7 +7567,13 @@ public sealed partial class Engine : IEngine
         var reachedThreshold = stop.StartPos - KraussModel.NumericalEps;
         if (v.Kinematics.Pos >= reachedThreshold
             && currentVelocity <= 0.0 + KraussModel.HaltingSpeed
-            && v.LaneId == stop.LaneId)
+            && v.LaneId == stop.LaneId
+            // GAP-2: a parkingArea stop can only be "reached" (parked) if a lot is actually free (or
+            // already claimed). If the area is full the vehicle has braked to StartPos and simply
+            // waits here -- it must NOT latch Reached, else it would "park on air" and hold a lot it
+            // never got. ParkingStopEndPos returns non-null iff a lot is available. Non-parking stops
+            // and available-lot parking stops keep the exact pre-GAP-2 behavior (byte-identical).
+            && (!stop.IsParking || ParkingStopEndPos(stop) is not null))
         {
             // MSVehicle.cpp:1808/1824: stop.reached = true; stop.duration = getMinDuration(time)
             // -- no until/ended modeled, so getMinDuration is just the configured duration
@@ -8884,11 +9002,24 @@ public sealed partial class Engine : IEngine
                     if (resumedStop.IsParking)
                     {
                         v.IsParked = false;
+                        // GAP-2: the lot is now free for the next arrival (MSParkingArea::leaveFrom).
+                        FreeParkingLot(resumedStop);
                     }
                 }
                 else
                 {
                     var stop = stops.Peek();
+                    // GAP-2: claim the lot the FIRST step this parking stop latches Reached (the
+                    // vehicle has actually parked). LowestFreeParkingLot picks the lowest free lot at
+                    // this instant (MSParkingArea::computeLastFreePos); the reached-gate in
+                    // ProcessNextStop guarantees a lot is free here. Guarded on AssignedLot < 0 so the
+                    // subsequent "still holding" steps (which also carry Reached=true) don't re-claim,
+                    // and so a departPos="stop" origin that already claimed at insertion is untouched.
+                    if (stop.IsParking && stop.AssignedLot < 0 && !stop.Reached)
+                    {
+                        ClaimParkingLot(stop);
+                    }
+
                     stop.Reached = stopUpdate.Reached;
                     stop.RemainingDuration = stopUpdate.RemainingDuration;
                     // GAP-3: this arm only ever sets Reached=true (see StopTransition's two
@@ -9977,8 +10108,17 @@ public sealed partial class Engine : IEngine
             {
                 stopLaneOverride = stopLane.Index;
                 // MSLCM_LC2013.cpp:1167 driveToNextStop = myVehicle.nextStopDist() -- the
-                // remaining lane-relative distance to the stop's braking position.
-                stopDistOverride = frontStop.EndPos - v.Kinematics.Pos;
+                // remaining lane-relative distance to the stop's braking position. GAP-2: a
+                // parkingArea stop's braking position is resolved at runtime (ParkingStopEndPos =
+                // the claimed-or-lowest-free lot's position); frontStop.EndPos is a load-time
+                // placeholder (0) for it and must NOT be read directly here, else the distance goes
+                // negative and the lane-change-toward-stop fires one step early (scenario 69). For
+                // the committed single-occupant goldens the lowest-free lot == the old static index,
+                // so this is byte-identical.
+                var stopTarget = frontStop.IsParking
+                    ? ParkingStopEndPos(frontStop) ?? frontStop.StartPos
+                    : frontStop.EndPos;
+                stopDistOverride = stopTarget - v.Kinematics.Pos;
             }
         }
 
