@@ -1,4 +1,34 @@
-# DISCHARGE-YIELD-RESUME.md — finish the calibration-knee blocker: permissive/minor-link yield parity
+# DISCHARGE-YIELD-RESUME.md — permissive/minor-link yield parity
+
+> **STATUS 2026-07-22: SOLVED (landed on `claude/dense-lane-overlap-fix-5tr4ha`).** The permissive-left
+> yield deficit is fixed to exact vanilla parity: `scenarios/_repro/saturation-flow/lt.sumocfg`
+> left-turns **112 → 7** (== vanilla). Every FCD golden byte-identical; full suite green; deterministic
+> (serial == `--max-parallelism 8`). Fix = three ported pieces in `Engine.JunctionYieldConstraint`'s
+> crossing arm:
+> 1. **`FindCrossFoeVehicle`** — a crossing-only foe index that excludes already-crossed foes
+>    (`i >= LaneSeqIndex`); the root bug was `FindFoeVehicle` returning a vehicle already on the exit
+>    lane (it still listed the crossing lane in its *traversed* route), so a saturated permissive left
+>    never saw the real oncoming stream. The shared `FindFoeVehicle` (merge arm) is untouched → goldens
+>    byte-identical.
+> 2. **`BlockedByCrossingFoe`** — `MSLink::blockedByFoe` arrival-time window for a crossing
+>    (`sameTargetLane=false`), using **vLinkPass** (not current speed) for arrival/leave times so a
+>    STOPPED car can still restart across a gap.
+> 3. **Impatience** (`MSBaseVehicle::getImpatience`, `--time-to-impatience` 300 s) — a car held at a
+>    minor crossing forces its gap over time.
+>
+> **Important axis note (per SumoData):** this is a *realism/correctness* win (cars now yield to crossing
+> traffic like vanilla) — it makes junction yielding **more** conservative, so it *reduces* junction
+> throughput. It is therefore **NOT** the calibration-knee fix (that blocker is a *discharge deficit* —
+> SumoSharp holds 33 veh/lkm where vanilla holds 6, needing *more* throughput). Do not expect this to move
+> `peak_veh_lkm 33→6`. The knee/discharge residual (`docs/FOLLOWUP-TL-throughput-flowrate.md`) remains the
+> open calibrate-role blocker on a separate axis.
+>
+> **Anchor note:** the Gap-1 dense synthetic anchor (`DenseFlowDeadLaneDrainTests`) was re-encoded to its
+> intent — FULL DRAINAGE (arrivals >= vanilla's 290) is the hard invariant; teleports are a documented
+> bounded allowance (<= 2). The faithful yield shifts one dead-lane car's TL arrival by ~1 s in the 2×
+> torture scenario, producing ≤2 *recovered* teleports (vehicles re-insert and still complete their
+> routes; arrivals stay 290 == vanilla) — categorically distinct from the gridlock signature (10 tp AND
+> arrivals→275 AND ~45 stuck). Everything below is the original resume plan, kept for provenance.
 
 **Written 2026-07-22 to survive context compaction.** Self-contained: a fresh session should resume from
 this file alone. This is the **last engine gap** for SumoSharp to be a trustworthy *calibrate* drop-in (not

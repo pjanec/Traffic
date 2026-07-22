@@ -45,8 +45,22 @@ bug that reads as "16× too many" in isolation reads as "27% too few through-tri
 under load. **To confirm:** a saturated CONFLICTING-movements micro-benchmark (two crossing saturated flows
 with keep-clear), and/or SumoData's box-crop pipeline after the yield fix.
 
-## Next step
-Port `MSLink::havePriority()` (live signal/RoW state) into the cautious-approach / gap-acceptance arm so a
-permissive-`g` movement yields like vanilla. Parity gate: base straight-through stays 98–100%; every committed
-golden byte-identical (the priority/onramp goldens 11/19 exercise this arm — do not regress). Then re-measure
-`lt.sumocfg` (target: left-turns ≈ vanilla's 7, not 112) and hand back to SumoData's pipeline.
+## RESOLUTION (2026-07-22 — SOLVED)
+`lt.sumocfg` permissive left-turns **112 → 7 = exact vanilla parity**; `sat`/`sat2` straight-through
+unchanged (147/297); every FCD golden byte-identical; full suite green; deterministic. The mechanism was
+NOT `havePriority()` (that classification was already correct) — it was **foe SELECTION + missing
+arrival-time gap acceptance**:
+- **Root bug:** `FindFoeVehicle` returned a foe that had ALREADY crossed (now on the exit lane but still
+  listing the crossing lane in its *traversed* route), so a saturated permissive left never saw the real
+  approaching stream and blasted through (112). Fixed with **`FindCrossFoeVehicle`**, a crossing-only foe
+  index excluding already-crossed foes (`i >= LaneSeqIndex`); the shared merge-arm `FindFoeVehicle` is
+  untouched → goldens byte-identical.
+- **Gap acceptance:** ported `MSLink::blockedByFoe`'s arrival-time window (**`BlockedByCrossingFoe`**,
+  `sameTargetLane=false`) using **vLinkPass** (not current speed, so a stopped car can restart across a
+  gap), plus **impatience** (`getImpatience`, `--time-to-impatience` 300 s).
+
+**Axis caveat (SumoData):** this is a realism win that makes yielding MORE conservative → it *reduces*
+junction throughput, so it is on a DIFFERENT axis from the calibration knee (a *discharge deficit* needing
+MORE throughput). It won't move `peak_veh_lkm 33→6`; the discharge residual
+(`docs/FOLLOWUP-TL-throughput-flowrate.md`) is still the open calibrate-role blocker. Full write-up +
+resume: `docs/DISCHARGE-YIELD-RESUME.md` (header marked SOLVED).

@@ -470,6 +470,19 @@ public sealed partial class Engine : IEngine
     private VehicleRuntime?[] _foeApproachFirst = Array.Empty<VehicleRuntime?>();
     private VehicleRuntime?[] _foeApproachSecond = Array.Empty<VehicleRuntime?>();
 
+    // Yield-parity (crossing arm only): a SECOND foe index that, unlike _foeApproachFirst/Second,
+    // registers a vehicle for an internal lane ONLY while that lane is still at or ahead of the
+    // vehicle's own current position (i >= LaneSeqIndex) -- i.e. it excludes foes that have ALREADY
+    // crossed the lane and are now downstream on an exit lane. FindFoeVehicle (the shared index above)
+    // deliberately keeps its full-route behaviour so the sameTarget-MERGE arm stays byte-identical;
+    // only the crossing-foe arm of JunctionYieldConstraint reads this cleared-excluding index, via
+    // FindCrossFoeVehicle. In a FIFO approach the oldest still-approaching vehicle is the nearest to
+    // the junction, so the first-two-by-iteration order resolves to the nearest/second-nearest LIVE
+    // foe -- the fix for a saturated permissive crossing whose real approaching stream was masked by a
+    // long-departed vehicle that still listed the lane in its (already-traversed) route.
+    private VehicleRuntime?[] _foeCrossFirst = Array.Empty<VehicleRuntime?>();
+    private VehicleRuntime?[] _foeCrossSecond = Array.Empty<VehicleRuntime?>();
+
     // Perf (Export-phase parallelism): a reusable, index-keyed buffer for the parallel EmitTrajectory
     // branch. Emit's per-vehicle cost is the LaneGeometry.PositionAtOffset trig, which reads only
     // immutable geometry + the vehicle's OWN settled Kinematics -- independent per vehicle, so it is
@@ -1547,6 +1560,8 @@ public sealed partial class Engine : IEngine
         _isInternalLane = new bool[laneCount];
         _foeApproachFirst = new VehicleRuntime?[laneCount];
         _foeApproachSecond = new VehicleRuntime?[laneCount];
+        _foeCrossFirst = new VehicleRuntime?[laneCount];
+        _foeCrossSecond = new VehicleRuntime?[laneCount];
         for (var h = 0; h < laneCount; h++)
         {
             _isInternalLane[h] = _network.LanesByHandle[h].Id.StartsWith(':');
@@ -6734,7 +6749,7 @@ public sealed partial class Engine : IEngine
                 constraint = Math.Min(constraint, extConstraint);
             }
 
-            var foe = FindFoeVehicle(v, foeInternalLaneHandle);
+            var foe = FindCrossFoeVehicle(v, foeInternalLaneHandle);
             if (foe is null)
             {
                 continue;
@@ -6823,7 +6838,58 @@ public sealed partial class Engine : IEngine
                 // NOT stop-line-yield to an approaching foe (the signal already resolved the conflict --
                 // the foe on the conflicting movement is red). Only the APPROACHING stop-line yield is
                 // gated; the on-junction AdaptToJunctionLeader branch above is car-following, untouched.
-                var takesCrossingYield = !(egoOnInternal || foeWillNotPass || foeNotApproaching || foeYieldsThisStep || ignoresFoe || egoHasSignalPriority);
+                // Arrival-time gap acceptance (MSLink::blockedByFoe crossing arm, sameTargetLane=false):
+                // even when a foe is approaching within reservation range and will pass, ego may cross
+                // if the foe's arrival window does not overlap ego's junction-occupancy window -- the
+                // SAME window the sameTarget-merge PHASE-0 arm above applies, for a crossing (no
+                // merge-speed checks). Without it the crossing arm blanket-yields to every approaching
+                // foe, so a permissive left never finds a gap in dense oncoming (the `lt` saturation
+                // benchmark: 1 left-turn vs vanilla's 7) and a saturated grid mutually over-yields into
+                // gridlock. Snapshot-only (positions/speeds, never a foe's WillPass), so it evaluates
+                // identically in the pre-pass and the real pass and introduces no new circularity.
+                // Arrival/leave estimated at constant current speed, matching the verified merge arm.
+                var egoInternalLaneCross = _network.LanesById[egoInternalLaneId];
+                var foeInternalLaneCross = _network.LanesByHandle[foeInternalLaneHandle];
+                // vLinkPass (MSVehicle::planMoveInternal): each vehicle's arrival/leave time is computed
+                // from the speed it PLANS to pass the link at (capped by the internal lane's speed
+                // limit and its own maxSpeed), NOT its current speed. This is load-bearing: a vehicle
+                // STOPPED at a minor-link stop line has current speed ~0, so dividing the traversal
+                // distance by the current speed would make its leave time ~infinite -> its occupancy
+                // window would never clear -> it could never restart across ANY gap (the dense
+                // synthetic's 11 yield-teleports: cars that correctly stopped at a minor link then
+                // waited forever). SUMO's getLeaveTime divides by 0.5*(arrivalSpeed+leaveSpeed) with
+                // those being vLinkPass, giving a finite crossing time. MinimalArrivalTime already
+                // accounts for accelerating from the current speed up to the pass speed over `seen`.
+                var egoPassSpeed = Math.Min(v.VType.MaxSpeed, egoInternalLaneCross.Speed);
+                var foePassSpeed = Math.Min(foe.VType.MaxSpeed, foeInternalLaneCross.Speed);
+                var egoSpeedCross = v.Kinematics.Speed;
+                var foeSpeedCross = foe.Kinematics.Speed;
+                var foeSeenCross = SeenToInternalLaneEntry(foe, foeInternalLaneHandle);
+                var egoArrivalCross = KraussModel.MinimalArrivalTime(egoDistToEntry, egoSpeedCross, egoPassSpeed, v.VType);
+                var foeArrivalCross = KraussModel.MinimalArrivalTime(foeSeenCross, foeSpeedCross, foePassSpeed, foe.VType);
+                var egoLeaveCross = egoArrivalCross + (egoInternalLaneCross.Length + v.VType.Length)
+                    / Math.Max(egoPassSpeed, KraussModel.NumericalEps);
+                var foeLeaveCross = foeArrivalCross + (foeInternalLaneCross.Length + foe.VType.Length)
+                    / Math.Max(foePassSpeed, KraussModel.NumericalEps);
+                // Impatience (MSBaseVehicle::getImpatience): a vehicle held at a minor/permissive
+                // crossing grows impatient with continuous WaitingTime and eventually forces its gap by
+                // assuming the foe brakes for it -- SUMO's --time-to-impatience (default 300 s). Without
+                // it, a saturated permissive crossing yields FOREVER (the dense synthetic: a queued
+                // left-turner waits past time-to-teleport=120 s and teleports, while vanilla's impatient
+                // front car crosses by ~73 s and drains the queue). Base vType impatience defaults to 0
+                // (not parsed), so impatience == WaitingTime/300 clamped to [0,1] -- exactly 0 for any
+                // vehicle that has not been continuously waiting, keeping every low-density golden inert.
+                var egoImpatience = Math.Max(0.0, Math.Min(1.0, v.WaitingTime / 300.0));
+                // Relax only in the real pass, exactly like foeYieldsThisStep: the pre-pass keeps the
+                // blanket yield so it computes each vNext (hence WillPass) without this refinement --
+                // the same circularity-breaking approximation C4-viii relies on. A pre-pass crossing
+                // yield sets CrossingYieldTaken below, which forces the real pass to recompute this
+                // vehicle and apply the window there.
+                var crossingWindowClear = !prePass && !BlockedByCrossingFoe(
+                    egoArrivalCross, egoLeaveCross, foeArrivalCross, foeLeaveCross,
+                    egoImpatience, foeSeenCross, foe.VType.Decel, actionStepLengthSecs);
+
+                var takesCrossingYield = !(egoOnInternal || foeWillNotPass || foeNotApproaching || foeYieldsThisStep || ignoresFoe || egoHasSignalPriority || crossingWindowClear);
                 // Perf (willPass/plan fusion): a finite approaching-foe crossing yield taken in the
                 // pre-pass is the ONLY thing the real pass can relax (via `!foe.WillPass`), so flag it
                 // -- PlanMovements must then RECOMPUTE this vehicle rather than reuse the pre-pass
@@ -7481,6 +7547,94 @@ public sealed partial class Engine : IEngine
         return true;
     }
 
+    // Arrival-time RoW for a CROSSING conflict (MSLink::blockedByFoe, MSLink.cpp:978-1010, the
+    // sameTargetLane==false path). Identical window logic to BlockedByMergeFoe but WITHOUT the
+    // merge-speed `unsafeMergeSpeeds` checks -- those are guarded by `if (sameTargetLane && ...)` in
+    // the source and so never fire for a pure crossing (the two vehicles occupy the junction interior
+    // at different points, they do not merge into one lane). ego occupies its internal lane during
+    // [egoArrival, egoLeave]; the foe during [foeArrival, foeLeave]; lookAhead == jmTimegapMinor,
+    // default MSLink::myLookaheadTime = TIME2STEPS(1) = 1.0 s. Blocked iff the windows overlap:
+    //   - foe leaves before ego arrives  -> ego is pure follower, foe already cleared -> NOT blocked.
+    //   - foe arrives > lookAhead after ego leaves -> ego is pure leader, clears in time -> NOT blocked.
+    //   - otherwise the occupancy windows overlap -> hard conflict -> blocked.
+    // This is the piece the crossing-foe arm of JunctionYieldConstraint was missing: SUMO's permissive
+    // left / minor crossing does NOT stop-line-yield to every approaching foe within reservation range
+    // -- it yields only when the foe's arrival window actually conflicts, letting a vehicle cross an
+    // adequate gap (the saturation-flow `lt` benchmark: vanilla 7 left-turns, not the 112 a blanket
+    // reservation yield produced).
+    private static bool BlockedByCrossingFoe(
+        double egoArrival, double egoLeave, double foeArrival, double foeLeave,
+        double impatience, double foeDist, double foeMaxDecel, double stepLen)
+    {
+        const double lookAhead = 1.0;
+
+        // Impatience blend (MSLink::blockedByFoe, MSLink.cpp:952-957): when ego arrives BEFORE the foe,
+        // an impatient ego assumes the foe brakes for it, so the foe's EFFECTIVE arrival is pushed
+        // later (a linear blend toward the braking arrival time by `impatience`). Inert when
+        // impatience == 0 (the default for any non-waiting vehicle) -> byte-identical to the pure
+        // window for every low-density golden.
+        var effFoeArrival = foeArrival;
+        if (impatience > 0.0 && egoArrival < foeArrival)
+        {
+            var fatb = ComputeFoeArrivalTimeBraking(egoArrival, foeArrival, impatience, foeDist, foeMaxDecel, stepLen);
+            effFoeArrival = ((1.0 - impatience) * foeArrival) + (impatience * fatb);
+        }
+
+        if (foeLeave < egoArrival)
+        {
+            return false;
+        }
+
+        if (effFoeArrival > egoLeave + lookAhead)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    // MSLink::computeFoeArrivalTimeBraking (MSLink.cpp:1017-1055) in relative seconds. The time the
+    // foe would arrive at the conflict if it braked at `foeMaxDecel * impatience` from ego's arrival
+    // onward. Used only by the impatience blend above (impatience > 0, egoArrival < foeArrival), so
+    // inert for every scenario in which no crossing vehicle has been waiting. `fasb`
+    // (foeArrivalSpeedBraking) in the source feeds only the sameTargetLane merge-speed check, which a
+    // crossing (sameTargetLane == false) never runs, so it is dropped here.
+    private static double ComputeFoeArrivalTimeBraking(
+        double egoArrival, double foeArrival, double impatience, double dist, double foeMaxDecel, double stepLen)
+    {
+        // foe enters the junction in the same step as ego -> no braking benefit.
+        if (Math.Floor(egoArrival / stepLen) == Math.Floor(foeArrival / stepLen))
+        {
+            return foeArrival;
+        }
+
+        var m = foeMaxDecel * impatience;
+        if (m <= 0.0)
+        {
+            return foeArrival;
+        }
+
+        var dt = foeArrival - egoArrival;
+        var d = dt * m;
+        var a = dt * d / 2.0;
+        var v = dist / Math.Max(foeArrival, KraussModel.NumericalEps);
+        var dist2 = dist - (v * Math.Max(0.0, egoArrival - stepLen));
+        if (0.5 * v * v / m <= dist2)
+        {
+            // foe can brake to a stop before reaching the conflict -> effectively won't arrive soon.
+            return foeArrival + 30.0;
+        }
+
+        var disc = (4.0 * (v - d) * (v - d)) - (8.0 * m * a);
+        if (disc < 0.0)
+        {
+            return foeArrival;
+        }
+
+        var x = ((Math.Sqrt(disc) * -0.5) - d + v) / m;
+        return foeArrival + x;
+    }
+
     // C4-v: the static (egoLbc, foeLbc) lengthBehindCrossing for a sameTarget merge pair
     // (computed once at ingest -- MergeConflict). (0, 0) when no MergeConflict is recorded for this
     // pair (a dummy merge, or geometry that produced none), matching the pre-C4-v approximation.
@@ -7645,6 +7799,22 @@ public sealed partial class Engine : IEngine
         return ReferenceEquals(first, ego) ? _foeApproachSecond[foeInternalLaneHandle] : first;
     }
 
+    // Yield-parity crossing-arm foe lookup: same "first distinct non-ego vehicle" contract as
+    // FindFoeVehicle, but over the cleared-excluding _foeCrossFirst/Second index -- so a foe that has
+    // already crossed this internal lane (now downstream) is not returned, and the crossing arm sees
+    // the real approaching stream instead. Used ONLY by JunctionYieldConstraint's crossing-foe arm;
+    // the sameTarget-MERGE arm keeps FindFoeVehicle (full route) for byte-identical parity.
+    private VehicleRuntime? FindCrossFoeVehicle(VehicleRuntime ego, int foeInternalLaneHandle)
+    {
+        var first = _foeCrossFirst[foeInternalLaneHandle];
+        if (first is null)
+        {
+            return null;
+        }
+
+        return ReferenceEquals(first, ego) ? _foeCrossSecond[foeInternalLaneHandle] : first;
+    }
+
     // Perf (super-linear fix): fill _foeApproachFirst/Second for this step -- for every internal lane
     // handle, the FIRST TWO distinct active vehicles (in _vehicles iteration order) whose remaining
     // lane sequence contains it. Reproduces FindFoeVehicle's former per-call scan order exactly, but
@@ -7654,6 +7824,8 @@ public sealed partial class Engine : IEngine
     {
         Array.Clear(_foeApproachFirst, 0, _foeApproachFirst.Length);
         Array.Clear(_foeApproachSecond, 0, _foeApproachSecond.Length);
+        Array.Clear(_foeCrossFirst, 0, _foeCrossFirst.Length);
+        Array.Clear(_foeCrossSecond, 0, _foeCrossSecond.Length);
         foreach (var v in ActiveVehicles())
         {
             // GAP-3 follow-up (ISSUE2-JUNCTION-KEEPCLEAR-DESIGN.md): a parked (park-and-stay) vehicle
@@ -7676,6 +7848,8 @@ public sealed partial class Engine : IEngine
                     continue;
                 }
 
+                // Shared index (FindFoeVehicle): full route, unchanged -- keeps the sameTarget-MERGE
+                // arm and every committed golden byte-identical.
                 if (_foeApproachFirst[h] is null)
                 {
                     _foeApproachFirst[h] = v;
@@ -7683,6 +7857,25 @@ public sealed partial class Engine : IEngine
                 else if (_foeApproachSecond[h] is null && !ReferenceEquals(_foeApproachFirst[h], v))
                 {
                     _foeApproachSecond[h] = v;
+                }
+
+                // Crossing-only index (FindCrossFoeVehicle): register only while this internal lane is
+                // still AT OR AHEAD of the vehicle's own position (i >= LaneSeqIndex) -- a vehicle that
+                // has already crossed it (now downstream on an exit lane) is no longer an approaching
+                // foe (SUMO's removeApproaching), so it must not mask the real stream behind it. This
+                // is what a permissive/minor crossing yields against; in a FIFO approach the oldest
+                // still-approaching vehicle is the nearest to the junction, so first-two order gives
+                // the nearest/second-nearest live foe. See the _foeCrossFirst/Second field comment.
+                if (i >= v.LaneSeqIndex)
+                {
+                    if (_foeCrossFirst[h] is null)
+                    {
+                        _foeCrossFirst[h] = v;
+                    }
+                    else if (_foeCrossSecond[h] is null && !ReferenceEquals(_foeCrossFirst[h], v))
+                    {
+                        _foeCrossSecond[h] = v;
+                    }
                 }
             }
         }
