@@ -158,6 +158,16 @@ connectors — to see what breaks (the grid is very regular; real nets aren't).
 may need the temporal-smoothing upgrade noted in §5.13 if the guard rejects too often and the front reverts
 to reactive tracking on a curve).
 
+### IG consumption models: interpolate (buffered) vs extrapolate (zero-latency DR)
+`IGBRIDGE_EXTRAP=1` renders the buffered **interpolating** IG (0.75 s playout delay) against a zero-latency
+**extrapolating** IG on the same stream (`FakeIgConfig.Extrapolate`): the extrapolating IG dead-reckons
+forward from the last received sample with a constant-speed constant-yaw-rate coordinated-turn model
+(speed+yaw estimated from the last two samples). Consumer-side only — emitted trace byte-identical. Finding:
+zero latency is nearly free at a high emit rate and pays at a low one; the DR lead/snap error ≈ speed·emit
+interval, concentrated at turns (straight-line DR is exact). DR-error max **0.30 m @20 Hz, 0.57 @10 Hz, 1.22
+@5 Hz, 2.87 @2 Hz**; extrap lat-accel runs ~2–4× the interpolated (the per-update correction snaps). So for
+the low-latency default, keep the emit rate up (≥10–20 Hz) and the snaps stay sub-metre / invisible.
+
 ## Future work (owner-requested, parked — do when scheduled, not now)
 
 ### F1 — One reusable SumoSharp visualization tool (consolidate the ad-hoc players)
