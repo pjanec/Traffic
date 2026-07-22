@@ -58,6 +58,7 @@ SumoSharp can eventually calibrate *itself*.
 | `scenarios/_repro/saturation-flow/` | per-movement discharge: straight (parity) vs permissive-left | ✅ `lt` 112→7 |
 | `scenarios/_repro/sustained-box/` | sustained-load grid — **UNFAITHFUL** (no connectivity asymmetry) | ⚠️ reports parity even when the real box blows up; kept + labeled as a lesson |
 | `scenarios/_repro/signalized-asymmetry/` | **faithful** knee repro: 3-way/4-way TL asymmetry, arrival-edge backup | ✅ 2.45×→1.01× after the fix |
+| `scenarios/_repro/parking-maneuver/` | SumoData's parking-maneuver hypothesis (maneuver + capacity-fill sink) | ❌ NOT the knee — SumoSharp *under*-accumulates at parking (opposite direction); found 2 wrong-direction fidelity bugs |
 
 Anchor tests: `tests/Sim.ParityTests/DenseFlowDeadLaneDrainTests.cs` (Gap-1, intent-encoded: arrivals ≥ 290
 hard, teleports ≤ 2 documented), plus the full byte-identical golden suite (657 parity + 227 pedestrian).
@@ -65,8 +66,16 @@ hard, teleports ≤ 2 documented), plus the full byte-identical golden suite (65
 ## Current open state (2026-07-22)
 - **Landed & pushed** on `claude/dense-lane-overlap-fix-5tr4ha`: Gap-1, Stage-4, parking, permissive-yield
   (`f69a58d`), sustained-box witness (`2c00179`), **arrival-TL discharge fix** (`ca8d515`).
-- **Waiting on SumoData** to re-run the real sub-area calibration on `ca8d515` (the arrival-TL fix) and
-  report the new `peak_veh_lkm` / overshoot. Expectation: the 5.5× drops substantially.
+- **SumoData re-ran `ca8d515`:** it's a real fix to KEEP, but did NOT drop their box overshoot (marginally
+  worse — a *knee-selection artifact*: faster probes → higher selected knee → bigger served overshoot; so
+  "made probes flow" ≠ "fixed the knee"). Their box's blocker is in the `auto_parking` demand (vehicles
+  arrive off-lane at parkingAreas, so the arrival-TL bug mostly doesn't apply).
+- **Parking-maneuver hypothesis tested → NOT the blocker** (`parking-maneuver/`): SumoSharp *under*-accumulates
+  at parking. The knee's over-accumulation remains unlocalized on a faithful offline repro.
+- **Waiting on SumoData's matched-demand re-localization** (parking-vs-TL hotspot breakdown) to name the
+  dominant post-arrival-fix hotspot before building the next repro. Rule: validate any knee-targeted fix at
+  the **served/sustained density**, never sparse-probe or one-shot flow (a local fix can improve those while
+  the sustained overshoot gets worse).
 - **If residual overshoot remains:** localize the next hotspot the same way — per-edge density over the
   overshoot window → find the pile → read the FCD to the causal mechanism → build/extend a faithful repro →
   port the SUMO exemption → verify goldens byte-identical.
