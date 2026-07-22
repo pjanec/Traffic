@@ -439,9 +439,12 @@
       var a = fa[i], b = fb[i];
       if (!a) { out.push(null); continue; }
       if (!b) {
-        // Present now, gone next step: hold only at/after the last step, else drop.
-        var heldFear = a.length >= 4 ? a[3] : undefined;
-        out.push(k === k2 ? { x: a[0], y: a[1], angle: a[2], speed: 0, fear: heldFear } : null);
+        // Present now, gone next step: hold only at/after the last step, else drop. A 4-tuple carries fear
+        // (panic-evac); a 5-tuple carries per-vehicle [length,width] (IgBridge mixed traffic) -- disjoint.
+        var heldFear = a.length === 4 ? a[3] : undefined;
+        var heldLen = a.length >= 5 ? a[3] : undefined;
+        var heldWid = a.length >= 5 ? a[4] : undefined;
+        out.push(k === k2 ? { x: a[0], y: a[1], angle: a[2], speed: 0, fear: heldFear, len: heldLen, wid: heldWid } : null);
         continue;
       }
       var p1 = [a[0], a[1]], p2 = [b[0], b[1]];
@@ -492,11 +495,16 @@
       var segDx = p2[0] - p1[0], segDy = p2[1] - p1[1];
       var speed = span > 1e-9 ? Math.sqrt(segDx * segDx + segDy * segDy) / span : 0;
 
-      // Fear (panic-evac only): 4th element on both endpoints -> linear-interpolate it the same way
-      // as position. Other scenes' entries stay 3-long, so fear is left undefined for them.
-      var fear = (a.length >= 4 && b.length >= 4) ? a[3] + (b[3] - a[3]) * frac : undefined;
+      // Fear (panic-evac only): EXACTLY-4-long entries -> linear-interpolate it the same way as position.
+      // 3-long entries have no fear; 5-long entries (IgBridge) carry [length,width], not fear.
+      var fear = (a.length === 4 && b.length === 4) ? a[3] + (b[3] - a[3]) * frac : undefined;
+      // Per-vehicle footprint (IgBridge mixed traffic): 5-long entries carry true [length,width] so a bus
+      // draws long and a car short. Constant per vehicle -> hold (no interpolation). Absent -> undefined
+      // (drawVehicle falls back to the scene's shared vdim, so City3D scenes are unchanged).
+      var len = (a.length >= 5) ? a[3] : undefined;
+      var wid = (a.length >= 5) ? a[4] : undefined;
 
-      out.push({ x: pos[0], y: pos[1], angle: angle, speed: speed, fear: fear });
+      out.push({ x: pos[0], y: pos[1], angle: angle, speed: speed, fear: fear, len: len, wid: wid });
     }
     return out;
   }
@@ -741,8 +749,11 @@
   // FRONT-CENTRE reference point; the box extends BACK by `length` along the heading. naviDegree
   // 0 = up-screen (+Y world), increasing clockwise -> ctx.rotate(angleRad - PI/2).
   function drawVehicle(v) {
-    var length = vdim[0] || 4.3;
-    var width = vdim[1] || 1.8;
+    // Per-vehicle footprint when the stream supplies it (IgBridge 5-tuples -> v.len/v.wid); otherwise the
+    // scene's shared vdim (City3D, panic-evac). The center->front anchor shift upstream uses the SAME length,
+    // so the drawn rect stays center-pivoted at whatever length (a 12 m bus swings its true body).
+    var length = (typeof v.len === "number" && v.len > 0) ? v.len : (vdim[0] || 4.3);
+    var width = (typeof v.wid === "number" && v.wid > 0) ? v.wid : (vdim[1] || 1.8);
     var p = worldToScreen(v.x, v.y);
     ctx.save();
     ctx.translate(p[0], p[1]);

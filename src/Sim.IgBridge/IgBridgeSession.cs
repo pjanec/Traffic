@@ -73,6 +73,12 @@ public sealed class IgBridgeSession
     // front pose with an extended length (PoseResolver already walks the upcoming lanes for the bumper).
     public double LookAheadMeters { get; set; }
 
+    // A longer vehicle should anticipate proportionally further ahead (a bus starts its swing earlier than a
+    // car). The effective look-ahead per vehicle is max(LookAheadMeters, LookAheadLengthFactor * length), so a
+    // ~5 m passenger stays at LookAheadMeters (0.5*5 = 2.5 < 3 -> unchanged, byte-identical to v4) while a 12 m
+    // bus aims ~6 m ahead. 0 keeps every vehicle on the flat LookAheadMeters.
+    public double LookAheadLengthFactor { get; set; } = 0.5;
+
     // Max plausible frame-to-frame change (deg/s) of the look-ahead predictor heading; a bigger jump is a
     // spurious cross-junction resolve and is rejected (falls back to the lane heading). A real 90° junction
     // turn ramps at ~100°/s, so this passes turns and rejects the ~tens-of-degrees blips.
@@ -238,9 +244,10 @@ public sealed class IgBridgeSession
             // whenever it JUMPS from the previously-used predictor heading faster than a plausible yaw rate —
             // that kills the transient spurious excursions while passing the smooth turn ramp. On reject we
             // fall back to the lane heading (and remember that), so a sustained bad reading stays rejected.
+            var effLookAhead = Math.Max(LookAheadMeters, LookAheadLengthFactor * dims.Length);
             float? predictHeading = null;
-            if (LookAheadMeters > 0.0
-                && TryLookAheadHeading(resolved.State, resolved.Upcoming, dims, frontX, frontY, upcoming, out var lah))
+            if (effLookAhead > 0.0
+                && TryLookAheadHeading(resolved.State, resolved.Upcoming, dims, frontX, frontY, effLookAhead, upcoming, out var lah))
             {
                 var prevUsed = _lookAheadPrev.TryGetValue(handle, out var pv) ? pv : laneHeading;
                 var jump = Math.Abs(((lah - prevUsed + 540f) % 360f) - 180f);
@@ -324,18 +331,19 @@ public sealed class IgBridgeSession
     // predictor direction. Returns false (caller falls back to the lane heading) if it can't be resolved or
     // the point is degenerate.
     private bool TryLookAheadHeading(DrState rawState, UpcomingLanes upcomingLanes,
-        (double Length, double Width) dims, double frontX, double frontY, Span<int> scratch, out float headingDeg)
+        (double Length, double Width) dims, double frontX, double frontY, double lookAheadMeters,
+        Span<int> scratch, out float headingDeg)
     {
         headingDeg = 0f;
-        if (LookAheadMeters <= 0.0)
+        if (lookAheadMeters <= 0.0)
         {
             return false;
         }
 
-        // Advance the front ARC position by LookAheadMeters (Pos is the front reference; Length only sets the
+        // Advance the front ARC position by lookAheadMeters (Pos is the front reference; Length only sets the
         // chord's back point, so extending it would NOT move the front forward). SampleForward walks into the
         // upcoming lanes, so past the junction this lands on the connecting-lane centerline.
-        var state = rawState with { Length = dims.Length, Width = dims.Width, Pos = rawState.Pos + LookAheadMeters };
+        var state = rawState with { Length = dims.Length, Width = dims.Width, Pos = rawState.Pos + lookAheadMeters };
         var n = upcomingLanes.CopyTo(scratch);
         if (n == 0)
         {

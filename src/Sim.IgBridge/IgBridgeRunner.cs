@@ -29,6 +29,15 @@ public sealed class IgBridgeConfig
     // Synthetic ped crowd on/off. Off = a clean vehicle-only stream (e.g. the grid test bed, which has no
     // scenario peds of its own). On = the deterministic PathArc crowd over the net's sidewalks.
     public bool EnablePeds { get; init; } = true;
+
+    // ---- longer-vehicle (bus) probe (Direction 1, docs/IGBRIDGE-RESUME.md) ----
+    // Demand ids (with or without the "v" prefix) to spawn as a LONGER vehicle -- a bus vType (vClass "bus",
+    // Sigma 0 for determinism, Length = BusLengthMeters) instead of the default passenger. Empty = every
+    // vehicle is a passenger, i.e. byte-identical to the v4 baseline. The kinematic reconstruction already
+    // scales off-tracking with length (wheelbase = WheelbaseFactor*length, center = length/2 behind front),
+    // so a bus swings wide with no core change; only the vType and the render box length differ.
+    public IReadOnlyCollection<string> BusVehicleIds { get; init; } = Array.Empty<string>();
+    public double BusLengthMeters { get; init; } = 12.0;
     public double PedMaxSpeed { get; init; } = 1.3;      // matches BuildLiveCity's PedDemandConfig.MaxSpeed
     public double PedRadius { get; init; } = 0.3;        // matches BuildLiveCity's PedDemandConfig.Radius
     public double PedArriveRadius { get; init; } = 0.3;  // PedestrianWorld ctor default
@@ -99,6 +108,9 @@ public sealed class IgBridgeRunner
 {
     private readonly Engine _engine;
     private readonly VTypeHandle _vtype;
+    private readonly VTypeHandle _busVtype;              // longer-vehicle probe (Direction 1); defined only if _busIds non-empty
+    private readonly bool _hasBuses;
+    private readonly HashSet<string> _busIds;            // normalized demand ids (no "v" prefix) to spawn as buses
     private readonly IReadOnlyList<RouteDemandEntry> _demand;
     private readonly int _historyCapacity;
     private readonly double _stepLength;
@@ -135,6 +147,25 @@ public sealed class IgBridgeRunner
             + "</configuration>";
         _engine.LoadNetwork(config.NetXmlPath, ScenarioConfigParser.ParseXml(xml));
         _vtype = _engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
+
+        // Longer-vehicle (bus) probe: normalize the requested ids (strip an optional leading "v" so both
+        // "213" and "v213" work, matching IGBRIDGE_DEBUG_VEH) and, only if any are named, define the bus
+        // vType up front (DefineVType must precede SpawnVehicle). Sigma 0 keeps the run deterministic.
+        _busIds = new HashSet<string>();
+        foreach (var raw in config.BusVehicleIds)
+        {
+            var id = raw.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? raw[1..] : raw;
+            if (id.Length > 0)
+            {
+                _busIds.Add(id);
+            }
+        }
+
+        _hasBuses = _busIds.Count > 0;
+        _busVtype = _hasBuses
+            ? _engine.DefineVType(new VTypeParams { VClass = "bus", Sigma = 0.0, Length = config.BusLengthMeters })
+            : _vtype;
+
         _demand = RouteDemand.Parse(config.RouXmlPath);
 
         _pedStream = config.EnablePeds ? new PedStream(config.NetXmlPath, config) : null;
@@ -178,10 +209,11 @@ public sealed class IgBridgeRunner
         while (_cursor < _demand.Count && _demand[_cursor].Depart <= now)
         {
             var entry = _demand[_cursor++];
+            var vt = _hasBuses && _busIds.Contains(entry.Id) ? _busVtype : _vtype;
             VehicleHandle handle;
             try
             {
-                handle = _engine.SpawnVehicle(_vtype, entry.Edges, departPos: 0.0, departSpeed: 0.0,
+                handle = _engine.SpawnVehicle(vt, entry.Edges, departPos: 0.0, departSpeed: 0.0,
                     departBestLane: true);
             }
             catch (Exception)

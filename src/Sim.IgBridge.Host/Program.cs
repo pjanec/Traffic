@@ -15,13 +15,22 @@ var rouPath = FindScenarioFile(scDir, "scenario.rou.xml", "*.rou.xml");
 // Synthetic pedestrian crowd off by default (IGBRIDGE_PEDS=1 to enable); the grid has no scenario peds and
 // the focus here is vehicle turn smoothness.
 var enablePeds = Environment.GetEnvironmentVariable("IGBRIDGE_PEDS") == "1";
+// Direction 1 (longer-vehicle probe): IGBRIDGE_BUS_IDS = comma list of demand ids (with or without the "v"
+// prefix) to spawn as a bus; IGBRIDGE_BUS_LEN = its length (m). Empty list = byte-identical v4 (all cars).
+var busIds = (Environment.GetEnvironmentVariable("IGBRIDGE_BUS_IDS") ?? "")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var busLen = double.TryParse(Environment.GetEnvironmentVariable("IGBRIDGE_BUS_LEN"),
+    System.Globalization.CultureInfo.InvariantCulture, out var _bl) ? _bl : 12.0;
 var cfg = new IgBridgeConfig(netPath, rouPath)
 {
     StepLength = 0.1,
     Seed = 42,
     EnablePeds = enablePeds,
+    BusVehicleIds = busIds,
+    BusLengthMeters = busLen,
 };
-Console.WriteLine($"scenario={scenarioRel}  net={Path.GetFileName(netPath)}  rou={Path.GetFileName(rouPath)}  peds={enablePeds}");
+Console.WriteLine($"scenario={scenarioRel}  net={Path.GetFileName(netPath)}  rou={Path.GetFileName(rouPath)}  peds={enablePeds}"
+    + (busIds.Length > 0 ? $"  buses=[{string.Join(",", busIds)}]@{busLen}m" : ""));
 var emit = new IgEmitConfig { EmitHz = 20.0, LookaheadSeconds = 0.1 };
 var igCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, RenderHz = 60.0 };
 
@@ -58,6 +67,9 @@ using (var trace = new IgTraceWriter(tracePath))
         // Spatial look-ahead: aim the front predictor at a point this far ahead on the upcoming lane
         // centerline, so junction turn-ins hit the connecting lane instead of lagging off it. 0 disables.
         LookAheadMeters = EnvD("IGBRIDGE_LOOKAHEAD", 3.0),
+        // Longer vehicles anticipate proportionally further: effective look-ahead = max(LookAheadMeters,
+        // factor*length). 0.5 keeps ~5 m cars on the flat 3 m (byte-identical v4) and gives a 12 m bus ~6 m.
+        LookAheadLengthFactor = EnvD("IGBRIDGE_LOOKAHEAD_LENFAC", 0.5),
     };
     // IGBRIDGE_DEBUG_VEH: one id or a comma-separated list (e.g. "v18,v98,v213,v321"); each gets its own CSV.
     var dbgIds = (Environment.GetEnvironmentVariable("IGBRIDGE_DEBUG_VEH") ?? "")
@@ -124,11 +136,18 @@ var vizCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, 
 var rawVizIg = new FakeIg(raw.Samples, vizCfg);
 var smVizIg = new FakeIg(smoothed, vizCfg);
 var htmlPath = Path.Combine(outDir, "sidebyside.html");
+// Per-vehicle footprint (id -> length,width) so the viewer draws a bus long and a car short (Direction 1).
+var vehDimsById = new Dictionary<string, (double Length, double Width)>();
+foreach (var kv in runner.VehicleDims)
+{
+    vehDimsById[runner.IdOf(kv.Key)] = kv.Value;
+}
+
 VizExport.WriteSideBySide(
     repoRoot, runner.Network,
     ("raw (IG fed raw 10Hz)", "engine x/y/angle at 10 Hz -- junction snaps + instant lane changes", rawVizIg),
     ("IgBridge (IG fed smoothed 20Hz)", "reused DrClock/PoseResolver/DrPoseSmoother reconstruction", smVizIg),
-    startT: 20.0, endT: 80.0, fps: 15.0, htmlPath);
+    startT: 20.0, endT: 80.0, fps: 15.0, htmlPath, vehDimsById);
 Console.WriteLine($"render: {htmlPath}  (toggle the two scenes to compare)");
 
 return 0;

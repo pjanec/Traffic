@@ -13,7 +13,8 @@ internal static class VizExport
 {
     private static double R(double v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
 
-    private const double HalfBoxLen = 2.5; // half of the shared vdim length (5.0) -- center -> front anchor
+    private const double DefaultLen = 5.0;  // fallback vehicle length when dims are unknown
+    private const double DefaultWid = 1.9;  // fallback vehicle width
 
     // Navi-degree (0 = north, clockwise) unit vector.
     private static (double X, double Y) NaviDir(double naviDeg)
@@ -26,8 +27,10 @@ internal static class VizExport
         string repoRoot, NetworkModel network,
         (string Name, string Desc, FakeIg Ig) sceneA,
         (string Name, string Desc, FakeIg Ig) sceneB,
-        double startT, double endT, double fps, string outPath)
+        double startT, double endT, double fps, string outPath,
+        IReadOnlyDictionary<string, (double Length, double Width)>? vehDims = null)
     {
+        vehDims ??= new Dictionary<string, (double, double)>();
         // Global vehicle slot map (union of both scenes -- same "v.." ids in both, so a vehicle keeps its
         // slot/colour across the toggle). Peds are drawn as discs, no slot needed.
         var vehIds = new SortedSet<string>(StringComparer.Ordinal);
@@ -62,8 +65,8 @@ internal static class VizExport
 
         var scenes = new[]
         {
-            BuildScene(sceneA.Name, sceneA.Desc, sceneA.Ig, slot, vehIdsBySlot, view, net, dt, startT, endT, fps),
-            BuildScene(sceneB.Name, sceneB.Desc, sceneB.Ig, slot, vehIdsBySlot, view, net, dt, startT, endT, fps),
+            BuildScene(sceneA.Name, sceneA.Desc, sceneA.Ig, slot, vehIdsBySlot, vehDims, view, net, dt, startT, endT, fps),
+            BuildScene(sceneB.Name, sceneB.Desc, sceneB.Ig, slot, vehIdsBySlot, vehDims, view, net, dt, startT, endT, fps),
         };
 
         var json = JsonSerializer.Serialize(new { scenes },
@@ -80,6 +83,7 @@ internal static class VizExport
 
     private static object BuildScene(
         string name, string desc, FakeIg ig, Dictionary<string, int> slot, string[] vehIdsBySlot,
+        IReadOnlyDictionary<string, (double Length, double Width)> vehDims,
         double[] view, object net, double dt, double startT, double endT, double fps)
     {
         var frames = new List<object>();
@@ -91,12 +95,19 @@ internal static class VizExport
                 if (ig.TryDisplayPose(kv.Key, t, out var p) && ig.ModelOf(kv.Key) == IgEntityModel.Car)
                 {
                     // The trace carries the vehicle CENTER (IG pivots on center); the Sim.Viz template
-                    // anchors the box at the FRONT (rect extends backward), so shift forward by half the
-                    // shared box length along the heading.
+                    // anchors the box at the FRONT (rect extends backward), so shift forward by half THIS
+                    // vehicle's own length along the heading. Emitting the true per-vehicle length+width as a
+                    // 5-tuple lets the viewer draw a long bus long and a car short (a 3/4-tuple has no dims;
+                    // only IgBridge emits 5) -- the shift and the drawn box then agree, so the box stays
+                    // center-pivoted at whatever length. Rotating the rigid rect about its front anchor
+                    // reproduces the identical box a center-pivot draw would (front = center + halfLen*dir).
+                    var hasDim = vehDims.TryGetValue(kv.Key, out var vd);
+                    var len = hasDim ? vd.Length : DefaultLen;
+                    var wid = hasDim ? vd.Width : DefaultWid;
                     var (dx, dy) = NaviDir(p.HeadingDeg);
-                    var fx = p.X + HalfBoxLen * dx;
-                    var fy = p.Y + HalfBoxLen * dy;
-                    v[kv.Value] = new[] { R(fx), R(fy), R(p.HeadingDeg) };
+                    var fx = p.X + len * 0.5 * dx;
+                    var fy = p.Y + len * 0.5 * dy;
+                    v[kv.Value] = new[] { R(fx), R(fy), R(p.HeadingDeg), R(len), R(wid) };
                 }
             }
 
