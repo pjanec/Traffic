@@ -29,14 +29,15 @@ jobs:
         run: dotnet test Traffic.sln -c Release --no-build
 
       # The determinism anchor must not move (single AND parallel plan).
-      # Refreshed 909605E965BFFE59 -> AA6143E74072CD4C: the highway-dense bench hash moved during
-      # vehicle-side work after it was last set at P2-H (116c9b5) and the constant was never updated, so
-      # main itself was red against this gate. The new value is verified deterministic (par == single) and
-      # SUMO-parity-green (Sim.ParityTests pass within tolerance); this is an exact self-consistency anchor,
-      # not a parity-vs-SUMO check. Reproduced identically on origin/main and this branch before the update.
+      # History: 909605E965BFFE59 -> AA6143E74072CD4C (P2-H era vehicle-side work) ->
+      # D96213B7BB4021A7 (the dense multi-lane car-overlap fix, 2b55f16, moved the highway-dense trajectory
+      # and the anchor was never refreshed, so main itself was red against this gate). Each value is verified
+      # deterministic (par == single) and SUMO-parity-green (Sim.ParityTests pass within tolerance); this is
+      # an exact self-consistency anchor, not a parity-vs-SUMO check. Reproduced identically on origin/main's
+      # current engine and this branch (== main after merge).
       - name: Determinism hash
         run: |
           out="$(dotnet run --project src/Sim.Bench -c Release --no-build)"
           echo "$out"
-          echo "$out" | grep -q "hashA=AA6143E74072CD4C" || { echo "::error::single-thread determinism hash moved"; exit 1; }
-          echo "$out" | grep -q "hashPar=AA6143E74072CD4C" || { echo "::error::parallel determinism hash moved"; exit 1; }
+          echo "$out" | grep -q "hashA=D96213B7BB4021A7" || { echo "::error::single-thread determinism hash moved"; exit 1; }
+          echo "$out" | grep -q "hashPar=D96213B7BB4021A7" || { echo "::error::parallel determinism hash moved"; exit 1; }
