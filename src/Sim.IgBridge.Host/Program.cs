@@ -160,18 +160,71 @@ Console.WriteLine("  MEDIAN drops sharply); mean lat-accel drops (instant lane c
 Console.WriteLine("  reflect genuine hairpin U-turns present in the RAW engine stream too (not an artifact).");
 Console.WriteLine($"(pedestrians, reconstructed: {smPed.Count} tracks -- smooth by construction)");
 
-// T1.4: side-by-side HTML render (raw-fed-IG vs IgBridge-fed-IG). Reconstruct for the viz at a display
-// frame rate over a focused window so the file stays manageable and the motion is watchable.
-var vizCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, RenderHz = 15.0 };
-var rawVizIg = new FakeIg(raw.Samples, vizCfg);
-var smVizIg = new FakeIg(smoothed, vizCfg);
-var htmlPath = Path.Combine(outDir, "sidebyside.html");
 // Per-vehicle footprint (id -> length,width) so the viewer draws a bus long and a car short (Direction 1).
 var vehDimsById = new Dictionary<string, (double Length, double Width)>();
 foreach (var kv in runner.VehicleDims)
 {
     vehDimsById[runner.IdOf(kv.Key)] = kv.Value;
 }
+
+var htmlPath = Path.Combine(outDir, "sidebyside.html");
+
+// IGBRIDGE_EXTRAP=1: compare the two IG CONSUMPTION models on the SAME IgBridge stream -- a buffered
+// INTERPOLATING IG (0.75 s playout delay, needs the next sample) vs a zero-latency EXTRAPOLATING IG (no
+// delay, dead-reckons forward from the last received sample). This shows the low-latency default's cost.
+if (Environment.GetEnvironmentVariable("IGBRIDGE_EXTRAP") == "1")
+{
+    var interpCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, RenderHz = 15.0 };
+    var extrapCfg = new FakeIgConfig { JumpThresholdMeters = 8.0, RenderHz = 15.0, Extrapolate = true };
+    var igInterp = new FakeIg(smoothed, interpCfg);
+    var igExtrap = new FakeIg(smoothed, extrapCfg);
+
+    // DR cost: how far the zero-delay extrapolation sits from the buffered-interpolation pose, per render
+    // sample (the lead/snap error). Metric-grade FakeIgs at 60 Hz over the whole run.
+    var mInterp = new FakeIg(smoothed, new FakeIgConfig { RenderHz = 60.0 });
+    var mExtrap = new FakeIg(smoothed, new FakeIgConfig { RenderHz = 60.0, Extrapolate = true });
+    var iRec = OnlyModel(mInterp, mInterp.Reconstruct(), IgEntityModel.Car);
+    var eRec = OnlyModel(mExtrap, mExtrap.Reconstruct(), IgEntityModel.Car);
+    var drErr = new List<double>();
+    foreach (var kv in iRec)
+    {
+        if (!eRec.TryGetValue(kv.Key, out var ep)) continue;
+        var ip = kv.Value;
+        var n = Math.Min(ip.Count, ep.Count);
+        for (var i = 0; i < n; i++)
+        {
+            drErr.Add(Math.Sqrt((ip[i].X - ep[i].X) * (ip[i].X - ep[i].X) + (ip[i].Y - ep[i].Y) * (ip[i].Y - ep[i].Y)));
+        }
+    }
+
+    drErr.Sort();
+    var eStats = Metrics.Compute(OnlyModel(igExtrap, igExtrap.Reconstruct(), IgEntityModel.Car), 15.0);
+    var iStats = Metrics.Compute(OnlyModel(igInterp, igInterp.Reconstruct(), IgEntityModel.Car), 15.0);
+    Console.WriteLine();
+    Console.WriteLine($"=== IG consumption: INTERPOLATING (0.75s delay)  vs  EXTRAPOLATING (zero delay, DR) "
+        + $"on the same IgBridge @{emit.EmitHz}Hz stream ===");
+    Console.Write(Metrics.FormatComparison(iStats, eStats));
+    if (drErr.Count > 0)
+    {
+        Console.WriteLine($"DR position error (extrapolated vs interpolated), m: "
+            + $"median={drErr[drErr.Count / 2]:F3} p95={drErr[(int)(0.95 * drErr.Count)]:F3} max={drErr[^1]:F3}");
+        Console.WriteLine($"  (this is the zero-latency 'lead'/snap; ~speed*emitInterval on turns -- shrinks with a higher emit rate)");
+    }
+
+    VizExport.WriteSideBySide(
+        repoRoot, runner.Network,
+        ("IgBridge -> interpolating IG (0.75s delay)", $"buffered 2-sample interp of the {emit.EmitHz:F0} Hz stream", igInterp),
+        ("IgBridge -> extrapolating IG (zero delay, DR)", $"dead-reckon fwd from last sample, no buffer", igExtrap),
+        startT: 20.0, endT: 80.0, fps: 15.0, htmlPath, vehDimsById);
+    Console.WriteLine($"render: {htmlPath}  (toggle: interpolating vs extrapolating IG)");
+    return 0;
+}
+
+// T1.4: side-by-side HTML render (raw-fed-IG vs IgBridge-fed-IG). Reconstruct for the viz at a display
+// frame rate over a focused window so the file stays manageable and the motion is watchable.
+var vizCfg = new FakeIgConfig { DelaySeconds = 0.75, JumpThresholdMeters = 8.0, RenderHz = 15.0 };
+var rawVizIg = new FakeIg(raw.Samples, vizCfg);
+var smVizIg = new FakeIg(smoothed, vizCfg);
 
 VizExport.WriteSideBySide(
     repoRoot, runner.Network,

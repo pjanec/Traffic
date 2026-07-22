@@ -13,6 +13,15 @@ public sealed class FakeIgConfig
 
     // Cadence at which the reconstructed (displayed) pose is sampled for rendering/metrics.
     public double RenderHz { get; init; } = 60.0;
+
+    // Low-latency DEAD-RECKONING mode (the alternative to the buffered interpolation above). When true the
+    // IG applies NO playout delay and NEVER peeks at a future sample: at render time it takes the newest
+    // update it has RECEIVED (t <= now) and extrapolates forward to now from the DR state -- constant speed
+    // + constant yaw rate (a coordinated turn), both estimated from the last two received samples. This is
+    // zero-latency but pays for it with extrapolation error: between updates the pose leads the truth and
+    // then corrects ("snaps") when the next update lands. The error grows with the update interval, so it is
+    // negligible at a high emit rate and visible at a low one.
+    public bool Extrapolate { get; init; }
 }
 
 // One reconstructed (IG-displayed) pose.
@@ -146,6 +155,11 @@ public sealed class FakeIg
             }
         }
 
+        if (_cfg.Extrapolate)
+        {
+            return ExtrapolateAt(upd, j, tPlay);
+        }
+
         var a = upd[Math.Max(0, j)];
         var b = upd[Math.Min(j + 1, upd.Count - 1)];
         if (a.T >= b.T)
@@ -172,6 +186,67 @@ public sealed class FakeIg
             a.Z + dz * f,
             LerpHeadingDeg(a.HeadingDeg, b.HeadingDeg, f),
             false);
+    }
+
+    // Low-latency dead-reckoning: extrapolate from the newest RECEIVED sample (index j, t <= tPlay) forward
+    // to tPlay using a constant-speed constant-yaw-rate (coordinated-turn) model, with speed and yaw rate
+    // estimated from the previous received sample. Never touches upd[j+1] (the "future"), so this is what a
+    // zero-delay IG would actually show at tPlay. Reduces to straight constant-velocity when the yaw rate ~0.
+    private ReconPose ExtrapolateAt(List<ReconPose> upd, int j, double tPlay)
+    {
+        var cur = upd[j];
+        var tau = tPlay - cur.T;
+        if (tau <= 1e-9 || j == 0)
+        {
+            // At/behind the first received sample, or exactly on a sample: show it as received (no DR yet).
+            return new ReconPose(tPlay, cur.X, cur.Y, cur.Z, cur.HeadingDeg, false);
+        }
+
+        var prev = upd[j - 1];
+        var dt = cur.T - prev.T;
+        if (dt <= 1e-9)
+        {
+            return new ReconPose(tPlay, cur.X, cur.Y, cur.Z, cur.HeadingDeg, false);
+        }
+
+        // A teleport in the last received step is not a DR-able velocity -> hold the newest sample.
+        var jdx = cur.X - prev.X;
+        var jdy = cur.Y - prev.Y;
+        if (jdx * jdx + jdy * jdy > _cfg.JumpThresholdMeters * _cfg.JumpThresholdMeters)
+        {
+            return new ReconPose(tPlay, cur.X, cur.Y, cur.Z, cur.HeadingDeg, true);
+        }
+
+        // Estimated DR state at the newest sample: planar speed and yaw rate from the last received step.
+        var speed = Math.Sqrt(jdx * jdx + jdy * jdy) / dt;                        // m/s
+        var omegaDeg = (((cur.HeadingDeg - prev.HeadingDeg + 540f) % 360f) - 180f) / dt; // deg/s (navi, CW+)
+        var h0 = cur.HeadingDeg * Math.PI / 180.0;                               // navi radians
+        var hT = (cur.HeadingDeg + omegaDeg * tau) * Math.PI / 180.0;
+        var omega = omegaDeg * Math.PI / 180.0;                                  // rad/s
+
+        double x, y;
+        if (Math.Abs(omega) < 1e-4)
+        {
+            // Straight: constant velocity along the current heading (navi dir = (sin, cos)).
+            x = cur.X + speed * tau * Math.Sin(h0);
+            y = cur.Y + speed * tau * Math.Cos(h0);
+        }
+        else
+        {
+            // Coordinated turn: integrate speed along a heading turning at omega.
+            // dir(θ) = (sinθ, cosθ) => ∫ = ((cosθ0 − cosθτ)/ω, (sinθτ − sinθ0)/ω).
+            x = cur.X + speed * (Math.Cos(h0) - Math.Cos(hT)) / omega;
+            y = cur.Y + speed * (Math.Sin(hT) - Math.Sin(h0)) / omega;
+        }
+
+        var headingT = cur.HeadingDeg + (float)(omegaDeg * tau);
+        headingT %= 360f;
+        if (headingT < 0f)
+        {
+            headingT += 360f;
+        }
+
+        return new ReconPose(tPlay, x, y, cur.Z, headingT, false);
     }
 
     private Track GetOrAdd(string id)
