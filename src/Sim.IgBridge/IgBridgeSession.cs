@@ -92,6 +92,18 @@ public sealed class IgBridgeSession
     // past this bound from the lane heading is spurious -> reject and fall back to the (smooth) lane heading.
     public float MaxAnticipationLeadDeg { get; set; } = 70f;
 
+    // COARSE-FEED ONLY (see CoarseFeed): at a decimated feed a junction-turn straddle spans ~a second of
+    // travel, so absorbing its lateral ARC motion as a lane-change snap builds a large decaying error E that
+    // makes the front ride between lanes for seconds after the turn. A straddle whose two lane poses (incoming
+    // vs outgoing) diverge in heading by more than this is such a turn and is NOT absorbed; a near-parallel
+    // straddle (a genuine lane change) still is. Only consulted when CoarseFeed is set, so the dense-feed v5
+    // baseline -- which absorbs every junction straddle -- stays byte-identical.
+    public float MaxStraddleLaneChangeHeadingDeg { get; set; } = 20f;
+
+    // Set when the feed is decimated (feedHz < core rate). Enables the junction-turn-straddle discriminator
+    // above. Off (dense feed) => behavior is exactly v5.
+    public bool CoarseFeed { get; set; }
+
     // Diagnostics (T2.0 smoothness investigation): when DebugVehicleId is set, every emit instant for that
     // vehicle records a per-STAGE row so the jitter source can be localised (PoseResolver front -> position
     // smoother -> kinematic center/heading -> drawn rear bumper). Off (null) by default.
@@ -217,6 +229,19 @@ public sealed class IgBridgeSession
                 frontZ = pa.Z + (pb.Z - pa.Z) * f;
                 laneHeading = LerpHeadingDeg(pa.HeadingDeg, pb.HeadingDeg, f);
                 speed = resolved.State.Speed + (stateBraw.Speed - resolved.State.Speed) * f;
+
+                // Only a NEAR-PARALLEL straddle is a real lane change whose lateral snap should be absorbed
+                // into the decaying error E. A straddle whose two lane poses diverge in heading is a JUNCTION
+                // TURN sampled across the bracket; absorbing its lateral ARC motion as a lane-change error is
+                // what makes the front ride between lanes for seconds after a turn on a coarse feed. At a dense
+                // feed the two bracketing poses are ~0.1 s apart (a few degrees of heading diff even mid-turn),
+                // so this stays below the threshold and the default is byte-identical; it only trips when a
+                // coarse feed makes the bracket span a large turn.
+                if (CoarseFeed)
+                {
+                    var straddleHeadingDiff = Math.Abs(((pb.HeadingDeg - pa.HeadingDeg + 540f) % 360f) - 180f);
+                    lateralEvent = straddleHeadingDiff < MaxStraddleLaneChangeHeadingDeg;
+                }
             }
             else
             {

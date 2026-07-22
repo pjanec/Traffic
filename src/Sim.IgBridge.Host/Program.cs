@@ -93,6 +93,9 @@ using (var trace = new IgTraceWriter(tracePath))
         // coarse-feed "dance" where the look-ahead drifts to a wrong bearing). 70° > the ~60° legit max at
         // a 10 Hz feed, so the default is byte-identical to v5.
         MaxAnticipationLeadDeg = (float)EnvD("IGBRIDGE_MAX_LEAD", 70.0),
+        // At a decimated feed, don't absorb junction-turn straddles as lane changes (they'd ride between
+        // lanes for seconds after a turn). No-op at the dense default, so v5 stays byte-identical.
+        CoarseFeed = feedN > 1,
     };
     // IGBRIDGE_DEBUG_VEH: one id or a comma-separated list (e.g. "v18,v98,v213,v321"); each gets its own CSV.
     var dbgIds = (Environment.GetEnvironmentVariable("IGBRIDGE_DEBUG_VEH") ?? "")
