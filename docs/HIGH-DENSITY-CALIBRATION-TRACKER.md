@@ -52,8 +52,28 @@ evidence). NEEDs: `SUMOSHARP-NEED-dense-flow-gridlock-vs-vanilla.md`,
         fix = port `getBestLanesContinuation` "continue along the lane you're on" semantics (byte-identical
         for goldens by construction). NOT congestion rerouting (124 is cheaper than 44 in vanilla) and NOT
         cooperative LC (retired). **Next session: implement per GAP1-RESUME.md; do not re-investigate.**
-- [ ] **Stage 4** — end-to-end: full box (and crop if reachable) on SumoSharp ≈ vanilla (teleports ≈ 0,
-      knee within tolerance). Hand-off note back to SumoData.
+- [~] **Stage 4** — end-to-end full box. **MAIN THROUGHPUT CRACKED (session 2).** The box's arrival
+      deficit was NOT diffuse congestion — it localized to two arrival/exit bugs, both fixed byte-identical:
+      1. **Final-edge arrival was strict `pos > laneLength`** (lane-crossing), but SUMO arrival is
+         position-based (`pos >= arrivalPos`, lane-agnostic). Cars that braked to a halt exactly at a
+         dead-end exit's lane end froze forever, backing up the exit queue. Fix: final-edge car sitting at
+         the lane end falls through to arrival. (commit `cfc52fc`)
+      2. **The Issue-1 park-and-stay residency guard clamped ANY car** reaching its final edge with an
+         unreached parking front-stop — including cars whose parking stop was on an EARLIER edge (drove past
+         a mid-route lot). These clamped forever at their real destination's lane end, starving the ring
+         N/W/E fringe sinks (arrivals 4/4/2 vs vanilla 24/18/14). Fix: only clamp when the stop is on the
+         current edge. (commit `b02076f`)
+      RESULT: box arrivals **47 → 106** (vanilla 96) at t=2500; ring-fringe sinks now drain to vanilla
+      parity (23/18/14 vs 24/18/14). Full suite green (657 pass), all goldens byte-identical, deterministic
+      (serial == parallel). See design §2.3.6.
+      - RESIDUAL (open, Gap-2/rerouting-with-stops): SumoSharp arrives ~10 MORE than vanilla (106 vs 96)
+        because the **dead-lane reroute (`TryRerouteFromDeadLane`) routes to the FINAL destination
+        (`remaining[^1]`), dropping an intermediate parking detour** — a car that hits an early dead lane and
+        has a mid-route parking stop (e.g. `pa_v2_mall_lot`, cap 24, 6 cars) gets rerouted around the mall,
+        skips parking, and arrives instead of staying resident. Vanilla reroutes BETWEEN stops (preserves
+        them). Fix = make the dead-lane reroute (and re-resolve) route via the next unreached stop's edge
+        first. Deferred: involved, and must not regress the Gap-1 synthetic parity. Also minor: box teleports
+        3 vs vanilla 1.
 
 ## Standing measurements (baseline, main 8bb8219, 2× dense synthetic)
 | | teleports | arrivals | halting steady |

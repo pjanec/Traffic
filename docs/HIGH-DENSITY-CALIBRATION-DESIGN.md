@@ -299,6 +299,43 @@ teleport). So the fix is net-neutral-to-slightly-positive on the box — correct
 concentrated dead-lane deadlock the synthetic isolates. Stage 4 = chase those diffuse junction/flow gaps
 (and, minor, the box's +2 dead-lane-reroute teleports) separately.
 
+### 2.3.6 STAGE 4 — box throughput CRACKED (2026-07-22, session 2). Superseding the "diffuse" note above.
+Re-diagnosed the box at a longer horizon (t=2500; the t=800 "diffuse" read was warm-up — only 36/861
+arrive by t=800 even in vanilla). The gap was NOT diffuse: SumoSharp arrivals **plateaued at ~47 after
+t=1500** while vanilla drained to **96**, and the entire deficit localized to cars destined for the **ring
+N/W/E fringe exits** (dead-end sinks): SumoSharp 4/4/2 vs vanilla 24/18/14. Two arrival/exit bugs, both
+fixed byte-identical (full suite 657 green, deterministic serial == parallel):
+
+1. **Final-edge arrival was strict lane-CROSSING (`pos > laneLength`).** SUMO arrival is position-based and
+   lane-agnostic (`MSVehicle::hasArrived`: remove at `pos >= arrivalPos`; default arrivalPos == laneLength).
+   A car that braked to a halt EXACTLY at a dead-end exit's lane end (pos == length, on an outer lane with
+   no onward connection) never satisfied the strict `>` and froze forever, backing up the whole exit queue.
+   Fix (commit `cfc52fc`): a final-edge car sitting AT the lane end falls through to the arrival branch.
+   Measure-zero in free flow (cars overshoot). Box 47 → 59.
+2. **The park-and-stay residency guard (Issue-1) clamped the wrong cars.** It held ANY vehicle reaching its
+   final edge with an unreached parkingArea front-stop (so a park-and-stay car isn't vanished mid-park) —
+   but did not check WHERE the stop is. A box mall/garage car whose MID-ROUTE parking stop it drove past
+   (see residual) reaches its real destination (a ring/roundabout exit) with that stop still unreached, and
+   the guard clamped it there forever. Fix (commit `b02076f`): only clamp when the unreached stop is on the
+   CURRENT edge (genuinely parking here); otherwise arrive. Box 59 → **106** (vanilla 96); ring-fringe sinks
+   now drain to parity (23/18/14 vs 24/18/14).
+
+**Isolation method that cracked it:** compare per-sink arrival counts SS vs vanilla (same 8 canonical
+sinks) → the deficit is entirely at the ring fringes; trace ONE stuck car (`v2_mall_shop_3`) → frozen at
+pos == laneLength speed 0 on a final-edge outer lane; log its executed speed → plan wants 16 m/s but the
+boundary loop clamps it; log the clamp path → the residency guard's `{Reached:false, IsParking:true}` arm.
+
+**RESIDUAL (open — Gap-2 / rerouting-with-stops).** SumoSharp now arrives ~10 MORE than vanilla (106 vs 96)
+because the **dead-lane reroute routes to the FINAL destination and drops an intermediate parking detour**:
+`TryRerouteFromDeadLane` sets `destEdge = remaining[^1]` and shortest-paths to it, so a car that hits an
+early dead lane and has a mid-route parking stop (`pa_v2_mall_lot`, cap 24, 6 cars — not oversubscribed) is
+rerouted AROUND the mall, skips parking, and arrives instead of staying resident (verified: with rerouting
+even fully OFF the car visits 13 edges, none in the mall). SUMO reroutes BETWEEN stops and preserves them.
+Fix = route the dead-lane reroute/re-resolve via the next unreached stop's edge first, then to the
+destination. Deferred here: it must not regress the Gap-1 synthetic parity (§2.3.5) and wants its own
+design pass. Note `--stop-output` is not implemented in SumoSharp, so parking must be verified via
+trajectories/tripinfo, not stopinfo. Also minor: box teleports 3 vs vanilla 1.
+
 ### 2.4 Success criteria (Gap 1)
 On the 2× dense synthetic: SumoSharp teleports ≈ 0 (was 10), no permanent gridlock (halting drains toward
 0 like vanilla, not stuck at ~45), arrivals ≈ vanilla (≈290, was 275). Full `dotnet test Traffic.sln`
