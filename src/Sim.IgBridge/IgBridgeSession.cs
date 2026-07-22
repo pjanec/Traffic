@@ -34,12 +34,11 @@ public sealed class IgBridgeSession
     private readonly float _frameDt;
 
     private readonly DrClock _clock = new();               // used ONLY via ResolveAt (deterministic; no Pump)
-    private readonly KinematicHeading _kinematic;           // front-position smoothing + rear-axle drag (docs §5.3)
+    private readonly KinematicReconstructor _recon;        // per-vehicle reconstruction core (front smoothing + rear-axle drag, docs §5.3)
 
     private readonly HashSet<VehicleHandle> _vehNewEmitted = new();
     private readonly HashSet<VehicleHandle> _vehDone = new();
     private readonly Dictionary<VehicleHandle, double> _lastEmitTau = new(); // for real elapsed dt across straddle gaps
-    private readonly Dictionary<VehicleHandle, float> _lookAheadPrev = new(); // previously-USED predictor heading (jump guard)
     private readonly HashSet<int> _pedNewEmitted = new();
     private readonly HashSet<int> _pedDone = new();
 
@@ -58,7 +57,7 @@ public sealed class IgBridgeSession
         _trace = trace;
         _ringCapacity = ringCapacity;
         _retained = retainAll ? new List<IgSample>() : null;
-        _kinematic = new KinematicHeading(kinematics);
+        _recon = new KinematicReconstructor(kinematics);
         _emitDt = 1.0 / emit.EmitHz;
         _frameDt = (float)_emitDt;
         _nextEmit = _emitDt; // first emit instant is one emit-step in (t=0 has no motion yet)
@@ -67,47 +66,27 @@ public sealed class IgBridgeSession
     public int EmittedCount { get; private set; }
     public IReadOnlyCollection<IgSample> Ring => _ring;
 
+    // Emit-stage config now lives on the shared KinematicReconstructor (docs §1.1); these forward to it so
+    // Program.cs still sets them on the session. See KinematicReconstructor for the per-field semantics.
+
     // Spatial look-ahead (docs/IGBRIDGE-DECISIONS.md §5.13): metres ahead ON THE UPCOMING LANE CENTERLINE to
-    // aim the front predictor at, so through a junction it anticipates the connecting lane instead of turning
-    // in late. 0 disables (front follows the reactive current lane heading). Computed by re-resolving the
-    // front pose with an extended length (PoseResolver already walks the upcoming lanes for the bumper).
-    public double LookAheadMeters { get; set; }
+    // aim the front predictor at. 0 disables (front follows the reactive current lane heading).
+    public double LookAheadMeters { get => _recon.LookAheadMeters; set => _recon.LookAheadMeters = value; }
 
-    // A longer vehicle should anticipate proportionally further ahead (a bus starts its swing earlier than a
-    // car). The effective look-ahead per vehicle is max(LookAheadMeters, LookAheadLengthFactor * length), so a
-    // ~5 m passenger stays at LookAheadMeters (0.5*5 = 2.5 < 3 -> unchanged, byte-identical to v4) while a 12 m
-    // bus aims ~6 m ahead. 0 keeps every vehicle on the flat LookAheadMeters.
-    public double LookAheadLengthFactor { get; set; } = 0.5;
+    // Effective look-ahead per vehicle = max(LookAheadMeters, LookAheadLengthFactor * length).
+    public double LookAheadLengthFactor { get => _recon.LookAheadLengthFactor; set => _recon.LookAheadLengthFactor = value; }
 
-    // Max plausible frame-to-frame change (deg/s) of the look-ahead predictor heading; a bigger jump is a
-    // spurious cross-junction resolve and is rejected (falls back to the lane heading). A real 90° junction
-    // turn ramps at ~100°/s, so this passes turns and rejects the ~tens-of-degrees blips.
-    private const float _lookAheadMaxJumpDegPerSec = 250f;
+    // Max ANGLE the look-ahead heading may lead the reactive lane heading by before it is rejected.
+    public float MaxAnticipationLeadDeg { get => _recon.MaxAnticipationLeadDeg; set => _recon.MaxAnticipationLeadDeg = value; }
 
-    // Max ANGLE the look-ahead heading may lead the reactive (raw) lane heading by before it is rejected.
-    // The frame-to-frame jump guard above only catches SUDDEN hops; on a coarse feed the look-ahead can
-    // instead DRIFT gradually (each step under the jump limit) to a bearing pointing the wrong way through a
-    // junction, dragging the body off and then snapping back (the "dance"). Legit anticipation is a modest
-    // forward lead over the lane tangent (measured max ~60° at a 10 Hz feed), so a look-ahead that diverges
-    // past this bound from the lane heading is spurious -> reject and fall back to the (smooth) lane heading.
-    public float MaxAnticipationLeadDeg { get; set; } = 70f;
+    // COARSE-FEED ONLY: the junction-turn-straddle discriminator threshold (see CoarseFeed).
+    public float MaxStraddleLaneChangeHeadingDeg { get => _recon.MaxStraddleLaneChangeHeadingDeg; set => _recon.MaxStraddleLaneChangeHeadingDeg = value; }
 
-    // COARSE-FEED ONLY (see CoarseFeed): at a decimated feed a junction-turn straddle spans ~a second of
-    // travel, so absorbing its lateral ARC motion as a lane-change snap builds a large decaying error E that
-    // makes the front ride between lanes for seconds after the turn. A straddle whose two lane poses (incoming
-    // vs outgoing) diverge in heading by more than this is such a turn and is NOT absorbed; a near-parallel
-    // straddle (a genuine lane change) still is. Only consulted when CoarseFeed is set, so the dense-feed v5
-    // baseline -- which absorbs every junction straddle -- stays byte-identical.
-    public float MaxStraddleLaneChangeHeadingDeg { get; set; } = 20f;
+    // Set when the feed is decimated (feedHz < core rate). Enables the junction-turn-straddle discriminator.
+    public bool CoarseFeed { get => _recon.CoarseFeed; set => _recon.CoarseFeed = value; }
 
-    // Set when the feed is decimated (feedHz < core rate). Enables the junction-turn-straddle discriminator
-    // above. Off (dense feed) => behavior is exactly v5.
-    public bool CoarseFeed { get; set; }
-
-    // v6 opt-in: apply the junction-turn-straddle discriminator at the DENSE feed too, so the front rides the
-    // connecting-lane centerline through junctions instead of being pulled ~0.3 m off it by the absorbed E.
-    // Changes the v5 baseline (a proposed new baseline), hence a flag rather than the default.
-    public bool AlwaysSplitJunctionStraddle { get; set; }
+    // v6 opt-in: apply the junction-turn-straddle discriminator at the DENSE feed too (changes the v5 baseline).
+    public bool AlwaysSplitJunctionStraddle { get => _recon.AlwaysSplitJunctionStraddle; set => _recon.AlwaysSplitJunctionStraddle = value; }
 
     // Diagnostics (T2.0 smoothness investigation): when DebugVehicleId is set, every emit instant for that
     // vehicle records a per-STAGE row so the jitter source can be localised (PoseResolver front -> position
@@ -169,8 +148,6 @@ public sealed class IgBridgeSession
 
     private void EmitVehicles(double tau)
     {
-        Span<int> upcoming = stackalloc int[UpcomingLanes.Count];
-
         foreach (var kv in _runner.VehicleHistories)
         {
             var handle = kv.Key;
@@ -211,57 +188,6 @@ public sealed class IgBridgeSession
 
             var resolved = _clock.ResolveAt(history, tau, _runner.Lanes);
 
-            // Resolve a CONTINUOUS front pose. A lateral straddle (junction lane-cross or lane change) is
-            // NOT skipped -- skipping punches a hole in the emitted stream that the IG interpolates across,
-            // and (fed a constant dt) desyncs the kinematic state -> tail wobble. Instead resolve both
-            // bracketing states on their own lanes and Cartesian-lerp (the shipped lane-change reconstruction),
-            // so the front path is unbroken.
-            double frontX, frontY, frontZ;
-            float laneHeading;
-            double speed;
-            var lateralEvent = resolved.IsLateralStraddle;
-            if (resolved.IsLateralStraddle && resolved.SecondState is { } stateBraw)
-            {
-                if (!TryResolveFront(resolved.State, resolved.Upcoming, dims, upcoming, out var pa) ||
-                    !TryResolveFront(stateBraw, resolved.SecondUpcoming, dims, upcoming, out var pb))
-                {
-                    continue;
-                }
-
-                var f = resolved.Blend;
-                frontX = pa.X + (pb.X - pa.X) * f;
-                frontY = pa.Y + (pb.Y - pa.Y) * f;
-                frontZ = pa.Z + (pb.Z - pa.Z) * f;
-                laneHeading = LerpHeadingDeg(pa.HeadingDeg, pb.HeadingDeg, f);
-                speed = resolved.State.Speed + (stateBraw.Speed - resolved.State.Speed) * f;
-
-                // Only a NEAR-PARALLEL straddle is a real lane change whose lateral snap should be absorbed
-                // into the decaying error E. A straddle whose two lane poses diverge in heading is a JUNCTION
-                // TURN sampled across the bracket; absorbing its lateral ARC motion as a lane-change error is
-                // what makes the front ride between lanes for seconds after a turn on a coarse feed. At a dense
-                // feed the two bracketing poses are ~0.1 s apart (a few degrees of heading diff even mid-turn),
-                // so this stays below the threshold and the default is byte-identical; it only trips when a
-                // coarse feed makes the bracket span a large turn.
-                if (CoarseFeed || AlwaysSplitJunctionStraddle)
-                {
-                    var straddleHeadingDiff = Math.Abs(((pb.HeadingDeg - pa.HeadingDeg + 540f) % 360f) - 180f);
-                    lateralEvent = straddleHeadingDiff < MaxStraddleLaneChangeHeadingDeg;
-                }
-            }
-            else
-            {
-                if (!TryResolveFront(resolved.State, resolved.Upcoming, dims, upcoming, out var pose))
-                {
-                    continue;
-                }
-
-                frontX = pose.X;
-                frontY = pose.Y;
-                frontZ = pose.Z;
-                laneHeading = pose.HeadingDeg;
-                speed = resolved.State.Speed;
-            }
-
             // Real elapsed dt for this vehicle (>= one emit step; larger after a gap) so the kinematic
             // SmoothDamp/drag integrate correctly instead of over/undershooting.
             var realDt = _lastEmitTau.TryGetValue(handle, out var last)
@@ -269,58 +195,33 @@ public sealed class IgBridgeSession
                 : _frameDt;
             _lastEmitTau[handle] = tau;
 
-            // Kinematic rear-axle drag (§5.3): the front reference tows a no-slip rear axle so the body
-            // pivots at the rear like a real car. KinematicHeading also critically-damps the front POSITION
-            // (removes the faceted-polyline kinks that would ride through as a tail wiggle). Emit the vehicle
-            // CENTER (the IG's models pivot on center) + the drag heading; z (Q5) = the lane-surface ground z.
-            // Spatial look-ahead heading (aim the front down the upcoming connecting lane, not the current
-            // lane) so junction turn-ins hit the connecting-lane centerline instead of lagging off it.
-            //
-            // Guard against a bad resolve: the look-ahead point is occasionally unstable across a junction
-            // (it briefly lands on a crossing/internal lane, giving a bearing tens of degrees off for ~0.2 s
-            // then snapping back). A REAL turn's anticipation instead RAMPS smoothly. So reject the look-ahead
-            // whenever it JUMPS from the previously-used predictor heading faster than a plausible yaw rate —
-            // that kills the transient spurious excursions while passing the smooth turn ramp. On reject we
-            // fall back to the lane heading (and remember that), so a sustained bad reading stays rejected.
-            var effLookAhead = Math.Max(LookAheadMeters, LookAheadLengthFactor * dims.Length);
-            float? predictHeading = null;
-            if (effLookAhead > 0.0
-                && TryLookAheadHeading(resolved.State, resolved.Upcoming, dims, frontX, frontY, effLookAhead, upcoming, out var lah))
+            // The full per-vehicle reconstruction (front resolve + straddle-lerp + look-ahead guards +
+            // kinematic rear-axle drag) is the shared KinematicReconstructor (docs §1.1). A false Ok means the
+            // PoseResolver resolve was unavailable this frame -> skip exactly as the old inline `continue` did.
+            var result = _recon.Resolve(handle, resolved, _runner.Lanes, dims, realDt);
+            if (!result.Ok)
             {
-                var prevUsed = _lookAheadPrev.TryGetValue(handle, out var pv) ? pv : laneHeading;
-                var jump = Math.Abs(((lah - prevUsed + 540f) % 360f) - 180f);
-                // Divergence of the look-ahead from the reactive lane heading (catches gradual drift the
-                // per-frame jump guard misses -- the coarse-feed "dance").
-                var lead = Math.Abs(((lah - laneHeading + 540f) % 360f) - 180f);
-                if (jump <= _lookAheadMaxJumpDegPerSec * Math.Max(realDt, 1e-3f)
-                    && lead <= MaxAnticipationLeadDeg)
-                {
-                    predictHeading = lah;
-                }
+                continue;
             }
 
-            _lookAheadPrev[handle] = predictHeading ?? laneHeading;
-
-            var kp = _kinematic.Update(handle, frontX, frontY, laneHeading, speed, dims.Length, realDt,
-                lateralEvent, predictHeading);
             var id = _runner.IdOf(handle);
 
             if ((DebugVehicleId is not null && id == DebugVehicleId)
                 || (DebugVehicleIds is not null && DebugVehicleIds.Contains(id)))
             {
                 // rear bumper as the front-anchored template would draw it: center - (Length/2)*dir(heading)
-                var hr = kp.HeadingDeg * Math.PI / 180.0;
+                var hr = result.HeadingDeg * Math.PI / 180.0;
                 var dx = Math.Sin(hr);
                 var dy = Math.Cos(hr);
-                var rearBx = kp.CenterX - dims.Length * 0.5 * dx;
-                var rearBy = kp.CenterY - dims.Length * 0.5 * dy;
+                var rearBx = result.CenterX - dims.Length * 0.5 * dx;
+                var rearBy = result.CenterY - dims.Length * 0.5 * dy;
                 var row = string.Join(",", new[]
                 {
-                    tau.ToString("F4"), frontX.ToString("F4"), frontY.ToString("F4"), laneHeading.ToString("F4"),
-                    kp.FrontX.ToString("F4"), kp.FrontY.ToString("F4"),
-                    kp.CenterX.ToString("F4"), kp.CenterY.ToString("F4"), kp.HeadingDeg.ToString("F4"),
-                    rearBx.ToString("F4"), rearBy.ToString("F4"), speed.ToString("F4"),
-                    (predictHeading ?? laneHeading).ToString("F4"),
+                    tau.ToString("F4"), result.FrontX.ToString("F4"), result.FrontY.ToString("F4"), result.LaneHeadingDeg.ToString("F4"),
+                    result.SmoothedFrontX.ToString("F4"), result.SmoothedFrontY.ToString("F4"),
+                    result.CenterX.ToString("F4"), result.CenterY.ToString("F4"), result.HeadingDeg.ToString("F4"),
+                    rearBx.ToString("F4"), rearBy.ToString("F4"), result.Speed.ToString("F4"),
+                    result.PredictHeadingUsed.ToString("F4"),
                 });
                 if (id == DebugVehicleId)
                 {
@@ -336,83 +237,9 @@ public sealed class IgBridgeSession
             }
 
             Emit(_vehNewEmitted.Add(handle)
-                ? IgSample.Created(id, tau, IgEntityModel.Car, kp.CenterX, kp.CenterY, frontZ, kp.HeadingDeg)
-                : IgSample.Updated(id, tau, kp.CenterX, kp.CenterY, frontZ, kp.HeadingDeg));
+                ? IgSample.Created(id, tau, IgEntityModel.Car, result.CenterX, result.CenterY, result.Z, result.HeadingDeg)
+                : IgSample.Updated(id, tau, result.CenterX, result.CenterY, result.Z, result.HeadingDeg));
         }
-    }
-
-    // Resolve one bracketing state to a front pose via PoseResolver (ChordHeading). Returns false if the
-    // lane geometry isn't available.
-    private bool TryResolveFront(DrState rawState, UpcomingLanes upcomingLanes,
-        (double Length, double Width) dims, Span<int> scratch, out Pose pose)
-    {
-        var state = rawState with { Length = dims.Length, Width = dims.Width };
-        var n = upcomingLanes.CopyTo(scratch);
-        if (n == 0)
-        {
-            scratch[0] = state.LaneHandle;
-            n = 1;
-        }
-
-        try
-        {
-            pose = PoseResolver.Resolve(
-                _runner.Lanes, state, scratch[..n], ReadOnlySpan<int>.Empty, dt: 0.0, RenderRealism.ChordHeading);
-            return true;
-        }
-        catch (KeyNotFoundException)
-        {
-            pose = default;
-            return false;
-        }
-    }
-
-    // Look-ahead heading: resolve a "front" pose with the length extended by LookAheadMeters — PoseResolver
-    // walks the same upcoming lanes, so the extra length lands the point that far further along the path (down
-    // the connecting lane through a junction). The chord from the real front to that point is the anticipatory
-    // predictor direction. Returns false (caller falls back to the lane heading) if it can't be resolved or
-    // the point is degenerate.
-    private bool TryLookAheadHeading(DrState rawState, UpcomingLanes upcomingLanes,
-        (double Length, double Width) dims, double frontX, double frontY, double lookAheadMeters,
-        Span<int> scratch, out float headingDeg)
-    {
-        headingDeg = 0f;
-        if (lookAheadMeters <= 0.0)
-        {
-            return false;
-        }
-
-        // Advance the front ARC position by lookAheadMeters (Pos is the front reference; Length only sets the
-        // chord's back point, so extending it would NOT move the front forward). SampleForward walks into the
-        // upcoming lanes, so past the junction this lands on the connecting-lane centerline.
-        var state = rawState with { Length = dims.Length, Width = dims.Width, Pos = rawState.Pos + lookAheadMeters };
-        var n = upcomingLanes.CopyTo(scratch);
-        if (n == 0)
-        {
-            scratch[0] = state.LaneHandle;
-            n = 1;
-        }
-
-        try
-        {
-            var ahead = PoseResolver.Resolve(
-                _runner.Lanes, state, scratch[..n], ReadOnlySpan<int>.Empty, dt: 0.0, RenderRealism.ChordHeading);
-            headingDeg = NaviFromVector(ahead.X - frontX, ahead.Y - frontY, out var moved);
-            return moved;
-        }
-        catch (KeyNotFoundException)
-        {
-            return false;
-        }
-    }
-
-    // Shortest-arc heading interpolation (navi-degrees).
-    private static float LerpHeadingDeg(float a, float b, double f)
-    {
-        var d = ((b - a + 540f) % 360f) - 180f;
-        var h = a + (float)(d * f);
-        h %= 360f;
-        return h < 0f ? h + 360f : h;
     }
 
     private void EmitPeds(double tau)

@@ -8,7 +8,7 @@ Legend: [ ] todo · [~] in progress · [x] done (success conditions met)
 
 ## S0 — baseline + facade extraction
 - [ ] T0.1 Capture DrPoseSmoother metric baseline (both viewers)
-- [ ] T0.2 Extract `KinematicReconstructor` into `Sim.Viewer.Motion`; IgBridge trace byte-identical to v5
+- [x] T0.2 Extract `KinematicReconstructor` into `Sim.Viewer.Motion`; IgBridge trace byte-identical to v5 ✓ (verified: byte-diff clean, deterministic, Motion 11/11, IgBridge 11/11, Parity 654/4)
 - [ ] T0.3 Facade unit tests (straight / junction / lane-change / stop / coarse-vs-dense)
 
 ## S1 — Raylib 2D swap
