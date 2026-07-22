@@ -9,8 +9,8 @@
 
     <!-- NuGet: the portable render-side motion-reconstruction package (SUMOSHARP-PACKAGING-DESIGN.md §5,
          SUMOSHARP-VIEWER-DR-SMOOTHING.md §8/§10): DrClock (dead-reckoning render clock + Resolve) plus
-         DrPoseSmoother (the as-built capped position error-smoothing + motion-derived heading tilt +
-         heading low-pass pipeline). Depends only on SumoSharp.Core (PoseResolver/ILaneShapeSource/DrState)
+         KinematicReconstructor (the as-built straddle-aware front resolve + spatial look-ahead + no-slip
+         rear-axle KinematicHeading pipeline). Depends only on SumoSharp.Core (PoseResolver/ILaneShapeSource/DrState)
          and SumoSharp.Replication (TimestampedSample/IVehicleSampleHistory/DrExtrapolation.Arc). No native
          GPU/UI toolkit, no wire transport, no dependency on the desktop viewer's headless brain: a game/3D
          engine with its own renderer takes this package alone to turn sparse authoritative/DDS samples into
@@ -18,7 +18,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>SumoSharp.Viewer.Motion</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>SumoSharp — portable render-side dead-reckoning &amp; motion reconstruction for the SumoSharp traffic engine: DrClock (render clock + interpolate/extrapolate resolve) and DrPoseSmoother (capped position error-smoothing + motion-derived heading tilt + heading low-pass) turn sparse authoritative/DDS samples into smooth per-frame vehicle poses. No renderer, no transport. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
+    <Description>SumoSharp — portable render-side dead-reckoning &amp; motion reconstruction for the SumoSharp traffic engine: DrClock (render clock + interpolate/extrapolate resolve) and KinematicReconstructor (straddle-aware front resolve + spatial look-ahead + no-slip rear-axle KinematicHeading) turn sparse authoritative/DDS samples into smooth per-frame vehicle poses. No renderer, no transport. Unofficial, independent reimplementation; not affiliated with the Eclipse SUMO project.</Description>
   </PropertyGroup>
 
   <ItemGroup>

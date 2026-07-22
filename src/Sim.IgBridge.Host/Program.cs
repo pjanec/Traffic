@@ -302,7 +302,7 @@ var smVizIg = new FakeIg(smoothed, vizCfg);
 VizExport.WriteSideBySide(
     repoRoot, runner.Network,
     ("raw (IG fed raw 10Hz)", "engine x/y/angle at 10 Hz -- junction snaps + instant lane changes", rawVizIg),
-    ("IgBridge (IG fed smoothed 20Hz)", "reused DrClock/PoseResolver/DrPoseSmoother reconstruction", smVizIg),
+    ("IgBridge (IG fed smoothed 20Hz)", "reused DrClock/PoseResolver/KinematicReconstructor reconstruction", smVizIg),
     startT: 20.0, endT: 80.0, fps: 15.0, htmlPath, vehDimsById);
 Console.WriteLine($"render: {htmlPath}  (toggle the two scenes to compare)");
 

@@ -18,7 +18,7 @@ public sealed class IgEmitConfig
 // Stage [3] of the pipeline (docs/IGBRIDGE-DECISIONS.md §2/§4): resample the REUSED reconstruction stack
 // at a fixed emit cadence and write IG-native new/upd/del records. Per emit instant tau (shared across ALL
 // entities so the IG scene is time-coherent, §8), vehicles go through the exact viewer recipe
-// (CityLib.Reconstructor) -- DrClock.ResolveAt -> PoseResolver.Resolve(ChordHeading) -> DrPoseSmoother --
+// (CityLib.Reconstructor) -- DrClock.ResolveAt -> the shared KinematicReconstructor facade --
 // but fed the DETERMINISTIC ResolveAt(sampleT) instead of the wall-clock Resolve, and emitting PLANAR
 // (x, y, headingDeg) only. The lateral-straddle (lane-change) case is SKIPPED here exactly as the viewer
 // skips it in Stage 1; T2.1 adds the lane-change ease in Sim.Viewer.Motion and both inherit it. Pedestrians

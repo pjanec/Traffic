@@ -22,12 +22,12 @@ namespace Sim.Pedestrians.Lod;
 //      correction landing after a quiet spell, or a P3-2 bandwidth-governor deferred sample finally
 //      catching up -- is absorbed over a frame or few instead of teleporting. A genuinely large gap
 //      (first sighting, a real teleport/respawn) snaps directly rather than crawling across the map.
-//      Mirrors the IDEA behind Sim.Viewer.Motion.DrPoseSmoother's capped, forward-biased position
+//      Mirrors the IDEA behind the vehicle DR path's capped, forward-biased position
 //      correction, reimplemented as a plain isotropic (holonomic) cap: a pedestrian has no
 //      lane-forward heading to decompose the correction against, so there is no along/lateral split,
 //      just a single magnitude cap on the correction vector.
 //
-// Deliberately does NOT reuse Sim.Viewer.Motion.DrClock/DrPoseSmoother directly (see the P3-3 task's
+// Deliberately does NOT reuse the vehicle Sim.Viewer.Motion stack directly (see the P3-3 task's
 // design-decision note): both are lane/VehicleHandle-specific (arc-length lane windows, lane-forward
 // heading tilt) and Sim.Viewer.Motion pulls in the vehicle-only Sim.Ingest. Only the IDEAS are reused
 // here, reimplemented simply for a holonomic 2D pedestrian pose.
@@ -122,7 +122,7 @@ public sealed class PedRemoteReconstructor
 
     // The capped-correction chase (class remarks). The first observation of `id` returns the target
     // pose unchanged (and remembers it as the smoothing anchor) -- there is no previous render frame
-    // to correct from, mirroring DrPoseSmoother's own "first sighting" behaviour.
+    // to correct from, mirroring the vehicle DR smoother's own "first sighting" behaviour.
     private Vec2 Smooth(int id, Vec2 target)
     {
         if (!_smoothed.TryGetValue(id, out var state))
