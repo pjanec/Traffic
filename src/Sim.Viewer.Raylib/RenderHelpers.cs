@@ -11,18 +11,20 @@ namespace Sim.Viewer.Raylib;
 // the Renderer.DrVehicleDraw list the render loop draws -- not just the draw calls themselves.
 public static class RenderHelpers
 {
-    // P3 refactor: the DDS-pump + dead-reckoned-pose-resolve step shared by `--mode loopback` and `--mode
-    // remote` -- identical math to the block this replaces in each (DrClock.Resolve + PoseResolver.Resolve(dt=0)
-    // + the extrapolation-only smoothing low-pass), just called from one place. Mutates `vehicleDraws` (cleared
-    // and repopulated) and `smoother` (the DrPoseSmoother's per-vehicle running state, Sim.Viewer.Motion) in
-    // place.
+    // P3 refactor / VIEWER-KINEMATIC-SMOOTHING §2.2 (T1.1): the DDS-pump + dead-reckoned-pose-resolve step
+    // shared by `--mode loopback` and `--mode remote`. The per-vehicle straddle-lerp + look-ahead +
+    // KinematicHeading smoothing that used to live inline here (and the older per-vehicle pose smoother) is one
+    // shared `KinematicReconstructor.Resolve(...)` facade (Sim.Viewer.Motion) -- the same pipeline IgBridge and
+    // City3D use, so all consumers move as one. `CoarseFeed=true` is set on the passed `recon` by the caller
+    // (the viewers are ~1-3 Hz DR consumers). Mutates `vehicleDraws` (cleared and repopulated) and `recon` (its
+    // per-vehicle kinematic + look-ahead state) in place.
     public static void PumpAndBuildVehicleDraws(
         DdsSubscriber subscriber,
         DrClock drClock,
         float delaySeconds,
         bool smooth,
         FrameStats frameStats,
-        DrPoseSmoother smoother,
+        KinematicReconstructor recon,
         List<Renderer.DrVehicleDraw> vehicleDraws,
         bool paused,
         VehicleHandle? traceHandle = null)
@@ -32,7 +34,9 @@ public static class RenderHelpers
 
         vehicleDraws.Clear();
         var geoSource = new DdsGeometryLaneSource(subscriber.Geometry);
-        Span<int> upcomingScratch = stackalloc int[UpcomingLanes.Count];
+
+        var (_, avgFrame, _) = frameStats.Compute();
+        var frameDt = avgFrame > 0f ? avgFrame : 1f / 60f;
 
         foreach (var (handle, history) in subscriber.History)
         {
@@ -44,78 +48,26 @@ public static class RenderHelpers
             var resolved = drClock.Resolve(history, delaySeconds, geoSource);
             var (length, width) = subscriber.Dims.TryGetValue(handle, out var dims) ? dims : (5.0f, 1.8f);
 
-            // Lateral straddle (lane change, SUMOSHARP-LANE-CHANGE-SMOOTHING-DESIGN.md §4.2): resolve BOTH
-            // bracketing packets on their own lanes and Cartesian-lerp the two world poses -- the straight
-            // chord between two sibling lanes IS the lane-change diagonal (unlike a downstream/junction
-            // straddle, which walks the curved geometry via ArcInWindow instead and never reaches here).
-            double px, py;
-            float pdeg;
-            if (resolved.IsLateralStraddle)
+            // One shared reconstruction: straddle-aware continuous front + spatial look-ahead + no-slip
+            // rear-axle KinematicHeading drag, all inside the facade (junction vs lane-change straddle is
+            // discriminated by CoarseFeed internally). Ok=false == the old `continue` (missing/degenerate
+            // geometry this frame) -> skip the vehicle.
+            var result = recon.Resolve(handle, resolved, geoSource, (length, width), frameDt);
+            if (!result.Ok)
             {
-                var stateA = resolved.State with { Length = length, Width = width };
-                var upA = resolved.Upcoming.CopyTo(upcomingScratch);
-                var poseA = PoseResolver.Resolve(
-                    geoSource, stateA, upcomingScratch[..upA], default, 0.0, RenderRealism.ChordHeading);
-
-                var stateB = resolved.SecondState!.Value with { Length = length, Width = width };
-                var upB = resolved.SecondUpcoming.CopyTo(upcomingScratch); // reuse scratch: poseA already computed
-                var poseB = PoseResolver.Resolve(
-                    geoSource, stateB, upcomingScratch[..upB], default, 0.0, RenderRealism.ChordHeading);
-
-                var f = resolved.Blend;
-                var dxw = poseB.X - poseA.X;
-                var dyw = poseB.Y - poseA.Y;
-                var chordLen = Math.Sqrt(dxw * dxw + dyw * dyw);
-
-                // Sanity guard (design §4.2 point 4): an implausibly large gap for ONE PACKET INTERVAL (handle
-                // reuse, despawn/respawn, or a genuine teleport) snaps to `poseB` instead of drawing a long
-                // diagonal across the map. Gated on THIS bracket's own real span (resolved.PacketSpan), not the
-                // smoothed average sample interval -- a lane-change bracket's actual gap can run well above the
-                // EMA average (observed on 12-overtake: avgint~1.2s vs. this pair's real ~2.9s), so using the
-                // average would under-estimate a perfectly normal slow-sampled slide's chord length and wrongly
-                // snap it (the ~3.2 m single-frame jump the T2/T3 numeric bars rule out).
-                var maxSlide = Math.Max(3.0 * width /* ~3 lane widths */,
-                    resolved.State.Speed * Math.Max(resolved.PacketSpan, 0.1) * 1.5);
-
-                if (chordLen > maxSlide)
-                {
-                    px = poseB.X;
-                    py = poseB.Y;
-                    pdeg = poseB.HeadingDeg;
-                }
-                else
-                {
-                    px = poseA.X + dxw * f;
-                    py = poseA.Y + dyw * f;
-                    // Base lane heading; the motion-tilt in the smoothing block below leans it toward the actual
-                    // slide direction -- uniform with the return change, which never enters this straddle branch.
-                    pdeg = LerpAngleDeg(poseA.HeadingDeg, poseB.HeadingDeg, f);
-                }
-            }
-            else
-            {
-                var state = resolved.State with { Length = length, Width = width };
-                var upCount = resolved.Upcoming.CopyTo(upcomingScratch);
-                var pose = PoseResolver.Resolve(
-                    geoSource, state, upcomingScratch[..upCount], default, 0.0, RenderRealism.ChordHeading);
-
-                px = pose.X;
-                py = pose.Y;
-                pdeg = pose.HeadingDeg;
+                continue;
             }
 
-            var (_, avgFrame, _) = frameStats.Compute();
-            var frameDt = avgFrame > 0f ? avgFrame : 1f / 60f;
+            // The Raylib box is FRONT-anchored (Renderer.DrawVehicleList: the pose point is the rectangle's
+            // (length, width/2) origin, so the body trails back from it), so feed it the SMOOTHED FRONT the
+            // kinematic tracker produced -- not the geometric center -- to keep the drawn footprint true.
+            var px = result.SmoothedFrontX;
+            var py = result.SmoothedFrontY;
+            var pdeg = result.HeadingDeg;
 
-            var (sx, sy, sdeg) = smoother.Smooth(handle, px, py, pdeg, resolved.State.Speed, frameDt);
-            px = sx;
-            py = sy;
-            pdeg = sdeg;
-
-            // Diagnostic (opt-in via --trace-veh): dump the FINAL drawn pose for the traced vehicle -- AFTER the
-            // heading low-pass + position filter, i.e. exactly what vehicleDraws renders (placed here, not before
-            // the smoothing block, so the trace observes the smoothing) -- plus the extrapolated flag, resolved
-            // lane, and effective playout delay, to compare against the AUTHTRACE ground truth.
+            // Diagnostic (opt-in via --trace-veh): dump the FINAL drawn pose for the traced vehicle -- exactly
+            // what vehicleDraws renders (placed after the reconstruction so the trace observes the smoothing) --
+            // plus the extrapolated flag, resolved lane, and effective playout delay, vs the AUTHTRACE truth.
             if (traceHandle is { } th && handle == th)
             {
                 Console.WriteLine($"DRTRACE rsim={drClock.RenderSim:F2} x={px:F2} y={py:F2} deg={pdeg:F1} " +
@@ -172,20 +124,12 @@ public static class RenderHelpers
     public static void BuildLocalVehicleDraws(
         SimulationSnapshot cur, SimulationSnapshot prev, double renderClock, bool smooth,
         List<Renderer.DrVehicleDraw> outDraws, Dictionary<VehicleHandle, int> prevIndex,
-        Dictionary<VehicleHandle, float> headingPrev, Dictionary<VehicleHandle, float> headingCur,
-        float frameDtWall)
+        KinematicReconstructor recon, float frameDtWall)
     {
         outDraws.Clear();
-        headingCur.Clear(); // rebuilt from current vehicles only -> prunes despawned, stays bounded
 
         var span = cur.Time - prev.Time;
         var interp = smooth && span > 1e-9 && prev.Count > 0 && !ReferenceEquals(prev, cur);
-
-        // Heading low-pass coefficient (this frame). A junction's internal lane is a coarse ~5-point arc
-        // (netconvert internal-link-detail=5), so the raw/interpolated heading rotates in ~5 discrete bursts; a
-        // ~0.18s low-pass on the RENDER heading spreads them into one continuous rotation. Straights (constant
-        // heading) converge instantly -> no lag; only actual rotation is smoothed.
-        var headAlpha = smooth ? 1f - MathF.Exp(-frameDtWall / 0.25f) : 1f;
 
         var a = 0f;
         if (interp)
@@ -219,16 +163,28 @@ public static class RenderHelpers
                 spd = prev.SpeedExact[j] + (cur.SpeedExact[i] - prev.SpeedExact[j]) * a;
             }
 
-            // Low-pass the render heading toward `deg` from last frame's smoothed value (shortest arc). A big
-            // jump (respawn / opposite-direction reuse of a handle) snaps rather than spins.
-            if (smooth && headingPrev.TryGetValue(handle, out var prevDeg))
+            float length = cur.Length[i], width = cur.Width[i];
+
+            // VIEWER-KINEMATIC-SMOOTHING §1.3 (T1.3): unify `--mode local` onto the SAME kinematic
+            // reconstruction the DR viewers use, replacing the old render-heading low-pass. This path has no
+            // DrState / upcoming-lane window, so it calls the pose-level entry with predictHeadingDeg=null (no
+            // spatial look-ahead) and lateralEvent=false -- a lane change appears here as a perpendicular x,y
+            // step that KinematicHeading's step-based detector eases on its own. Fed the INTERPOLATED front
+            // (fx,fy,deg,spd); the no-slip rear-axle body + lane-heading low-pass + lane-change ease apply. The
+            // Raylib box is FRONT-anchored, so the drawn point is the SMOOTHED FRONT.
+            if (smooth)
             {
-                var d = ((deg - prevDeg + 540f) % 360f) - 180f;
-                deg = MathF.Abs(d) > 100f ? deg : (prevDeg + d * headAlpha + 360f) % 360f;
+                var res = recon.ResolveFromFront(handle, fx, fy, deg, spd, (length, width), frameDtWall,
+                    lateralEvent: false, predictHeadingDeg: null);
+                if (res.Ok)
+                {
+                    fx = (float)res.SmoothedFrontX;
+                    fy = (float)res.SmoothedFrontY;
+                    deg = res.HeadingDeg;
+                }
             }
 
-            headingCur[handle] = deg;
-            outDraws.Add(new Renderer.DrVehicleDraw(fx, fy, deg, cur.Length[i], cur.Width[i], spd, handle));
+            outDraws.Add(new Renderer.DrVehicleDraw(fx, fy, deg, length, width, spd, handle));
         }
     }
 

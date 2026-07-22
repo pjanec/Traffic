@@ -1,0 +1,22 @@
+<edges>
+  <edge id="ring0" from="R0" to="R1" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring1" from="R1" to="R2" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring2" from="R2" to="R3" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring3" from="R3" to="R4" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring4" from="R4" to="R5" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring5" from="R5" to="R6" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring6" from="R6" to="R7" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring7" from="R7" to="R8" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring8" from="R8" to="R9" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring9" from="R9" to="R10" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring10" from="R10" to="R11" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="ring11" from="R11" to="R0" numLanes="1" speed="8.33" priority="10"/>
+  <edge id="inE" from="Eo" to="R0" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="outE" from="R0" to="Eo" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="inN" from="No" to="R3" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="outN" from="R3" to="No" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="inW" from="Wo" to="R6" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="outW" from="R6" to="Wo" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="inS" from="So" to="R9" numLanes="1" speed="13.89" priority="1"/>
+  <edge id="outS" from="R9" to="So" numLanes="1" speed="13.89" priority="1"/>
+</edges>

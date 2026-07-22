@@ -33,33 +33,58 @@ public readonly struct ReconstructedVehicle
     public float Speed { get; }
 }
 
-// docs/DEMO-CITY3D-DESIGN.md "Data path" -- the per-render-frame reconstruction pipeline (samples'
-// MotionReconstruction template, verbatim): one DrClock + one DrPoseSmoother shared across all vehicles
-// (the smoother is per-handle INTERNALLY -- Sim.Viewer.Motion.DrPoseSmoother keys its chase state by
-// VehicleHandle), driven purely off an IReplicationSource + an ILaneShapeSource. Neither type here is
+// docs/DEMO-CITY3D-DESIGN.md "Data path" + VIEWER-KINEMATIC-SMOOTHING-DESIGN.md §2.1 -- the per-render-frame
+// reconstruction pipeline. One DrClock + one shared KinematicReconstructor across all vehicles (the facade is
+// per-handle INTERNALLY -- Sim.Viewer.Motion.KinematicReconstructor keys its KinematicHeading + look-ahead
+// state by VehicleHandle), driven purely off an IReplicationSource + an ILaneShapeSource. Neither type here is
 // transport- or origin-specific, so the SAME Reconstructor instance/logic runs unchanged whether `lanes`
 // is a local Sim.Core.NetworkLaneSource or a wire-fed ReplicationLaneShapeSource (T1.2 condition 3), and
 // whether `source` is an in-process InMemoryReplicationBus.Source or (later) a DDS IReplicationSource.
+//
+// VIEWER-KINEMATIC-SMOOTHING §2.1 (S2): the older DrPoseSmoother is retired; every vehicle render frame now
+// runs through the shared KinematicReconstructor facade (straddle-aware continuous front + spatial look-ahead
+// + no-slip rear-axle KinematicHeading drag). `CoarseFeed=true` because the viewer is a sparse (~1-3 Hz) DR
+// consumer -- it enables the junction-turn-straddle discriminator. The facade returns the vehicle geometric
+// CENTER (half a length behind the front), which is exactly what City3D's center-anchored box wants.
 public sealed class Reconstructor
 {
     private readonly DrClock _clock = new();
-    private readonly DrPoseSmoother _smoother = new();
+    private readonly KinematicReconstructor _recon = new() { CoarseFeed = true };
     private readonly List<ReconstructedVehicle> _scratch = new();
     private readonly Stopwatch _wall = Stopwatch.StartNew();
     private double _lastWallSec = -1.0;
 
     // Call once per render frame. Mirrors the design's data-path recipe exactly:
-    //   source.Pump() -> DrClock.Pump(newest) -> per vehicle: Resolve -> PoseResolver.Resolve -> Smooth
+    //   source.Pump() -> DrClock.Pump(newest) -> per vehicle: DrClock.Resolve -> KinematicReconstructor.Resolve
     // `delaySeconds` is the playout delay (design "Playout delay": a stable manual knob, ~0.3-0.5s).
+    // `frameDtOverride`: normally null -- the real per-frame dt is measured off the wall Stopwatch and the
+    // DrClock's own Stopwatch-driven render clock (`Pump`+`Resolve`) times the playout, exactly as a live 60 Hz
+    // viewer needs. When a FIXED dt is passed the reconstruction is switched to a DETERMINISTIC clock: the per-
+    // frame dt is that fixed value AND the DrClock query instant is derived purely from the packet stream
+    // (`LatestVehicleSampleTime - delay` via `ResolveAt`, the same deterministic seam IgBridge uses), never the
+    // Stopwatch. That makes the whole pass a pure function of (packet stream, dt schedule) -- the only way to
+    // assert determinism (identical transforms across two runs) without a wall clock to diverge.
     public IReadOnlyList<ReconstructedVehicle> Reconstruct(
-        IReplicationSource source, ILaneShapeSource lanes, double delaySeconds)
+        IReplicationSource source, ILaneShapeSource lanes, double delaySeconds, float? frameDtOverride = null)
     {
         source.Pump();
-        _clock.Pump(source.LatestVehicleSampleTime);
 
-        var nowWall = _wall.Elapsed.TotalSeconds;
-        var frameDt = _lastWallSec >= 0.0 ? (float)(nowWall - _lastWallSec) : 0f;
-        _lastWallSec = nowWall;
+        float frameDt;
+        double? deterministicSampleT = null;
+        if (frameDtOverride is { } fixedDt)
+        {
+            frameDt = fixedDt;
+            // Deterministic query instant: `delay` behind the newest sample seen, from the packet stream alone
+            // (no Stopwatch). Analogous to IgBridge's `tau`. Null (no samples yet) -> nothing resolves anyway.
+            deterministicSampleT = source.LatestVehicleSampleTime is { } newest ? newest - delaySeconds : null;
+        }
+        else
+        {
+            _clock.Pump(source.LatestVehicleSampleTime);
+            var nowWall = _wall.Elapsed.TotalSeconds;
+            frameDt = _lastWallSec >= 0.0 ? (float)(nowWall - _lastWallSec) : 0f;
+            _lastWallSec = nowWall;
+        }
 
         _scratch.Clear();
 
@@ -77,7 +102,9 @@ public sealed class Reconstructor
             DrClock.Resolved resolved;
             try
             {
-                resolved = _clock.Resolve(history, delaySeconds, lanes);
+                resolved = deterministicSampleT is { } sampleT
+                    ? _clock.ResolveAt(history, sampleT, lanes)
+                    : _clock.Resolve(history, delaySeconds, lanes);
             }
             catch (KeyNotFoundException)
             {
@@ -87,14 +114,25 @@ public sealed class Reconstructor
                 continue;
             }
 
-            if (resolved.IsLateralStraddle)
+            // §2.1 (S2): one shared reconstruction for BOTH straddle and non-straddle. A lateral straddle
+            // (lane change or junction lane-cross) is NO LONGER skipped -- the facade resolves both bracketing
+            // states and Cartesian-lerps a continuous front, then runs the look-ahead + no-slip rear-axle
+            // KinematicHeading drag, returning the vehicle geometric CENTER. Ok=false == the old inline
+            // `continue` (missing/degenerate geometry this frame) -> skip the vehicle this frame.
+            var r = _recon.Resolve(handle, resolved, lanes, (dims.Length, dims.Width), frameDt);
+            if (!r.Ok)
             {
-                // Sibling-lane (lane-change) blending is out of Stage-1 scope (design's "Data path" recipe
-                // covers the single-lane-window case the demo scenarios exercise); skip defensively rather
-                // than half-implement the two-state Cartesian lerp here.
                 continue;
             }
 
+            // Feed the box the CENTER (not the front): City3D's box is centered on the point, so before this
+            // fix it drew the body at the front reference (~half a length too far forward). r.CenterX/Y is the
+            // true geometric center KinematicHeading tows behind the front, which lands the box correctly.
+            var (gx, gy, gz) = CoordinateTransform.SumoToGodot(r.CenterX, r.CenterY, r.Z);
+            var yawRad = CoordinateTransform.NaviDegToGodotYawRad(r.HeadingDeg);
+
+            // Pitch (tilt on ramps) still comes from the lane's own z-gradient along travel, walked down the
+            // primary bracket's current + upcoming lane window (unchanged from before the facade swap).
             var state = resolved.State with { Length = dims.Length, Width = dims.Width };
             var n = resolved.Upcoming.CopyTo(upcomingBuf);
             if (n == 0)
@@ -103,26 +141,10 @@ public sealed class Reconstructor
                 n = 1;
             }
 
-            var path = upcomingBuf[..n];
-            Pose pose;
-            try
-            {
-                pose = PoseResolver.Resolve(
-                    lanes, state, path, ReadOnlySpan<int>.Empty, dt: 0.0, RenderRealism.ChordHeading);
-            }
-            catch (KeyNotFoundException)
-            {
-                continue;
-            }
-
-            var (sx, sy, sdeg) = _smoother.Smooth(handle, pose.X, pose.Y, pose.HeadingDeg, state.Speed, frameDt);
-
-            var (gx, gy, gz) = CoordinateTransform.SumoToGodot(sx, sy, pose.Z);
-            var yawRad = CoordinateTransform.NaviDegToGodotYawRad(sdeg);
-            var pitchRad = ComputePitchRad(lanes, state, path);
+            var pitchRad = ComputePitchRad(lanes, state, upcomingBuf[..n]);
 
             _scratch.Add(new ReconstructedVehicle(
-                handle, gx, gy, gz, yawRad, pitchRad, dims.Length, dims.Width, (float)state.Speed));
+                handle, gx, gy, gz, yawRad, pitchRad, dims.Length, dims.Width, (float)r.Speed));
         }
 
         return _scratch;

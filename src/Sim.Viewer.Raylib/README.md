@@ -42,7 +42,7 @@ package remains a plain, generic rendering leaf for any SumoSharp stream.
 
 ## Depends on
 
-- `SumoSharp.Viewer.Motion` (portable render-side motion reconstruction — `DrClock`, `DrPoseSmoother`).
+- `SumoSharp.Viewer.Motion` (portable render-side motion reconstruction — `DrClock`, `KinematicReconstructor`).
 - `SumoSharp.Replication.Dds` (the CycloneDDS binding — topics, wire codecs, QoS profiles).
 - `Raylib-cs` + `rlImgui-cs` (the native rendering/UI dependency this package exists to wrap).
 

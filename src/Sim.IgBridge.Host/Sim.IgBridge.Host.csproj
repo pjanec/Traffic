@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IgBridge verification console (docs/IGBRIDGE-DECISIONS.md §2, §6 Q6). net8.0 — this is the
+       internal harness that does NOT ship inside the real .NET 6 host: it drives a run of the
+       Sim.IgBridge producer, replays the emitted trace through a FakeIg (the real IG's 2-most-recent
+       interpolate/extrapolate + configurable delay), renders a side-by-side via Sim.Viz, and computes
+       the smoothness metrics. Because it references Sim.Viz (net8.0-only) it stays net8.0. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.IgBridge\Sim.IgBridge.csproj" />
+    <ProjectReference Include="..\Sim.Viz\Sim.Viz.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -10,6 +10,9 @@ start there, it points back into the mechanism sections. §6 covers the junction
 `befd5ed`); **§10 records the later as-built** — position error-smoothing, motion-derived heading tilt,
 auto-delay OFF by default, and **dead-reckoning-error-based publishing** (the publish-side root fix;
 its own doc `SUMOSHARP-DR-ERROR-PUBLISHING-DESIGN.md`) — and supersedes the §5.4/§5.5 details.
+**§11 is the current as-built for the VEHICLE path**: it now smooths via the shared
+`Sim.Viewer.Motion.KinematicReconstructor` (kinematic no-slip reconstruction), which **supersedes the
+§10.2/§10.3 `DrPoseSmoother` mechanisms** — see `VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`.
 
 ---
 
@@ -379,3 +382,28 @@ motion is smooth at low delay with no bandwidth increase. Full design + as-built
 ### 10.5 One source of truth for the DR curve
 `DrClock.ExtrapolateArc` now delegates to `Sim.Replication.DrExtrapolation.Arc`, so the viewer's
 extrapolation and the publisher's DR-error prediction are byte-identical.
+
+---
+
+## 11. As-built update (2026-07) — the VEHICLE path now smooths via `KinematicReconstructor` (supersedes §10.2/§10.3)
+
+The **vehicle** render path in every viewer — 2D Raylib (`--mode loopback`/`remote`/`local`), 3D City3D
+(Godot), and the IgBridge feed — no longer uses `DrPoseSmoother`. It now runs the shared
+`Sim.Viewer.Motion.KinematicReconstructor` facade: a **no-slip rear-axle (bicycle) reconstruction** with a
+low-passed **lane-heading predictor**, a **spatial look-ahead** onto the connecting lane, an anticipation
+**lead-bound**, a **coarse-feed junction-straddle discriminator**, and a **lane-change ease** (a lane-width
+sideways snap is absorbed into a bounded, decaying lateral error instead of teleporting). The vehicle box is
+now pivoted on the returned **center** (½·length behind the front reference), fixing a latent forward offset.
+
+This **supersedes §10.2 (capped-correction position error-smoothing) and §10.3 (motion-derived heading tilt)
+on the vehicle path** — those were the `DrPoseSmoother` mechanisms, which is deleted. §10.2/§10.3 remain here
+as the historical record of what the vehicle path did before this change (and still describe the general
+DR-smoothing philosophy). §10.1 (stable manual delay), §10.4 (DR-error-based publishing), and §10.5 (one DR
+curve) are unchanged and still apply. Any non-vehicle path (e.g. pedestrians) keeps its own reconstructor.
+
+**The full design, tunables, and parity/determinism argument live in
+[`VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`](VIEWER-KINEMATIC-SMOOTHING-DESIGN.md)** (tasks +
+success conditions: `VIEWER-KINEMATIC-SMOOTHING-TASKS.md`; tracker: `VIEWER-KINEMATIC-SMOOTHING-TRACKER.md`,
+whose "Locked defaults" table lists the shipped config). The reconstruction internals mirror
+`IGBRIDGE-DECISIONS.md` §5.3. Regression is guarded by `tests/Sim.Viewer.Motion.Tests`,
+`CityLib.Tests/ReconstructorS2Tests`, and the IgBridge byte-identical trace.

@@ -103,7 +103,7 @@ public sealed class RerouteDriver
 
     // The blocked set currently in force for routing purposes (post-debounce) -- for tests/telemetry;
     // FindPath calls this driver makes always use exactly this set.
-    public IReadOnlySet<int> EffectiveBlockedPolygons => _effectiveBlocked;
+    public ISet<int> EffectiveBlockedPolygons => _effectiveBlocked;
 
     public int PedCount => _peds.Count;
 
@@ -126,7 +126,7 @@ public sealed class RerouteDriver
     // BlockerRegistry.BlockedPolygons(), sampled at `time`) and, if that changes what is
     // EFFECTIVELY blocked, reroutes exactly the affected peds. Deterministic: no System.Random, fixed
     // ascending-OrcaHandle.Index ped order, and FindPath itself is already deterministic (SumoNavMesh).
-    public void Update(double time, IReadOnlySet<int> rawBlocked)
+    public void Update(double time, ISet<int> rawBlocked)
     {
         AdvanceDebounce(time, rawBlocked);
 
@@ -151,7 +151,7 @@ public sealed class RerouteDriver
         RerouteAffected(time, newlyBlocked);
     }
 
-    private void AdvanceDebounce(double time, IReadOnlySet<int> rawBlocked)
+    private void AdvanceDebounce(double time, ISet<int> rawBlocked)
     {
         foreach (var idx in rawBlocked)
         {

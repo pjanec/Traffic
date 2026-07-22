@@ -53,6 +53,7 @@
   // Vehicles in the unified payload share one box dim per scene and render in a single colour
   // (the classic passenger blue). Speed colouring (derived from motion) is available via the HUD.
   var VEHICLE_COLOR = "#4f8ef7";
+  var BUS_COLOR = "#f97316";   // long vehicles (bus/truck) -- amber, distinct from the passenger blue
   // Discs (crowd/pedestrian agents) coloured by kind.
   var DISC_COLORS = {
     0: "#38bdf8", 1: "#fb7185", 2: "#c084fc", 3: "#f59e0b",
@@ -305,6 +306,45 @@
   });
   window.addEventListener("mouseup", function () { dragging = false; });
 
+  // Click-to-identify (guarded): only active when the payload gives per-slot entity ids (scene.vehIds).
+  // Inert for every other viewer/scene, so this is a shared, no-cost addition. A left click that did not
+  // drag hit-tests the nearest vehicle at the current time and latches its id (kept across scene toggles
+  // so the SAME car can be compared raw vs smoothed). Click empty space to clear.
+  var pickedId = null, downX = 0, downY = 0;
+  canvas.addEventListener("mousedown", function (ev) {
+    if (ev.button === 0) { downX = ev.clientX; downY = ev.clientY; }
+  });
+  canvas.addEventListener("click", function (ev) {
+    if (ev.button !== 0 || !scene || !scene.vehIds) return;
+    if (Math.abs(ev.clientX - downX) > 4 || Math.abs(ev.clientY - downY) > 4) return; // was a drag, not a click
+    var rect = canvas.getBoundingClientRect();
+    var w = screenToWorld(ev.clientX - rect.left, ev.clientY - rect.top);
+    var vehs = interpolatedVehicles(simTime);
+    var best = -1, bestD = Infinity;
+    for (var i = 0; i < vehs.length; i++) {
+      if (!vehs[i]) continue;
+      var ddx = vehs[i].x - w[0], ddy = vehs[i].y - w[1];
+      var d = ddx * ddx + ddy * ddy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    var reach = Math.max((vdim[0] || 5) * 1.2, 8); // metres: forgiving pick radius
+    pickedId = (best >= 0 && bestD <= reach * reach) ? (scene.vehIds[best] || null) : null;
+    followId = null; // a manual click releases any typed-in follow
+  });
+
+  // Find/follow by id: type a vehicle id into the HUD box to latch AND follow it -- the camera re-centers
+  // on it every frame (see render) so it can't hide off-view, which is the whole point when a promoted bus
+  // is somewhere outside the auto-cropped window. Forgiving: "213" resolves to "v213". Clearing releases it.
+  var followId = null;
+  var findEl = document.getElementById("findVeh");
+  if (findEl) {
+    findEl.addEventListener("input", function () {
+      var val = findEl.value.trim();
+      followId = val.length ? val : null;
+      if (!followId) { pickedId = null; }
+    });
+  }
+
   var touchState = null;
   canvas.addEventListener("touchstart", function (ev) {
     ev.preventDefault();
@@ -414,9 +454,12 @@
       var a = fa[i], b = fb[i];
       if (!a) { out.push(null); continue; }
       if (!b) {
-        // Present now, gone next step: hold only at/after the last step, else drop.
-        var heldFear = a.length >= 4 ? a[3] : undefined;
-        out.push(k === k2 ? { x: a[0], y: a[1], angle: a[2], speed: 0, fear: heldFear } : null);
+        // Present now, gone next step: hold only at/after the last step, else drop. A 4-tuple carries fear
+        // (panic-evac); a 5-tuple carries per-vehicle [length,width] (IgBridge mixed traffic) -- disjoint.
+        var heldFear = a.length === 4 ? a[3] : undefined;
+        var heldLen = a.length >= 5 ? a[3] : undefined;
+        var heldWid = a.length >= 5 ? a[4] : undefined;
+        out.push(k === k2 ? { x: a[0], y: a[1], angle: a[2], speed: 0, fear: heldFear, len: heldLen, wid: heldWid } : null);
         continue;
       }
       var p1 = [a[0], a[1]], p2 = [b[0], b[1]];
@@ -451,17 +494,32 @@
       var along = Math.abs(segDx * fwdX + segDy * fwdY);
       var lateral = Math.abs(segDx * -fwdY + segDy * fwdX);
       var lateralSnap = lateral > along + 1e-6;
-      var angle = (moving && !lateralSnap) ? headingFromDelta(dx, dy) : shortestArcDeg(a[2], b[2]);
+      var angle;
+      if (scene && scene.useDataHeading) {
+        // Use the REPORTED heading (interpolated), not the path tangent. For streams whose heading is already
+        // the authoritative body orientation (e.g. IgBridge's kinematic reconstruction), the tangent of the
+        // front-anchor path is NOT the body heading — using it draws the rear rigidly trailing the front
+        // ("on rails" / rear-swing). Interpolate the emitted heading along the shortest arc instead.
+        var b2 = (b && b.length > 2) ? b[2] : a[2];
+        angle = a[2] + (((b2 - a[2] + 540) % 360) - 180) * frac;
+      } else {
+        angle = (moving && !lateralSnap) ? headingFromDelta(dx, dy) : shortestArcDeg(a[2], b[2]);
+      }
 
       // Speed (m/s) derived from step displacement -- drives the optional speed heatmap.
       var segDx = p2[0] - p1[0], segDy = p2[1] - p1[1];
       var speed = span > 1e-9 ? Math.sqrt(segDx * segDx + segDy * segDy) / span : 0;
 
-      // Fear (panic-evac only): 4th element on both endpoints -> linear-interpolate it the same way
-      // as position. Other scenes' entries stay 3-long, so fear is left undefined for them.
-      var fear = (a.length >= 4 && b.length >= 4) ? a[3] + (b[3] - a[3]) * frac : undefined;
+      // Fear (panic-evac only): EXACTLY-4-long entries -> linear-interpolate it the same way as position.
+      // 3-long entries have no fear; 5-long entries (IgBridge) carry [length,width], not fear.
+      var fear = (a.length === 4 && b.length === 4) ? a[3] + (b[3] - a[3]) * frac : undefined;
+      // Per-vehicle footprint (IgBridge mixed traffic): 5-long entries carry true [length,width] so a bus
+      // draws long and a car short. Constant per vehicle -> hold (no interpolation). Absent -> undefined
+      // (drawVehicle falls back to the scene's shared vdim, so City3D scenes are unchanged).
+      var len = (a.length >= 5) ? a[3] : undefined;
+      var wid = (a.length >= 5) ? a[4] : undefined;
 
-      out.push({ x: pos[0], y: pos[1], angle: angle, speed: speed, fear: fear });
+      out.push({ x: pos[0], y: pos[1], angle: angle, speed: speed, fear: fear, len: len, wid: wid });
     }
     return out;
   }
@@ -706,17 +764,23 @@
   // FRONT-CENTRE reference point; the box extends BACK by `length` along the heading. naviDegree
   // 0 = up-screen (+Y world), increasing clockwise -> ctx.rotate(angleRad - PI/2).
   function drawVehicle(v) {
-    var length = vdim[0] || 4.3;
-    var width = vdim[1] || 1.8;
+    // Per-vehicle footprint when the stream supplies it (IgBridge 5-tuples -> v.len/v.wid); otherwise the
+    // scene's shared vdim (City3D, panic-evac). The center->front anchor shift upstream uses the SAME length,
+    // so the drawn rect stays center-pivoted at whatever length (a 12 m bus swings its true body).
+    var length = (typeof v.len === "number" && v.len > 0) ? v.len : (vdim[0] || 4.3);
+    var width = (typeof v.wid === "number" && v.wid > 0) ? v.wid : (vdim[1] || 1.8);
     var p = worldToScreen(v.x, v.y);
     ctx.save();
     ctx.translate(p[0], p[1]);
     ctx.rotate((v.angle * Math.PI) / 180 - Math.PI / 2);
     var lengthPx = Math.max(length * camera.scale, 5);
     var widthPx = Math.max(width * camera.scale, 3);
+    // Long vehicles (buses/trucks) get a distinct base colour so they're findable at a glance among the
+    // passenger cars, independent of the speed/fear tints. Threshold sits between a car (~5 m) and a bus.
+    var baseColor = (typeof v.len === "number" && v.len >= 7) ? BUS_COLOR : VEHICLE_COLOR;
     ctx.fillStyle = speedColorToggle.checked
       ? colorForSpeed(v.speed)
-      : (v.fear !== undefined ? fearColor(v.fear) : VEHICLE_COLOR);
+      : (v.fear !== undefined ? fearColor(v.fear) : baseColor);
     ctx.strokeStyle = "rgba(0,0,0,0.55)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -788,6 +852,23 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    // Find/follow: if an id was typed into the find box, re-center the camera on that vehicle before the
+    // frame draws so it's always in view (resolve "213" -> "v213"). Only the pan offset is driven; the user
+    // keeps zoom control. Also latch it as pickedId so the yellow highlight ring + label track it.
+    if (followId && scene.vehIds) {
+      var fid = scene.vehIds.indexOf(followId) >= 0 ? followId
+        : (scene.vehIds.indexOf("v" + followId) >= 0 ? "v" + followId : null);
+      if (fid) {
+        pickedId = fid;
+        var fv = interpolatedVehicles(simT)[scene.vehIds.indexOf(fid)];
+        if (fv) {
+          var fcw = canvas.clientWidth || 300, fch = canvas.clientHeight || 300;
+          camera.offsetX = fcw / 2 - fv.x * camera.scale;
+          camera.offsetY = fch / 2 + fv.y * camera.scale;
+        }
+      }
+    }
+
     // 1..6 Network layers (skipped cleanly for pure-crowd scenes). Draw order: junctions -> lane
     // bands -> lane markings -> crossing zebra -> round vehicle signals -> square ped signals.
     // NOTE: crossings are deliberately drawn AFTER the lane bands/markings, not before them --
@@ -822,7 +903,32 @@
       if (vehicles[i]) { drawVehicle(vehicles[i]); vehCount++; }
     }
 
+    // Click-to-identify overlay: highlight the latched vehicle and label it with its id (guarded on
+    // scene.vehIds; a no-op for every other scene). Latched by id so it survives a scene toggle.
+    if (pickedId && scene.vehIds) {
+      var ps = scene.vehIds.indexOf(pickedId);
+      var pv = ps >= 0 ? vehicles[ps] : null;
+      if (pv) {
+        var sc = worldToScreen(pv.x, pv.y);
+        var ringLen = (typeof pv.len === "number" && pv.len > 0) ? pv.len : (vdim[0] || 5);
+        ctx.save();
+        ctx.strokeStyle = "#fde047";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sc[0], sc[1], Math.max(ringLen * camera.scale * 0.7, 12), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = "bold 13px system-ui, sans-serif";
+        var tw = ctx.measureText(pickedId).width;
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.fillRect(sc[0] + 10, sc[1] - 22, tw + 10, 18);
+        ctx.fillStyle = "#fde047";
+        ctx.fillText(pickedId, sc[0] + 15, sc[1] - 9);
+        ctx.restore();
+      }
+    }
+
     var parts = [];
+    if (pickedId) parts.push("selected: " + pickedId);
     if (vdim[0] > 0) parts.push("vehicles: " + vehCount);
     if (discs.length > 0) parts.push("discs: " + discs.length);
     vehCountEl.textContent = parts.join("  ·  ") || "";
@@ -866,8 +972,12 @@
   // ---------------------------------------------------------------------
   // Scene loading / switching
   // ---------------------------------------------------------------------
-  function loadScene(idx) {
+  function loadScene(idx, preserveView) {
     if (idx < 0 || idx >= scenes.length) return;
+    // A/B scene toggle (raw <-> IgBridge) shares the same world coords and timeline, so preserve the
+    // camera pan/zoom AND the playback position across the switch instead of snapping back to the fit view
+    // at t=0 (the two scenes are meant to be compared frame-for-frame at the same place and moment).
+    var prevTime = simTime, prevPlaying = playing;
     scene = scenes[idx];
     frames = scene.frames || [];
     network = scene.network || null;
@@ -892,14 +1002,24 @@
     timeSlider.min = String(simStart);
     timeSlider.max = String(simEnd);
     timeSlider.step = String(Math.max(stepSize / 10, 0.001));
-    timeSlider.value = String(simStart);
 
-    // Re-fit the camera to the new scene and re-enable auto-fit (until the user pans/zooms).
-    userAdjusted = false;
-    resizeCanvas();
-    fitToView();
+    if (preserveView) {
+      // Keep the current camera and playback position (clamped to the new range). Leaves userAdjusted as-is,
+      // so a fitted view stays fitted and a user-panned view stays put -- the toggle just swaps the stream.
+      simTime = Math.max(simStart, Math.min(simEnd, prevTime));
+      timeSlider.value = String(simTime);
+      resizeCanvas();
+      setPlaying(prevPlaying);
+    } else {
+      // Fresh load: re-fit the camera to the new scene and re-enable auto-fit (until the user pans/zooms).
+      simTime = simStart;
+      timeSlider.value = String(simStart);
+      userAdjusted = false;
+      resizeCanvas();
+      fitToView();
+      if (!prefersReduced) setPlaying(true);
+    }
 
-    if (!prefersReduced) setPlaying(true);
     render(simTime);
   }
 
@@ -928,7 +1048,7 @@
 
   sceneSel.addEventListener("change", function () {
     var idx = parseInt(sceneSel.value, 10) || 0;
-    loadScene(idx);
+    loadScene(idx, true); // preserve camera + playback position across the A/B toggle
   });
 
   btnPlay.addEventListener("click", function () { setPlaying(!playing); });

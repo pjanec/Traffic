@@ -83,7 +83,10 @@ public sealed class InterestField
     // caller relocates it.
     public InterestSourceId Register(InterestSource source, InterestSourceKind kind = InterestSourceKind.StaticAoI)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        if (source is null)
+        {
+            throw new ArgumentNullException(nameof(source));
+        }
 
         var id = new InterestSourceId(_nextId++);
         _sources.Add(id, new Entry { Source = source, Kind = kind });

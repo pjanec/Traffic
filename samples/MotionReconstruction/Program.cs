@@ -57,10 +57,12 @@ internal static class Program
         Console.WriteLine();
 
         // 3) The reconstruction pipeline (README's pseudocode, verbatim): a DrClock per vehicle (its
-        //    render clock + interpolate/extrapolate resolver) and a DrPoseSmoother (the optional
-        //    per-frame position/heading smoothing pass a real renderer runs after resolving a pose).
+        //    render clock + interpolate/extrapolate resolver) and a KinematicReconstructor (the shared
+        //    straddle-aware front resolve + no-slip rear-axle KinematicHeading smoothing pass a real
+        //    renderer runs to turn each resolved bracket into a continuous per-frame pose). CoarseFeed=true
+        //    matches a sparse (~1 Hz) feed rendered at ~10 Hz, exactly this sample's case.
         var clock = new DrClock();
-        var smoother = new DrPoseSmoother();
+        var recon = new KinematicReconstructor { CoarseFeed = true };
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var lastWall = 0.0;
@@ -89,26 +91,21 @@ internal static class Program
             // lerp (same lane throughout, so no arc-window walk is needed).
             var resolved = clock.Resolve(history, delay: Delay, lanes);
 
-            // The caller fills in physical dims (sent once per vType/handle in a real system, not per
-            // frame) before handing the state to PoseResolver. dt=0 because Resolve already advanced
-            // the arc to render time.
-            var state = resolved.State with { Length = VehicleLength, Width = VehicleWidth };
-            var pose = PoseResolver.Resolve(
-                lanes, state, upcomingLanes: stackalloc[] { state.LaneHandle },
-                precedingLanes: ReadOnlySpan<int>.Empty, dt: 0.0, RenderRealism.ChordHeading);
-
-            // 4) DrPoseSmoother.Smooth: an optional per-vehicle, per-frame chase filter applied AFTER
-            //    resolving a target pose -- capped position error-smoothing + motion-derived heading
-            //    tilt + a heading low-pass. The first observation of a handle returns the target
-            //    unchanged (nothing to smooth from yet).
-            var (sx, sy, sdeg) = smoother.Smooth(handle, pose.X, pose.Y, pose.HeadingDeg, state.Speed, frameDt);
+            // 4) KinematicReconstructor.Resolve: the shared reconstruction facade -- it resolves a
+            //    continuous FRONT pose from the DrClock bracket (PoseResolver ChordHeading internally,
+            //    straddle-aware; the caller no longer calls PoseResolver itself) then drives the no-slip
+            //    rear-axle KinematicHeading smoother, returning the raw resolved front (FrontX/Y +
+            //    LaneHeadingDeg), the smoothed front (SmoothedFrontX/Y), the body center, and the smoothed
+            //    heading. The first observation of a handle returns the target unchanged (nothing to smooth
+            //    from yet). frameDt is the caller's real elapsed dt for this vehicle.
+            var result = recon.Resolve(handle, resolved, lanes, (VehicleLength, VehicleWidth), frameDt);
 
             var regime = resolved.Extrapolated ? "extrapolate" : "interpolate";
             Console.WriteLine(
                 $"frame {frame,2}  wall={nowWall,4:F2}s  renderSim={clock.RenderSim,5:F2}s  " +
                 $"sampleT={clock.RenderSim - Delay,5:F2}s  [{regime,-11}]  " +
-                $"pos={pose.X,6:F2},{pose.Y,5:F2}  heading={pose.HeadingDeg,5:F1}deg  " +
-                $"smoothed=({sx,6:F2},{sy,5:F2})");
+                $"pos={result.FrontX,6:F2},{result.FrontY,5:F2}  heading={result.LaneHeadingDeg,5:F1}deg  " +
+                $"smoothed=({result.SmoothedFrontX,6:F2},{result.SmoothedFrontY,5:F2})");
         }
 
         Console.WriteLine();
@@ -122,7 +119,7 @@ internal static class Program
         Console.WriteLine(
             "   data before it engages (RenderSim holds steady meanwhile -- see Pump's \"pre-baseline");
         Console.WriteLine(
-            "   guard\" comment); `pos` sits still, but DrPoseSmoother keeps creeping the SMOOTHED pose");
+            "   guard\" comment); `pos` sits still, but the kinematic smoother keeps creeping the SMOOTHED pose");
         Console.WriteLine(
             "   forward anyway (its forward-biased catch-up cap never lets a moving vehicle's render");
         Console.WriteLine(

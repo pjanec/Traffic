@@ -320,11 +320,12 @@ static int RunLocal(string? netPath, string? demoName, string? screenshotPath, i
     // from 0 to ~10k -- that per-warmup-frame growth was itself a source of early allocations/stutter.
     var interpCap = Math.Max(fleet ?? 0, 256);
     var prevIndex = new Dictionary<VehicleHandle, int>(interpCap);
-    // Per-vehicle rendered-heading low-pass state, double-buffered (swapped each frame) so it prunes
-    // despawned vehicles and stays bounded. Smooths the ~5 discrete headings of a junction's coarse internal
-    // lane (netconvert internal-link-detail=5) into a continuous rotation through the turn.
-    var headingPrev = new Dictionary<VehicleHandle, float>(interpCap);
-    var headingCur = new Dictionary<VehicleHandle, float>(interpCap);
+    // VIEWER-KINEMATIC-SMOOTHING §1.3: `--mode local` now shares the SAME kinematic reconstruction as the DR
+    // viewers (replacing the old per-vehicle render-heading low-pass) so all vehicle motion has one look. It
+    // has no upcoming-lane window, so it uses the pose-level entry (predictHeadingDeg=null, no look-ahead);
+    // the no-slip body + lane-heading low-pass + step-based lane-change ease still apply. Per-vehicle state
+    // lives inside the reconstructor (deterministic, keyed by VehicleHandle; no System.Random).
+    var recon = new KinematicReconstructor();
     // Interpolation clock driven by the measured WALL interval between snapshot arrivals: interpolate
     // prev->cur by the fraction of that interval elapsed, which sweeps the pose at CONSTANT velocity across
     // each snapshot (matching the actual production cadence). lastSnapSimTime/Wall mark the newest arrival;
@@ -381,8 +382,7 @@ static int RunLocal(string? netPath, string? demoName, string? screenshotPath, i
                 intervalEma = 0.0;
                 sharedDraws?.Clear();
                 prevIndex.Clear();
-                headingPrev.Clear();
-                headingCur.Clear();
+                recon.Clear(); // don't blend kinematic state across the switch's timeline jump
                 host.SetSpeed(simRate ?? (perf ? 10.0 : 1.0));
                 return (host.MinX, host.MinY, host.MaxX, host.MaxY);
             }
@@ -448,8 +448,7 @@ static int RunLocal(string? netPath, string? demoName, string? screenshotPath, i
             // fear tinting is now the overlay's own DrawWorldOver overpaint, keyed off each vehicle's generic
             // Handle. This just builds plain speed-coloured draw poses (+ each vehicle's Handle).
             RenderHelpers.BuildLocalVehicleDraws(snapshot, prevSnapshot, renderClock, smooth, draws, prevIndex,
-                headingPrev, headingCur, dt);
-            (headingPrev, headingCur) = (headingCur, headingPrev); // swap: headingCur becomes next frame's prior
+                recon, dt);
         },
 
         DrawWorld = (camera, draws) =>
@@ -760,7 +759,10 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
     // idea"). A stable manual delay reads far smoother. Still available via the checkbox for the rare case
     // where minimising latency matters more than steadiness.
     var alwaysInterpolate = false;
-    var smoother = new DrPoseSmoother();
+    // VIEWER-KINEMATIC-SMOOTHING §1.1/§2.2: the shared kinematic reconstruction facade replaces the older per-vehicle pose smoother
+    // on the DR vehicle path. CoarseFeed=true -- the viewer is a sparse (~1-3 Hz) DR consumer, so the
+    // junction-turn-straddle discriminator must be active. v5-tuned defaults otherwise.
+    var recon = new KinematicReconstructor { CoarseFeed = true };
     var lastPublishedSimTime = double.NaN;
     var lastGeneration = host.Generation;
     VehicleHandle? traceHandle = null; // diagnostic: resolved once from --trace-veh id
@@ -855,7 +857,7 @@ static int RunLoopback(string netPath, string? screenshotPath, int frames, float
             // depend on this frame's camera input, so it's hoisted before the input/drawing block into a
             // function shared with `--mode remote` (PumpAndBuildVehicleDraws below) -- same math, same DR
             // resolve, same smoothing, just called from one place instead of duplicated per mode.
-            RenderHelpers.PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoother, draws,
+            RenderHelpers.PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, recon, draws,
                 paused: host.IsPaused, traceHandle: traceHandle);
             lastDrawCount = draws.Count;
         },
@@ -921,7 +923,10 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
     // idea"). A stable manual delay reads far smoother. Still available via the checkbox for the rare case
     // where minimising latency matters more than steadiness.
     var alwaysInterpolate = false;
-    var smoother = new DrPoseSmoother();
+    // VIEWER-KINEMATIC-SMOOTHING §1.1/§2.2: the shared kinematic reconstruction facade replaces the older per-vehicle pose smoother
+    // on the DR vehicle path. CoarseFeed=true -- the viewer is a sparse (~1-3 Hz) DR consumer, so the
+    // junction-turn-straddle discriminator must be active. v5-tuned defaults otherwise.
+    var recon = new KinematicReconstructor { CoarseFeed = true };
     var startWall = Stopwatch.StartNew();
 
     // No local NetworkModel to size the camera from (unlike loopback's host.MinX/MinY/MaxX/MaxY, read
@@ -982,7 +987,7 @@ static int RunRemote(string? screenshotPath, int frames, float initialDelaySecon
                 }
             }
 
-            RenderHelpers.PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, smoother, draws,
+            RenderHelpers.PumpAndBuildVehicleDraws(subscriber, drClock, delaySlider, smooth, frameStats, recon, draws,
                 paused: status.Paused);
             lastDrawCount = draws.Count;
         },

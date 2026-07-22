@@ -31,15 +31,25 @@ condensed reimplementation guide (its §8 and §10).
   - Extrapolation delegates to `Sim.Replication.DrExtrapolation.Arc` — the SAME curve the publisher
     uses for its DR-error publish decision, so viewer prediction and publish-side prediction never
     diverge (see "Reuse DR-error-based publishing" below).
-- **`DrPoseSmoother`** — a small per-vehicle, per-frame pose smoother you run *after*
-  `DrClock.Resolve` + `PoseResolver.Resolve` have produced a target `(x, y, heading)` for the frame.
-  `Smooth(handle, targetX, targetY, targetDeg, speed, frameDt)` returns the actual pose to draw this
-  frame, and remembers it for the next call. The first observation of a handle returns the target
-  unchanged.
+- **`KinematicReconstructor`** — the shared per-vehicle, per-frame render-smoothing facade you run *after*
+  `DrClock.Resolve` has produced the render-time `DrState` bracket. It resolves a continuous front pose
+  (straddle-aware), applies the spatial look-ahead + anticipation guards + the coarse-feed junction-straddle
+  discriminator, and drives a **kinematic no-slip rear-axle (bicycle) reconstruction** (`KinematicHeading`)
+  to a rigid-body pose:
+  - `Resolve(handle, resolved, lanes, dims, frameDt)` — the full pipeline from a `DrClock.Resolved` bracket
+    (used by the DR viewers + IgBridge). Returns a `KinematicReconResult` carrying the vehicle **center**
+    (½·length behind the front reference — pivot your box on this), `Z`, and body heading; `Ok == false`
+    means skip the vehicle this frame (degenerate/missing geometry).
+  - `ResolveFromFront(handle, frontX, frontY, laneHeadingDeg, speed, dims, frameDt, lateralEvent, predictHeadingDeg)`
+    — the pose-level entry for a caller that already owns the front reference (e.g. `--mode local`, or a
+    snapshot interpolator), with `predictHeadingDeg = null` to skip the look-ahead.
+  Stateful per vehicle, deterministic (no `System.Random`, per-entity state, tau/`frameDt`-based gains), and
+  render-side only — it never touches parity. It replaces the earlier `DrPoseSmoother` (deleted); its config
+  ships at the tuned v5 defaults (see `VIEWER-KINEMATIC-SMOOTHING-TRACKER.md` "Locked defaults").
 
 Not in this package (by design, D2 of the packaging doc): `PoseResolver`, `ILaneShapeSource`, `Pose`,
 `DrState` stay in `SumoSharp.Core` — they are dependency-light and shared by the engine's own opt-in
-render mode as well as every viewer. `DrClock`/`DrPoseSmoother` consume them; they don't redefine them.
+render mode as well as every viewer. `DrClock`/`KinematicReconstructor` consume them; they don't redefine them.
 
 ## The reconstruction pipeline
 
@@ -47,38 +57,42 @@ Per render frame, per vehicle:
 
 ```
 drClock.Pump(newestSampleTime, hold: paused)                 // advance the render clock
-resolved = drClock.Resolve(history, delay, laneSource)        // pick/interpolate a DrState
-state    = resolved.State with { Length, Width }               // add dims from your registry
-pose     = PoseResolver.Resolve(laneSource, state,             // DrState -> (x, y[, z], heading)
-               resolved.Upcoming, dt: 0, RenderRealism.ChordHeading)
-(x, y, heading) = smoother.Smooth(handle, pose.X, pose.Y, pose.HeadingDeg, state.Speed, frameDt)
-emit draw(x, y, heading, length, width, speed)
+resolved = drClock.Resolve(history, delay, laneSource)        // pick/interpolate a DrState bracket
+r        = recon.Resolve(handle, resolved, laneSource,        // straddle-aware front + look-ahead +
+               (length, width), frameDt)                      //   kinematic no-slip reconstruction
+if (!r.Ok) skip this vehicle this frame
+emit draw(r.CenterX, r.CenterY, r.Z, r.HeadingDeg, length, width, speed)  // pivot the box on the CENTER
 ```
 
-Feed `PoseResolver` `dt = 0` — `Resolve` has already advanced the arc to render time. Use
-`RenderRealism.ChordHeading` (correct chord heading, no lateral "swing-wide" bow); the alternative
-`CornerCutCorrected` reintroduces a lateral jump on any coarsely-faceted internal-lane polyline unless
-you densify the geometry (higher netconvert `internal-link-detail`).
+`KinematicReconstructor` calls `PoseResolver.Resolve(...ChordHeading, dt: 0)` internally (`Resolve` has
+already advanced the arc to render time; `ChordHeading` is the correct chord heading with no lateral
+"swing-wide" bow). The returned **center** sits ½·length behind the front reference — pivot your vehicle box
+on it. A caller that already owns the front reference (no `DrState`/lane window, e.g. `--mode local`) calls
+`ResolveFromFront(...)` with `predictHeadingDeg = null` instead.
 
-### `DrPoseSmoother.Smooth` internals (as-built, supersedes an earlier plain low-pass)
+### `KinematicReconstructor` internals (as-built — supersedes the earlier `DrPoseSmoother`)
 
-1. **Capped position error-smoothing** ("netcode projective" style, always on). The rendered position
-   chases the DR target with a correction speed that is *capped*, not low-passed:
-   - Smooth constant-speed motion passes through with **zero lag**.
-   - A reconciliation snap (extrapolation overshoot corrected when a new sample lands) is absorbed
-     over a few frames instead of teleporting.
-   - **Forward-biased**: a backward correction is a gentle ~50% slowdown (floor `0.5 * trueStep`, cap
-     `trueStep + 6 m/s`), never a freeze, never a reverse. Lateral catch-up is capped (~4 m/s) both
-     ways. A >7 m gap snaps outright (handle reuse / respawn).
-   - Decomposed in the lane-heading frame (`along`/`perp` relative to the target heading), so the cap
-     behaves consistently regardless of world orientation.
-2. **Motion-derived heading tilt.** Heading = the lane-forward heading, rotated by the tilt of the
-   vehicle's *actual* per-frame render displacement: `tilt = atan2(perp, along)`, clamped ±25°, then
-   **subtracted** from the lane heading (navi-degrees are clockwise; `atan2` is counter-clockwise —
-   adding leans the car the wrong way). This makes the vehicle lean into a lateral slide uniformly in
-   both directions, and is ~0 on straight cruise or a turn (motion already follows the lane there).
-3. **Heading low-pass.** Eases the tilt-adjusted heading toward the previous frame's heading over
-   `τ = 0.18 s` (`α = 1 - exp(-frameDt / τ)`); a jump >100° snaps instead of smearing (handle reuse).
+The reconstruction is a **kinematic no-slip rear-axle (bicycle) model** (`KinematicHeading`), not a
+capped-correction pose smoother. In brief (full detail + tunables in `VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`
+and `IGBRIDGE-DECISIONS.md` §5.3):
+
+1. **Straddle-aware front resolve.** A non-straddle bracket resolves one front pose; a lateral straddle
+   resolves both bracketing states on their own lanes and Cartesian-lerps them, so the front path is
+   continuous through a lane change (no hole in the stream).
+2. **Spatial look-ahead + guards.** The front predictor aims at a point a few metres ahead on the *upcoming*
+   lane centerline (so a junction turn-in tracks the connecting lane), gated by a per-frame jump-guard and an
+   anticipation lead-bound; a **coarse-feed** straddle whose two lane poses diverge widely is treated as a
+   junction turn, not absorbed as a lane change.
+3. **No-slip rear-axle drag.** The front tows a rear axle that cannot slip sideways (real off-tracking); body
+   heading = rear→front, which integrates faceted-polyline kinks away. A stopped vehicle (`speed < HoldSpeed`)
+   holds heading (no spin at a red light).
+4. **Lane-change ease.** SUMO changes lane instantly (a ~lane-width sideways snap); the cross-track part is
+   absorbed into a bounded, critically-decaying lateral error, so the drawn body slides into the new lane over
+   ~`LaneChangeDecayTau` instead of teleporting.
+
+All gains are `1 − e^(−frameDt/τ)` (tau-based), so they adapt to any display frame rate; the reconstruction
+is deterministic and render-side only. The deleted `DrPoseSmoother`'s capped-correction + heading-tilt
+mechanisms are recorded historically in `SUMOSHARP-VIEWER-DR-SMOOTHING.md` §10.2/§10.3.
 
 ### Playout delay
 
@@ -95,7 +109,7 @@ your publisher run the same `Sim.Replication.DrExtrapolation.Arc` curve this pac
 for extrapolation, and only emit a new sample when the true state diverges from that prediction beyond
 a tolerance (`Sim.Replication.PublishScheduler` / `DrErrorPublishPolicy`). That bounds this package's
 own extrapolation error at the source, so motion stays smooth at low delay with no bandwidth increase.
-`DrPoseSmoother` then only mops up a small residual. See
+`KinematicReconstructor` then only reconciles a small residual. See
 `SUMOSHARP-DR-ERROR-PUBLISHING-DESIGN.md` for the full design.
 
 ### Pitfalls carried forward from the native viewer's own history

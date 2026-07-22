@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IgBridge producer library (docs/IGBRIDGE-DECISIONS.md §2, §6 Q6). Embeds the SumoSharp engine,
+       ticks it at a fixed 10 Hz, reconstructs smooth poses via the REUSED Sim.Viewer.Motion +
+       PoseResolver stack (+ the ped Lod stack), and emits IG-native [id, x, y, headingDeg, t] samples.
+       Multi-targeted netstandard2.1;net6.0;net8.0: net6.0 is the literal proof the binding embeds in
+       the real .NET 6 host; netstandard2.1 gives Unity (Mono/IL2CPP)/Godot reach; net8.0 lets the
+       net8 verification Host consume it without a downgrade. No renderer, no wire transport here;
+       those live in the host. Consumer of engine output only: nothing here touches Sim.Core parity. -->
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.1;net6.0;net8.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sim.Core\Sim.Core.csproj" />
+    <ProjectReference Include="..\Sim.Ingest\Sim.Ingest.csproj" />
+    <ProjectReference Include="..\Sim.Replication\Sim.Replication.csproj" />
+    <ProjectReference Include="..\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
+    <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
+  </ItemGroup>
+
+  <!-- netstandard2.1 only: it lacks in-box Span<T>/Memory<T> and the compiler-support types for
+       init/record members. net6.0 already has IsExternalInit in its BCL, so linking the polyfill there
+       would double-define it — hence this is scoped to netstandard2.1, and IgBridge's own code avoids
+       `required` members (RequiredMemberAttribute is net7+, absent from net6.0). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Memory" Version="4.5.5" />
+    <Compile Include="..\Shared\NetstandardPolyfills.cs" Link="NetstandardPolyfills.cs" />
+  </ItemGroup>
+
+</Project>

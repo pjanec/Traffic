@@ -120,4 +120,93 @@ public sealed class DrClockResolveTests
         Assert.Equal(0.5f, resolved.Blend, precision: 5);
         Assert.Equal(1.0f, resolved.PacketSpan, precision: 5); // b.TimestampSeconds - a.TimestampSeconds
     }
+
+    // T1.1 (docs/IGBRIDGE-DECISIONS.md §5.1): ResolveAt is a PURE EXTRACTION of the former Resolve body,
+    // and Resolve now delegates via `ResolveAt(history, RenderSim - delay, lanes)`. These pin that the two
+    // entry points return a byte-identical Resolved for the same history + renderSim + delay, across every
+    // branch (forward-extrapolate, same-lane interp, downstream arc-window straddle, lateral two-state
+    // straddle). If this ever diverges, the deterministic IgBridge path and the live viewer path have
+    // drifted apart -- which would break "fix once, fix both".
+    [Theory]
+    [InlineData("same-lane")]
+    [InlineData("downstream-straddle")]
+    [InlineData("lateral-straddle")]
+    [InlineData("forward-extrapolate")]
+    public void ResolveAt_MatchesResolve_ForSameQueryInstant(string scenario)
+    {
+        var handle = new VehicleHandle(7, 0);
+        const int laneA = 10;
+        const int laneB = 11;
+        var lanes = new FixedLengthLaneSource(new Dictionary<int, double> { [laneA] = 20.0, [laneB] = 30.0 });
+        var history = new VehicleSampleHistory(capacity: 8);
+        double delay;
+
+        switch (scenario)
+        {
+            case "same-lane":
+                history.Append(new TimestampedSample(0.0, Rec(handle, laneA, 0.0, 0.0, 10.0, new[] { laneA })));
+                history.Append(new TimestampedSample(1.0, Rec(handle, laneA, 10.0, 0.0, 10.0, new[] { laneA })));
+                delay = 0.5; // sampleT = 0.5, mid-bracket
+                break;
+            case "downstream-straddle":
+                history.Append(new TimestampedSample(0.0, Rec(handle, laneA, 15.0, 0.0, 10.0, new[] { laneA, laneB })));
+                history.Append(new TimestampedSample(1.0, Rec(handle, laneB, 3.0, 0.0, 10.0, new[] { laneB })));
+                delay = 0.5;
+                break;
+            case "lateral-straddle":
+                history.Append(new TimestampedSample(0.0, Rec(handle, laneA, 15.0, 0.0, 10.0, new[] { laneA })));
+                history.Append(new TimestampedSample(1.0, Rec(handle, laneB, 3.0, 1.5, 10.0, new[] { laneB })));
+                delay = 0.5;
+                break;
+            case "forward-extrapolate":
+                history.Append(new TimestampedSample(0.0, Rec(handle, laneA, 0.0, 0.0, 10.0, new[] { laneA })));
+                history.Append(new TimestampedSample(1.0, Rec(handle, laneA, 10.0, 0.0, 10.0, new[] { laneA })));
+                delay = -0.5; // sampleT = 1.5 > newest -> extrapolate forward
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null);
+        }
+
+        var clock = PumpedTo(1.0);
+        var viaResolve = clock.Resolve(history, delay, lanes);
+        var viaResolveAt = clock.ResolveAt(history, clock.RenderSim - delay, lanes);
+
+        AssertSameResolved(viaResolve, viaResolveAt);
+    }
+
+    private static void AssertSameResolved(DrClock.Resolved a, DrClock.Resolved b)
+    {
+        Assert.Equal(a.Extrapolated, b.Extrapolated);
+        Assert.Equal(a.IsLateralStraddle, b.IsLateralStraddle);
+        Assert.Equal(a.Blend, b.Blend, precision: 9);
+        Assert.Equal(a.PacketSpan, b.PacketSpan, precision: 9);
+        AssertSameState(a.State, b.State);
+        AssertSameUpcoming(a.Upcoming, b.Upcoming);
+
+        Assert.Equal(a.SecondState.HasValue, b.SecondState.HasValue);
+        if (a.SecondState.HasValue)
+        {
+            AssertSameState(a.SecondState!.Value, b.SecondState!.Value);
+            AssertSameUpcoming(a.SecondUpcoming, b.SecondUpcoming);
+        }
+    }
+
+    private static void AssertSameState(DrState a, DrState b)
+    {
+        Assert.Equal(a.Model, b.Model);
+        Assert.Equal(a.LaneHandle, b.LaneHandle);
+        Assert.Equal(a.Pos, b.Pos, precision: 9);
+        Assert.Equal(a.PosLat, b.PosLat, precision: 9);
+        Assert.Equal(a.Speed, b.Speed, precision: 9);
+        Assert.Equal(a.Accel, b.Accel, precision: 9);
+        Assert.Equal(a.LatSpeed, b.LatSpeed, precision: 9);
+    }
+
+    private static void AssertSameUpcoming(UpcomingLanes a, UpcomingLanes b)
+    {
+        for (var i = 0; i < UpcomingLanes.Count; i++)
+        {
+            Assert.Equal(a[i], b[i]);
+        }
+    }
 }

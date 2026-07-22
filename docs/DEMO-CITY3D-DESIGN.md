@@ -66,7 +66,7 @@ wires together. Task breakdown + success conditions: `docs/DEMO-CITY3D-TASKS.md`
  SumoSharp.Replication ─ InMemoryReplicationBus · IReplicationSink/Source · VehicleRecord ·    │
                     │  GeometryCodec · TlCodec · PublishScheduler · DrExtrapolation             │
                     │                                                                          │
- SumoSharp.Viewer.Motion ─ DrClock · DrPoseSmoother                                            │
+ SumoSharp.Viewer.Motion ─ DrClock · KinematicReconstructor                                    │
                     │                                                                          │
  ★ SumoSharp.Host (NEW, src/Sim.Host) ─ ReplicationPublisher: SimulationSnapshot+NetworkModel  │
                     │      → IReplicationSink (transport-neutral; used in-proc AND for DDS)     │
@@ -82,7 +82,7 @@ wires together. Task breakdown + success conditions: `docs/DEMO-CITY3D-TASKS.md`
  (git-ignored)      │  nuget.config  ← packageSourceMapping: SumoSharp.* → local feed only      │
                     │                                                                          │
                     │  Viewer (Godot app): ReplicationLaneShapeSource · procedural roads/       │
-                    │    buildings/TLS · MultiMesh cars · DrClock→PoseResolver→DrPoseSmoother   │
+                    │    buildings/TLS · MultiMesh cars · DrClock→KinematicReconstructor        │
                     │    ├─ local mode  : in-proc Engine + ReplicationPublisher → InMemory bus  │
                     │    └─ remote mode : DDS source ← Sim.Host.App (separate process)          │
                     └──────────────────────────────────────────────────────────────────────────┘
@@ -155,7 +155,7 @@ The demo is split so the **logic never touches a Godot type** and can be unit-te
 - **`demos/City3D/CityLib/`** — a plain `net8.0` class library that `<PackageReference>`s the SumoSharp
   packages from the local feed. It owns everything computable: the single SUMO→Godot coordinate/heading
   transform, the `SimSource` (hosts `Engine`+`SimulationRunner`+`ReplicationPublisher`→`IReplicationSource`),
-  the DR reconstruction loop (`DrClock`/`PoseResolver`/`DrPoseSmoother` → per-vehicle `(x,y,z,yaw,pitch)`),
+  the DR reconstruction loop (`DrClock`/`KinematicReconstructor` → per-vehicle `(x,y,z,yaw,pitch)`),
   the `ReplicationLaneShapeSource`, and the procedural-mesh math (ribbon vertices, building placements, TL
   head positions) returned as **plain arrays/structs, not Godot meshes**. No Godot dependency.
 - **`demos/City3D/CityLib.Tests/`** — xUnit over `CityLib`; the headless success conditions in the tasks
@@ -181,12 +181,20 @@ Per app frame the viewer runs the §5/§8 recipe against an `IReplicationSource`
 source.Pump()                                       // drain arrived packets into per-vehicle history
 DrClock.Pump(newestSampleTime)                      // advance the monotonic render clock (§5.1)
 for each vehicle with history H:
-    resolved = DrClock.Resolve(H, delay, laneSource) // interpolate/extrapolate a DrState (§5.2)
-    pose     = PoseResolver.Resolve(laneSource, state with dims, upcoming, dt:0, ChordHeading)  // (§5.3)
-    (x,y,deg)= DrPoseSmoother.Smooth(handle, pose…)  // capped correction + heading tilt (§10.2/§10.3)
-    draw car at (x, y, z) yaw=deg                    // z from LaneShapeZ; pitch from z-gradient
-apply current TL state to signal-head materials
+    resolved = DrClock.Resolve(H, delay, laneSource) // interpolate/extrapolate a DrState bracket (§5.2)
+    r        = KinematicReconstructor.Resolve(handle, resolved, laneSource, dims, frameDt)  // no-slip
+    if (!r.Ok) continue                              //   reconstruction + look-ahead + lane-change ease
+    draw car at CENTER (r.CenterX, r.CenterY, z) yaw=r.HeadingDeg   // pivot on the CENTER (½·len behind
+apply current TL state to signal-head materials      //   the front); z from LaneShapeZ; pitch from z-grad
 ```
+
+As-built (VIEWER-KINEMATIC-SMOOTHING S2/T2.2): City3D now smooths the **vehicle** path with the shared
+`Sim.Viewer.Motion.KinematicReconstructor` (`CoarseFeed = true`) instead of `DrPoseSmoother`. This gives it
+the **center pivot** (the box was previously drawn ~½·length too far forward, since `CarTransform` centers on
+the fed point) and, for the first time, a **lane-change ease** — the pre-S2 `Reconstructor` did
+`if (resolved.IsLateralStraddle) continue;`, so a lane-changing car vanished for those frames; it now
+reconstructs the straddle continuously and eases across. See `VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`; the
+capped-correction + heading-tilt `DrPoseSmoother` (SUMOSHARP-VIEWER-DR-SMOOTHING.md §10.2/§10.3) is historical.
 
 - **Local mode**: an in-process `Engine` + `ReplicationPublisher` → `InMemoryReplicationBus`; the viewer
   reads `bus.Source`. Sparse packets (publish policy gates them), so it is a real DR viewer.
@@ -270,7 +278,7 @@ resize the instance buffer to the live vehicle count and write one transform per
 
 - **Scale** = (`Length`, `Width`, height) with `Length`/`Width` the real vType dims (a truck is visibly
   bigger), height a believable constant (~1.4 m for cars, taller for trucks by vClass);
-- **Position** = reconstructed `(x,y)` from `DrClock`→`PoseResolver`→`DrPoseSmoother`, `z` from
+- **Position** = reconstructed `(x,y)` CENTER from `DrClock`→`KinematicReconstructor`, `z` from
   `LaneShapeZ`;
 - **Yaw** = reconstructed heading; **pitch** = z-gradient along travel (tilt on ramps); **roll** ≈ 0.
 
@@ -282,7 +290,7 @@ scale throughout (cars ~4.5×1.8 m, true lane widths, buildings tens of metres).
 Pedestrians are a **separate engine** from the lane-parity core (`docs/PEDESTRIAN-DESIGN.md` §0), with
 their **own** replication path — a distinct wire (`IPedReplicationSource`, topics
 CrowdFrame/PathArc/ActivityTimeline/Lifecycle) and a distinct reconstructor
-(`Sim.Pedestrians.Lod.PedRemoteReconstructor`), not the vehicle `DrClock`/`PoseResolver`/`DrPoseSmoother`
+(`Sim.Pedestrians.Lod.PedRemoteReconstructor`), not the vehicle `DrClock`/`KinematicReconstructor`
 stack. So the City3D ped render mirrors the **Cars** shape one entity-type over, but off the ped stack:
 
 - **`CityLib.PedSimSource`** (mirrors `SimSource`): hosts the ped **server** sim — a `PedLodManager` over a

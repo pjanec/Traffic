@@ -65,9 +65,18 @@ doesn't have. Highlights below; precise scope after that.
 - **📐 Design of record:** [`docs/DESIGN.md`](docs/DESIGN.md) (engine & parity) ·
   [`docs/SUMOSHARP-PACKAGING-DESIGN.md`](docs/SUMOSHARP-PACKAGING-DESIGN.md) (packaging) ·
   [`docs/SUMOSHARP-VIEWER-DR-SMOOTHING.md`](docs/SUMOSHARP-VIEWER-DR-SMOOTHING.md) (dead-reckoning &
-  smoothing for custom/3D viewers).
+  smoothing for custom/3D viewers) ·
+  [`docs/VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`](docs/VIEWER-KINEMATIC-SMOOTHING-DESIGN.md) (the **kinematic
+  vehicle-motion reconstruction** both viewers now smooth with).
 - **🏙️ [`demos/City3D`](demos/City3D)** — a Godot 4 (.NET) 3D city viewer consuming the SumoSharp
   packages from a local feed.
+- **🛰️ IgBridge** ([`docs/IGBRIDGE-DESIGN.md`](docs/IGBRIDGE-DESIGN.md)) — a producer-side feed for an
+  **external 3D image generator** that has **no protocol for sophisticated predictive dead-reckoning** and
+  consumes only plain `position / orientation / timestamp` samples (interpolating between its two most recent).
+  IgBridge bakes all the smoothing in *before* the wire: it reconstructs SUMO's stepwise motion (junction
+  facet-snaps, instant lane changes) into a continuous curve with the **same kinematic reconstructor the
+  viewers use** and resamples it densely, so an IG that does no prediction of its own still shows artifact-free
+  motion. Tuning methodology + metrics: [`docs/IGBRIDGE-METHODOLOGY.md`](docs/IGBRIDGE-METHODOLOGY.md).
 - **🔧 Build & run it from a fresh clone** (build, tests, the demo viewer, the live browser viewer):
   see [Install → *See it run*](#install).
 
@@ -414,6 +423,15 @@ chunked network-geometry** topic (so a remote client draws roads without the net
 **low-rate traffic-light** topic. The subscriber's `DrClock` paces the render clock off each sample's
 source timestamp with playout-delay interpolation and an extrapolation fallback, so a 2 Hz feed renders
 as smooth motion. Design: `docs/SUMOSHARP-NATIVE-VIEWER.md`, `docs/SUMOSHARP-DEADRECKONING.md`.
+
+Per render frame that reconstructed pose is then turned into **believable vehicle motion by a shared
+kinematic reconstructor** (`Sim.Viewer.Motion.KinematicReconstructor`): a no-slip rear-axle (bicycle) model
+so the body pivots at the rear like a real car, low-passed lane-heading prediction, a **spatial look-ahead**
+that anticipates the connecting lane through a junction (the front rides the connecting-lane centerline
+instead of turning in late), a bounded lane-change ease, and coarse-feed robustness for sparse (~1–3 Hz)
+DDS packets. **Both** the native raylib viewer and the Godot City3D viewer use it (fix-once-fixes-both); it
+supersedes the earlier capped-correction + heading-tilt smoother on the vehicle path. Design + the numeric
+tuning story: `docs/VIEWER-KINEMATIC-SMOOTHING-DESIGN.md`, `docs/IGBRIDGE-METHODOLOGY.md`.
 
 ### Demand insertion & warm-start snapshots
 

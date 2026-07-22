@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vehicle id="0" depart="0.00" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="1" depart="1.30" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="2" depart="2.60" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="3" depart="3.90" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="4" depart="5.20" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="5" depart="6.50" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="6" depart="7.80" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="7" depart="9.10" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="8" depart="10.40" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="9" depart="11.70" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="10" depart="13.00" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="11" depart="14.30" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="12" depart="15.60" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="13" depart="16.90" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="14" depart="18.20" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="15" depart="19.50" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="16" depart="20.80" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="17" depart="22.10" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="18" depart="23.40" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="19" depart="24.70" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="20" depart="26.00" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="21" depart="27.30" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="22" depart="28.60" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="23" depart="29.90" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="24" depart="31.20" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="25" depart="32.50" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="26" depart="33.80" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="27" depart="35.10" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="28" depart="36.40" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="29" depart="37.70" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="30" depart="39.00" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="31" depart="40.30" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="32" depart="41.60" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="33" depart="42.90" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="34" depart="44.20" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="35" depart="45.50" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="36" depart="46.80" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="37" depart="48.10" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="38" depart="49.40" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="39" depart="50.70" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="40" depart="52.00" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="41" depart="53.30" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="42" depart="54.60" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="43" depart="55.90" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="44" depart="57.20" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="45" depart="58.50" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="46" depart="59.80" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="47" depart="61.10" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="48" depart="62.40" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="49" depart="63.70" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="50" depart="65.00" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="51" depart="66.30" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="52" depart="67.60" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="53" depart="68.90" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="54" depart="70.20" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="55" depart="71.50" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="56" depart="72.80" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REEOut" />
+    </vehicle>
+    <vehicle id="57" depart="74.10" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="58" depart="75.40" departLane="best" departSpeed="max">
+        <route edges="WInRW RWtoRS RStoRE REtoRN RNNOut" />
+    </vehicle>
+    <vehicle id="59" depart="76.70" departLane="best" departSpeed="max">
+        <route edges="SInRS RStoRE REEOut" />
+    </vehicle>
+</routes>

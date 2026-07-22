@@ -242,7 +242,26 @@ public sealed class DrClock
 
         EffectiveDelay = delay;
 
-        var sampleT = _renderSim - delay;
+        // The live viewer's query instant is renderSim (Pump'd from the wall clock) minus the playout
+        // delay. ResolveAt carries the actual interpolate/extrapolate logic (see its remarks).
+        return ResolveAt(history, _renderSim - delay, lanes);
+    }
+
+    // Deterministic sibling of Resolve (docs/IGBRIDGE-DECISIONS.md §5.1). Resolve derives its query
+    // instant from `_renderSim` (advanced by Pump from a real Stopwatch — correct for a live 60 Hz
+    // viewer, but non-reproducible for an offline trace generator). ResolveAt takes the render-time
+    // `sampleT` DIRECTLY, so a caller that owns a deterministic sim clock (IgBridge) can reconstruct
+    // without touching Pump/the Stopwatch. This is a PURE EXTRACTION of the former Resolve body: the
+    // viewer keeps calling Resolve (which now delegates here) and is byte-identical. EffectiveDelay is
+    // intentionally left to the delay-based Resolve entry point; a direct ResolveAt caller drives the
+    // query instant itself, so there is no "delay behind newest" to report.
+    public Resolved ResolveAt(IReadOnlyList<TimestampedSample> history, double sampleT, ILaneShapeSource lanes)
+    {
+        if (history.Count == 0)
+        {
+            throw new ArgumentException("history must have at least one sample.", nameof(history));
+        }
+
         var newest = history[^1];
         var oldest = history[0];
 

@@ -1,0 +1,66 @@
+<routes>
+  <vehicle id="0" depart="0.00" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="1" depart="1.10" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="2" depart="2.20" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="3" depart="3.30" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="4" depart="4.40" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="5" depart="5.50" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="6" depart="6.60" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="7" depart="7.70" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="8" depart="8.80" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="9" depart="9.90" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="10" depart="11.00" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="11" depart="12.10" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="12" depart="13.20" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="13" depart="14.30" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="14" depart="15.40" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="15" depart="16.50" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="16" depart="17.60" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="17" depart="18.70" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="18" depart="19.80" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="19" depart="20.90" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="20" depart="22.00" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="21" depart="23.10" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="22" depart="24.20" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="23" depart="25.30" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="24" depart="26.40" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="25" depart="27.50" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="26" depart="28.60" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="27" depart="29.70" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="28" depart="30.80" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="29" depart="31.90" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="30" depart="33.00" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="31" depart="34.10" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="32" depart="35.20" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="33" depart="36.30" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="34" depart="37.40" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="35" depart="38.50" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="36" depart="39.60" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="37" depart="40.70" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="38" depart="41.80" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="39" depart="42.90" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="40" depart="44.00" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="41" depart="45.10" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="42" depart="46.20" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="43" depart="47.30" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="44" depart="48.40" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="45" depart="49.50" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="46" depart="50.60" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="47" depart="51.70" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="48" depart="52.80" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="49" depart="53.90" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="50" depart="55.00" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="51" depart="56.10" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="52" depart="57.20" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="53" depart="58.30" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="54" depart="59.40" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="55" depart="60.50" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="56" depart="61.60" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="57" depart="62.70" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="58" depart="63.80" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 outE"/></vehicle>
+  <vehicle id="59" depart="64.90" departLane="best" departSpeed="max"><route edges="inW ring6 ring7 ring8 ring9 ring10 ring11 ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="60" depart="66.00" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+  <vehicle id="61" depart="67.10" departLane="best" departSpeed="max"><route edges="inN ring3 ring4 ring5 ring6 ring7 ring8 outS"/></vehicle>
+  <vehicle id="62" depart="68.20" departLane="best" departSpeed="max"><route edges="inE ring0 ring1 ring2 outN"/></vehicle>
+  <vehicle id="63" depart="69.30" departLane="best" departSpeed="max"><route edges="inS ring9 ring10 ring11 ring0 ring1 ring2 ring3 ring4 ring5 outW"/></vehicle>
+</routes>

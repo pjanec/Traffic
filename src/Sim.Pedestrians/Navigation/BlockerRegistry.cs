@@ -65,7 +65,11 @@ public sealed class BlockerRegistry
     // never-reused id, and immediately recomputes the blocked-polygon set. O(blockers * polygons).
     public BlockerId Register(IReadOnlyList<Vec2> vertices)
     {
-        ArgumentNullException.ThrowIfNull(vertices);
+        if (vertices is null)
+        {
+            throw new ArgumentNullException(nameof(vertices));
+        }
+
         if (vertices.Count < 3)
         {
             throw new ArgumentException("A blocker polygon needs at least 3 vertices.", nameof(vertices));
@@ -118,8 +122,10 @@ public sealed class BlockerRegistry
     // The set of baked-polygon indices currently occluded by ANY registered blocker -- feeds directly
     // into SumoNavMesh.FindPath(start, goal, blockedPolygonIndices) (POC-5's blocked-set overload).
     // Returned set is a live reference recomputed on every Register/Unregister; callers must not
-    // mutate it (RerouteDriver treats it as read-only, matching IReadOnlySet's contract).
-    public IReadOnlySet<int> BlockedPolygons() => _blockedPolygons;
+    // mutate it (RerouteDriver treats it as read-only). Typed ISet<int> rather than IReadOnlySet<int>
+    // so the signature compiles on netstandard2.1 (which predates IReadOnlySet<T>); only .Contains and
+    // enumeration are used, so the widening is inert -- same convention as Sim.Ingest/NetworkRouter.cs.
+    public ISet<int> BlockedPolygons() => _blockedPolygons;
 
     // Recomputes the full blocked set from scratch: for every (blocker, polygon) pair, a polygon is
     // blocked iff its overlap area with THAT SINGLE blocker exceeds the threshold (no accumulation
