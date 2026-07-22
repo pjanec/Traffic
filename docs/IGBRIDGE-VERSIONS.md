@@ -32,3 +32,16 @@ Known residuals at this tag (see §5.9):
 stopped-vehicle fix (front-velocity clamp → a halted car holds position exactly, no center drift);
 fleet maxes improved (lat-accel max 101 → 58). Render-side only; parity 654/4-skip byte-identical.
 Known residual carried forward: sharp low-radius turn-in line (see §5.9 / the experimental turn-in below).
+
+## `igbridge-v3-usable` — commit `d7ee8c6`
+**Third usable baseline.** Owner: *"best result so far! very good candidate!"* Two decisive fixes:
+- **Render draws the emitted kinematic heading, not the path tangent** (§5.11) — the real cause of the
+  long-running "skidding": the viewer derived orientation from a jittery front-anchor tangent (median 158
+  yaw-accel reversals/turner vs the emitted stream's 0). All the kinematic work became visible.
+- **Front stays in its lane through turns via lane-heading prediction** (§5.12) — predicting along the lane
+  arc (not a straight tracked velocity) removes the corner-overshoot that drifted the front ~1.9 m toward the
+  parallel lane; now ~1.1 m (in-lane). Anticipatory turn-in off by default (redundant with this).
+Render-side only; parity 654/4-skip byte-identical; fleet reversals median 0, no-slip 10.5° vs ideal.
+Known residual: the front tracks ~1.1–1.5 m off the CONNECTING-lane centerline through a junction (turns in a
+touch late / overshoots, then compensates over ~3 s) — the reactive predictor doesn't yet read the path
+*through* the junction. Addressed by spatial look-ahead (§5.13).
