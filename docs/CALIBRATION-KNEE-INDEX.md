@@ -59,6 +59,7 @@ SumoSharp can eventually calibrate *itself*.
 | `scenarios/_repro/sustained-box/` | sustained-load grid — **UNFAITHFUL** (no connectivity asymmetry) | ⚠️ reports parity even when the real box blows up; kept + labeled as a lesson |
 | `scenarios/_repro/signalized-asymmetry/` | **faithful** knee repro: 3-way/4-way TL asymmetry, arrival-edge backup | ✅ 2.45×→1.01× after the fix |
 | `scenarios/_repro/parking-maneuver/` | SumoData's parking-maneuver hypothesis (maneuver + capacity-fill sink) | ❌ NOT the knee — SumoSharp *under*-accumulates at parking (opposite direction); found 2 wrong-direction fidelity bugs |
+| `scenarios/_repro/arterial-tjunction/` | **THE KNEE mechanism**: through traffic PAST 3-way T-lights, shared through+left lanes | ✅ reproduces the 5.5×-direction deficit (running 462 vs 303); FCD-traced to **turn-lane mis-segregation** |
 
 Anchor tests: `tests/Sim.ParityTests/DenseFlowDeadLaneDrainTests.cs` (Gap-1, intent-encoded: arrivals ≥ 290
 hard, teleports ≤ 2 documented), plus the full byte-identical golden suite (657 parity + 227 pedestrian).
@@ -72,10 +73,24 @@ hard, teleports ≤ 2 documented), plus the full byte-identical golden suite (65
   arrive off-lane at parkingAreas, so the arrival-TL bug mostly doesn't apply).
 - **Parking-maneuver hypothesis tested → NOT the blocker** (`parking-maneuver/`): SumoSharp *under*-accumulates
   at parking. The knee's over-accumulation remains unlocalized on a faithful offline repro.
-- **Waiting on SumoData's matched-demand re-localization** (parking-vs-TL hotspot breakdown) to name the
-  dominant post-arrival-fix hotspot before building the next repro. Rule: validate any knee-targeted fix at
-  the **served/sustained density**, never sparse-probe or one-shot flow (a local fix can improve those while
-  the sustained overshoot gets worse).
+- **SumoData cracked the mechanism** (`SUMOSHARP-MECHANISM-3way-tlight-through-discharge.md`): through-discharge
+  deficit at 3-way T-lights; a vehicle stopped at the stop line during green isn't cleared until the next
+  cycle (they pointed at `ComputeWillPass`). With their repro upgrade (through traffic PAST the T-lights,
+  shared lanes) I **reproduced it** (`arterial-tjunction/`) and **FCD-traced the real root: turn-lane
+  mis-segregation.** Vanilla runs left-turners 100% on the dedicated left lane and keeps through off it;
+  SumoSharp mixes them, so a stuck permissive left-turner sits at the head of a *through* lane and
+  serial-blocks it. The `WillPass`/stopped-during-green pattern is the **symptom** (a through car stuck behind
+  a mis-laned turner).
+- **NEXT (needs alignment — big/delicate):** the fix is in the lane-change / lane-choice model
+  (`getBestLanes`-equivalent lane desirability / `ResolveBestDepartLane` / strategic LC desire), a
+  heavily golden-tested area — bigger than the localized arrival-edge exemption. Align with SumoData (does
+  their box show the lane-mixing?) + user on scope before implementing; verify byte-identical goldens and
+  served-density discharge (≈ vanilla's throughput).
+- **Two independent fidelity bugs found (parking, wrong-direction for the knee), open as cheap serve/viz wins:**
+  FCD excludes parked vehicles (Bug B); no on-lane queue for a full parkingArea (Bug A, verify vs
+  `parking.rerouting`).
+- Rule: validate any knee-targeted fix at **served/sustained density**, never sparse-probe or one-shot flow
+  (a local fix can improve those while the sustained overshoot gets worse — the knee-selection artifact).
 - **If residual overshoot remains:** localize the next hotspot the same way — per-edge density over the
   overshoot window → find the pile → read the FCD to the causal mechanism → build/extend a faithful repro →
   port the SUMO exemption → verify goldens byte-identical.
