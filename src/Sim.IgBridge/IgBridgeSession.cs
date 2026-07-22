@@ -84,6 +84,14 @@ public sealed class IgBridgeSession
     // turn ramps at ~100°/s, so this passes turns and rejects the ~tens-of-degrees blips.
     private const float _lookAheadMaxJumpDegPerSec = 250f;
 
+    // Max ANGLE the look-ahead heading may lead the reactive (raw) lane heading by before it is rejected.
+    // The frame-to-frame jump guard above only catches SUDDEN hops; on a coarse feed the look-ahead can
+    // instead DRIFT gradually (each step under the jump limit) to a bearing pointing the wrong way through a
+    // junction, dragging the body off and then snapping back (the "dance"). Legit anticipation is a modest
+    // forward lead over the lane tangent (measured max ~60° at a 10 Hz feed), so a look-ahead that diverges
+    // past this bound from the lane heading is spurious -> reject and fall back to the (smooth) lane heading.
+    public float MaxAnticipationLeadDeg { get; set; } = 70f;
+
     // Diagnostics (T2.0 smoothness investigation): when DebugVehicleId is set, every emit instant for that
     // vehicle records a per-STAGE row so the jitter source can be localised (PoseResolver front -> position
     // smoother -> kinematic center/heading -> drawn rear bumper). Off (null) by default.
@@ -251,7 +259,11 @@ public sealed class IgBridgeSession
             {
                 var prevUsed = _lookAheadPrev.TryGetValue(handle, out var pv) ? pv : laneHeading;
                 var jump = Math.Abs(((lah - prevUsed + 540f) % 360f) - 180f);
-                if (jump <= _lookAheadMaxJumpDegPerSec * Math.Max(realDt, 1e-3f))
+                // Divergence of the look-ahead from the reactive lane heading (catches gradual drift the
+                // per-frame jump guard misses -- the coarse-feed "dance").
+                var lead = Math.Abs(((lah - laneHeading + 540f) % 360f) - 180f);
+                if (jump <= _lookAheadMaxJumpDegPerSec * Math.Max(realDt, 1e-3f)
+                    && lead <= MaxAnticipationLeadDeg)
                 {
                     predictHeading = lah;
                 }

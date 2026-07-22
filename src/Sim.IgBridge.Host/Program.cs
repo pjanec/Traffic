@@ -89,6 +89,10 @@ using (var trace = new IgTraceWriter(tracePath))
         // Longer vehicles anticipate proportionally further: effective look-ahead = max(LookAheadMeters,
         // factor*length). 0.5 keeps ~5 m cars on the flat 3 m (byte-identical v4) and gives a 12 m bus ~6 m.
         LookAheadLengthFactor = EnvD("IGBRIDGE_LOOKAHEAD_LENFAC", 0.5),
+        // Reject a look-ahead that diverges more than this from the reactive lane heading (kills the
+        // coarse-feed "dance" where the look-ahead drifts to a wrong bearing). 70° > the ~60° legit max at
+        // a 10 Hz feed, so the default is byte-identical to v5.
+        MaxAnticipationLeadDeg = (float)EnvD("IGBRIDGE_MAX_LEAD", 70.0),
     };
     // IGBRIDGE_DEBUG_VEH: one id or a comma-separated list (e.g. "v18,v98,v213,v321"); each gets its own CSV.
     var dbgIds = (Environment.GetEnvironmentVariable("IGBRIDGE_DEBUG_VEH") ?? "")
