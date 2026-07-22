@@ -2041,10 +2041,11 @@ internal static class SceneGen
         const double Dt = 0.5;
         const int steps = 240;
         const int Decimate = 1;
-        // Default dialed down from 110 to a MODERATE density: the dense multi-lane car-overlap bug
-        // (docs/LANE-CHANGE-OVERLAP-SPEC.md) scales with saturation, so a lighter, free-flowing car load
-        // keeps the demo presentable until the cooperative-lane-change fix lands. Override with LIVECITY_CARS.
-        var CarTargetConcurrent = int.TryParse(Environment.GetEnvironmentVariable("LIVECITY_CARS"), out var ct) ? ct : 10;
+        // Max clean density: with the multi-lane overlap fix on main, the downtown crop holds ~157
+        // concurrent cars + 160 peds cleanly. Density-vs-overlap sweep on this crop: 110->1, 160->2
+        // (0 both-stopped), 180->26, 200->44 -- 160 is the ceiling before the accepted junction-merge
+        // residual re-accumulates. Override with LIVECITY_CARS (e.g. 300 to stress-test).
+        var CarTargetConcurrent = int.TryParse(Environment.GetEnvironmentVariable("LIVECITY_CARS"), out var ct) ? ct : 160;
         const int CarSpawnPerStep = 5;
 
         var slotByHandle = new Dictionary<uint, int>();
