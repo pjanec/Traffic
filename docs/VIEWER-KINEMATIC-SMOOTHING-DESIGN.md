@@ -80,15 +80,30 @@ Internally (verbatim-extracted from `IgBridgeSession` so behavior is preserved b
 5. **Z**: sample `lanes.LaneShapeZ` / carry `PoseResolver` `Pose.Z` at the smoothed center (viewers keep their
    existing pitch-from-z-gradient; the reconstructor only supplies center-z, or the viewer samples it — T2).
 
+**§1.1a Pose-level entry** (for `--mode local`, which has no `DrState`): a lower-level method the DR entry
+also uses internally —
+`KinematicReconResult ResolveFromFront(handle, frontX, frontY, laneHeadingDeg, speed, dims, frameDt, bool lateralEvent, float? predictHeadingDeg)`
+— runs steps 4–5 only (look-ahead already resolved or null). The DR `Resolve` computes the front + look-ahead
+then delegates here; the local path calls it directly with `predictHeadingDeg = null`.
+
 Config carried on the reconstructor = the tuned v5 defaults (`LookAheadMeters=3`, `LookAheadLengthFactor=0.5`,
 `MaxAnticipationLeadDeg=70`, `PositionSmoothTime=0.60`, `LanePredictSmoothTime=0.18`, `LaneChangeDecayTau=2.0`,
 `CoarseFeed=true`, `MaxStraddleLaneChangeHeadingDeg=20`). Exposed for tuning; defaults match IgBridge v5.
 
-### 1.2 `DrPoseSmoother` disposition
-Keep the class but the **vehicle render path no longer calls it**. Retain it behind a viewer toggle
-(`--smoother=kinematic|legacy`, default `kinematic`) for one release so an in-app A/B is possible (owner's
-eyes), then remove in a follow-up. (Owner: "either replace, or revamp." This is *replace with a legacy
-fallback*, which also gives the A/B the owner asked for in Q2.)
+### 1.2 `DrPoseSmoother` disposition — DELETE (owner: "no mercy, delete")
+`DrPoseSmoother` is **removed outright** — no `--smoother` toggle. Every vehicle render path (2D loopback/
+remote, 2D `--mode local`, and 3D City3D) goes through `KinematicReconstructor`. Delete
+`src/Sim.Viewer.Motion/DrPoseSmoother.cs` and its tests; remove all call sites. (The A/B for the owner's eyes
+is v5-vs-this at the branch level, not an in-app switch.)
+
+### 1.3 `--mode local` also unified (owner: "unify to our kinem")
+The 2D `--mode local` authoritative-snapshot path (`BuildLocalVehicleDraws`, exact per-step `x,y,angle,speed`,
+no DR) is **also** routed through the kinematics, so all vehicle motion shares one look. It has no `DrState`/
+lane window, so it calls the facade's **pose-level** entry (§1.1a) with the interpolated front pose and
+`predictHeadingDeg = null` (no look-ahead — no upcoming-lane info in that path; the no-slip body + lane-heading
+prediction + lane-change ease still apply). A lane change appears as a perpendicular `x,y` step, which
+`KinematicHeading`'s step-based lane-change detector eases with no `lateralEvent` needed. (Optional later
+enhancement: fetch `Engine.GetUpcomingLanes` in local mode to enable the look-ahead there too — not required.)
 
 ### 1.3 Why a shared facade and not just "call KinematicHeading at the seam"
 The look-ahead + straddle-lerp are ~60 lines that must be *identical* across producer and consumers or the IG
@@ -185,11 +200,7 @@ Owner (desktop): the actual Godot 3D and Raylib 2D motion looks right (the only 
 
 ---
 
-## 7. Open questions for the owner
-1. **`DrPoseSmoother` fate:** keep it as a `--smoother=legacy` toggle for one release (my default proposal, for
-   your A/B), or delete it outright now?
-2. **2D `--mode local`:** leave the authoritative-snapshot path on its own interpolation (my proposal — it has
-   exact x,y and no DR), or also route it through the kinematics for uniformity?
-3. **Package flow for City3D:** OK to deliver the City3D change as a `SumoSharp.Viewer.Motion` **package bump**
-   (the demo consumes packages, not `src/`), i.e. S2 depends on a local `dotnet pack`? (No `src/` behavior
-   changes for the offline gate; the demo is out of `Traffic.sln`.)
+## 7. Owner decisions (RESOLVED — green to go)
+1. **`DrPoseSmoother`:** DELETE outright, no toggle (§1.2).
+2. **2D `--mode local`:** UNIFY onto the kinematics (§1.3).
+3. **City3D package flow:** OK — deliver via a local `SumoSharp.Viewer.Motion` package bump (S2).

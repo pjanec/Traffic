@@ -14,7 +14,8 @@ Legend: [ ] todo · [~] in progress · [x] done (success conditions met)
 ## S1 — Raylib 2D swap
 - [ ] T1.1 Confirm box pivot; wire the facade (loopback + remote)
 - [ ] T1.2 Metrics beat the T0.1 baseline (committed before/after table)
-- [ ] T1.3 `--smoother=kinematic|legacy` toggle (default kinematic)
+- [ ] T1.3 Unify `--mode local` onto the kinematics
+- [ ] T1.4 Delete `DrPoseSmoother` (file + tests + all call sites)
 
 ## S2 — City3D 3D swap
 - [ ] T2.1 Package the facade; bump City3D local feed
@@ -32,7 +33,7 @@ Legend: [ ] todo · [~] in progress · [x] done (success conditions met)
 - [ ] IgBridge emitted trace byte-identical to v5
 - [ ] No ProjectReference from demos/City3D into src/
 
-## Open questions (Design §7) — awaiting owner
-- [ ] Q1 DrPoseSmoother: keep as `--smoother=legacy` for one release, or delete now?
-- [ ] Q2 2D `--mode local`: leave on snapshot interpolation, or also route through kinematics?
-- [ ] Q3 City3D via `SumoSharp.Viewer.Motion` package bump (local pack) — OK?
+## Owner decisions (Design §7) — RESOLVED, green to go
+- [x] Q1 DrPoseSmoother → DELETE outright (no toggle)
+- [x] Q2 `--mode local` → UNIFY onto the kinematics
+- [x] Q3 City3D via `SumoSharp.Viewer.Motion` package bump → OK

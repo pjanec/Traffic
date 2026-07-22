@@ -52,9 +52,15 @@ lane change now eases (measured duration ~1.2–1.5 s, was a skip/snap); no stop
 **Success:** a committed before/after table; every metric ≥ baseline (no regression), lane-change + junction
 strictly better. Standing gates green.
 
-### T1.3 — `--smoother=kinematic|legacy` toggle
-Design §1.2. Add the runtime toggle (default `kinematic`); `legacy` keeps `DrPoseSmoother`.
-**Success:** both modes run; toggling is live or restart-scoped; default is `kinematic`.
+### T1.3 — Unify `--mode local` onto the kinematics
+Design §1.3. Route `BuildLocalVehicleDraws` through the facade's pose-level entry (`ResolveFromFront`,
+`predictHeadingDeg=null`); draw the center. Lane changes ease via the step-based detector.
+**Success:** local mode renders; a lane change eases (was a heading low-pass only); no creep at a stop;
+determinism.
+
+### T1.4 — Delete `DrPoseSmoother`
+Design §1.2. Remove `src/Sim.Viewer.Motion/DrPoseSmoother.cs`, its tests, and every remaining call site.
+**Success:** `dotnet build` + `dotnet test` green with the file gone; no references remain (`grep`).
 
 ---
 
