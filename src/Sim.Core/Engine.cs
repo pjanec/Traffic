@@ -3061,6 +3061,42 @@ public sealed partial class Engine : IEngine
         return null;
     }
 
+    // GAP-4 (rerouting-with-stops): true iff `stops` contains a parkingArea stop whose lane's edge is
+    // on `routeEdges` but is NOT the final route edge -- i.e. a MID-ROUTE parking detour that a
+    // shortest-path reroute (route[0] -> route[^1]) would collapse. Used to hold such a vehicle on its
+    // original stop-visiting route across the pre-insertion / periodic reroute passes (SUMO reroutes
+    // between stops; this preserves them). Returns false for a stop on the final edge (handled by
+    // ParkStopFinalEdgeOverride) or a stop edge not on the route -- so byte-identical wherever no such
+    // mid-route parking stop exists (every committed golden with device.rerouting).
+    private bool HasUnreachedMidRouteParkingStop(IReadOnlyList<StopDef> stops, IReadOnlyList<string> routeEdges)
+    {
+        if (stops.Count == 0 || routeEdges.Count == 0)
+        {
+            return false;
+        }
+
+        var lastEdgeId = routeEdges[routeEdges.Count - 1];
+        foreach (var s in stops)
+        {
+            if (s.ParkingAreaId is null
+                || !_network!.LanesById.TryGetValue(s.LaneId, out var lane)
+                || lane.EdgeId == lastEdgeId)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < routeEdges.Count - 1; i++)
+            {
+                if (routeEdges[i] == lane.EdgeId)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     // Perf (insert): resolve every distinct (route, departLane) insertion lane-sequence up front, in
     // parallel, into _insertRouteSeqCache. Pure function of the immutable network, so byte-identical to
     // lazy resolution -- see the cache field's header and the LoadScenario call site.
@@ -4380,6 +4416,28 @@ public sealed partial class Engine : IEngine
                 continue;
             }
 
+            // GAP-4 (rerouting-with-stops, docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §2.3.7): do NOT
+            // periodically reroute a vehicle whose next unreached stop is a MID-ROUTE parkingArea. The
+            // periodic router shortest-paths current->destEdge (the pool's LAST edge) and would collapse
+            // the parking detour (e.g. the box's mall loop ra_ne_r2 -> m_lot -> ra_ne_r2), so the
+            // vehicle drives AROUND its own parkingArea, never parks, and stays on the carriageway to
+            // its exit -- which under SUSTAINED insertion at the calibrated density inflates the running
+            // count vs vanilla and overshoots the knee (SumoData NEED). SUMO reroutes BETWEEN stops
+            // (preserving them); leaving the vehicle on its original route until it has parked is the
+            // faithful-enough approximation (a mid-route dead lane is still handled -- and now
+            // stop-preservingly rerouted -- by TryRerouteFromDeadLane). GATED on the stop being on an
+            // EARLIER edge than the route's final edge, so a FINAL-edge parking stop (the synthetic
+            // scenario's pa_-503; the committed parking goldens) is NOT skipped -- device.rerouting
+            // parity there is unchanged (and every committed golden that has a mid-route parking stop
+            // has device.rerouting OFF, so this loop never runs for it): byte-identical.
+            var frontQ = GetStops(v) is { Count: > 0 } fq ? fq.Peek() : null;
+            if (frontQ is { Reached: false, IsParking: true, ParkingAreaId: not null }
+                && _network!.LanesById.TryGetValue(frontQ.LaneId, out var frontStopLane)
+                && frontStopLane.EdgeId != _network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + v.LaneSeqLen - 1]].EdgeId)
+            {
+                continue;
+            }
+
             batch.Add(v);
         }
 
@@ -4506,6 +4564,23 @@ public sealed partial class Engine : IEngine
         {
             if (!v.RerouteEquipped || v.PreInsertionRerouteDone)
             {
+                continue;
+            }
+
+            // GAP-4 (rerouting-with-stops, docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §2.3.7): do NOT
+            // pre-insertion-reroute a vehicle with a MID-ROUTE parkingArea stop. The router shortest-
+            // paths route[0] -> route[^1] and would collapse the parking detour (e.g. the box's mall
+            // loop), so the vehicle would depart on a route that never visits its own parkingArea,
+            // never park, and stay on the carriageway to its exit -- inflating the running vehicle
+            // count under sustained insertion vs vanilla (SumoData NEED). SUMO's pre-insertion reroute
+            // preserves stops; leaving the vehicle on its original (stop-visiting) route is the
+            // faithful-enough approximation. Mark it done so it is not re-evaluated. GATED on the stop
+            // being on an EARLIER edge than the route's final edge, so a FINAL-edge parking stop is
+            // unaffected -- and every committed golden with device.rerouting has no mid-route parking
+            // stop, so this is byte-identical.
+            if (HasUnreachedMidRouteParkingStop(v.Def.Stops, _routesById[v.Def.RouteId].Edges))
+            {
+                v.PreInsertionRerouteDone = true;
                 continue;
             }
 
@@ -9526,10 +9601,44 @@ public sealed partial class Engine : IEngine
     // never reached (verified by the full suite staying byte-identical).
     private bool TryRerouteFromDeadLane(VehicleRuntime v, Lane currentLane, IReadOnlyList<string> remaining)
     {
+        // GAP-4 (rerouting-with-stops, docs/HIGH-DENSITY-CALIBRATION-DESIGN.md §2.3.7): SUMO reroutes a
+        // vehicle BETWEEN its remaining stops -- it never shortest-paths straight to the final
+        // destination and skips an intermediate stop. So the dead-lane reroute must aim at the NEXT
+        // UNREACHED parkingArea stop that lies ahead on the route (if any), NOT the final edge; the
+        // original route AFTER that stop is preserved verbatim. Without this a vehicle that hits a dead
+        // lane before a mid-route parkingArea is rerouted AROUND it, never parks, and stays on the
+        // carriageway to its exit -- which, under SUSTAINED insertion at the calibrated density,
+        // inflates the running vehicle count vs vanilla and overshoots the density knee (SumoData
+        // NEED: sustained-insertion 540% vs vanilla 100%). Determined per-vehicle from its own stop
+        // queue; a stop on the FINAL edge (nextStopEdge == destEdge, e.g. the synthetic
+        // scenario's pa_-503) leaves the target at destEdge, so Gap-1 parity is unchanged.
         var destEdge = remaining[remaining.Count - 1];
         if (destEdge == currentLane.EdgeId)
         {
             return false;   // already on the destination edge -- nothing to reroute toward
+        }
+
+        // The next unreached parkingArea stop's edge, if it lies strictly ahead on `remaining`.
+        var routeTarget = destEdge;
+        var stopIdxInRemaining = -1;
+        var stopsQ = GetStops(v);
+        if (stopsQ is { Count: > 0 })
+        {
+            var frontStop = stopsQ.Peek();
+            if (!frontStop.Reached && frontStop.IsParking && frontStop.ParkingAreaId is not null
+                && _network!.LanesById.TryGetValue(frontStop.LaneId, out var stopLane)
+                && stopLane.EdgeId != currentLane.EdgeId)
+            {
+                for (var i = 1; i < remaining.Count; i++)
+                {
+                    if (remaining[i] == stopLane.EdgeId)
+                    {
+                        stopIdxInRemaining = i;
+                        routeTarget = stopLane.EdgeId;
+                        break;
+                    }
+                }
+            }
         }
 
         // LAST-RESORT gate: only reroute a car that has genuinely been stuck (blocking) for a while,
@@ -9596,10 +9705,10 @@ public sealed partial class Engine : IEngine
                 continue;
             }
 
-            var tail = Router().Route(nextEdge, destEdge, effort);
+            var tail = Router().Route(nextEdge, routeTarget, effort);
             if (tail is null || tail.Count == 0)
             {
-                continue;   // this connection cannot reach the destination
+                continue;   // this connection cannot reach the (stop or final) target
             }
 
             var cost = 0.0;
@@ -9624,6 +9733,21 @@ public sealed partial class Engine : IEngine
         // edge, reachable from currentLane by construction).
         var fullEdges = new List<string>(bestTail.Count + 1) { currentLane.EdgeId };
         fullEdges.AddRange(bestTail);
+
+        // GAP-4 (rerouting-with-stops): when the reroute aimed at a MID-route parkingArea stop
+        // (routeTarget != destEdge), bestTail ends AT that stop edge -- append the ORIGINAL route
+        // after the stop (remaining[stopIdx+1 ..]) so the parking detour is preserved and the vehicle
+        // still reaches its real destination + any later stops. Those edges were consecutive route
+        // edges by construction, so their connections exist; the stop-lane steering onto the parking
+        // lane is handled where it always is (TryStrategicLaneChange's same-edge stopLaneOverride) once
+        // the vehicle reaches the stop edge. No-op when routeTarget == destEdge (stopIdx == -1).
+        if (stopIdxInRemaining >= 0)
+        {
+            for (var i = stopIdxInRemaining + 1; i < remaining.Count; i++)
+            {
+                fullEdges.Add(remaining[i]);
+            }
+        }
 
         // Resolve the new lane sequence pinned to leave THIS edge via the current lane
         // (forceFirstExitToArrival). Pure (reads only the immutable net), so done outside the lock.
