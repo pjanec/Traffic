@@ -434,3 +434,28 @@ to investigate next is our strategic lane-change / best-lanes lane selection und
 why do they fail where SUMO succeeds on the identical params? That is the parity gap to close; the
 dead-lane clamp is only the symptom of un-sorted cars. This is real engine work (LC/best-lanes), not a
 scoped knob -- next session's target.
+
+## Knob-ON box-block autopsy (why "just reroute the wrong-lane car" isn't enough alone)
+Ran `LIVECITY_WRONGLANE=1 LIVECITY_WITNESS=1` (reroute-at-approach ON). The reroute WORKS at its own
+job -- the wrong-lane car no longer freezes permanently at the stop line (`strandedDeadEnd` bounded
+9-15 vs baseline's peak 22, and the frozen-at-lane-end `freeFlow` clamp count drops). BUT a NEW failure
+appears: `stuckInternal` (cars frozen ON an internal `:`-junction lane) climbs 7 -> 19 from t~360, when
+baseline held it at **0** the whole run. I.e. giving the wrong-lane car a valid connection lets it ENTER
+the junction -- and then it box-blocks, because **nothing prevents a car from entering a junction it
+cannot clear** (the downstream lane is full). The block simply MOVES from "frozen at the stop line" to
+"frozen inside the box," and box-blocks are worse (they wall cross traffic too), so net arrivals drop
+258 -> 225. (`overlaps` 1-2 is pre-existing probe noise -- baseline shows the same on curved lanes --
+not a reroute artifact.)
+
+### Conclusion: the cure is TWO parts, and part (B) is the SUMO-parity core
+- **(A) reroute the wrong-lane car so it never permanently freezes** -- DONE
+  (`Engine.WrongLaneRerouteAtApproach`), but insufficient ALONE: it relocates the jam into the junction.
+- **(B) never let a car ENTER a junction it cannot CLEAR** -- the missing piece. SUMO's `MSLink::opened`
+  / `MSVehicle::checkRewindLinkLanes` hold a vehicle BEFORE the stop line when the downstream lane lacks
+  room for it, so junctions stay empty and discharge cleanly (this is WHY SUMO drains the identical
+  demand while we gridlock). Our engine has `KeepClearConstraint` but it evidently does not gate entry
+  on downstream free space the way SUMO does. Part (B) is a real, parity-sensitive engine change ->
+  design-first (docs/DESIGN.md rule); it likely also improves the baseline directly (a car that never
+  box-blocks can't seed the cascade). This is the next target: port SUMO's "don't block the junction"
+  entry gate faithfully, THEN re-enable (A) so a genuinely wrong-lane car reroutes AND queues cleanly
+  instead of either freezing or box-blocking.
