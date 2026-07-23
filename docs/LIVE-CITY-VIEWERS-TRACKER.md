@@ -35,10 +35,13 @@ Re-capture fresh per task (other sessions may edit the engine).
 ## Stage E — City3D remote (combined DDS)
 - [x] **E1** Z on the wire — `LaneGeo.Z` additive (`hasZ` flag + appended block, GeometryCodec v1→v2, v1 still parses); `Lane.ShapeZ` threaded; DDS geometry blob carries it; consumers un-flattened. Opus-verified: codec round-trip + real DDS loopback (ramp 0,4,8). **Parity byte-identical (independently re-run: 654/4 + hash `D96213B7BB4021A7`).** (commit c95ecdd)
 - [x] **E2** vehicle name once-per-spawn — `LifecycleRecord.Name` from `VehicleId`; `IReplicationSource.Names` table (all 3 bindings); `DdsVehicleLifecycle` `FixedString64 Name`. Per-frame record UNCHANGED. Opus-verified (DDS loopback name PASS). (commit c95ecdd)
-- [ ] **E3** combined cars+peds DDS producer (`Sim.Host.App --live-city`), one net; inmem self-consume both
-- [ ] **E4** dual subscriber (`--transport=dds --live-city`), two-process round-trip renders cars+peds + Z + ids
+- [x] **E3** combined cars+peds DDS producer (`Sim.Host.App --live-city`), one net — LiveCitySim gains an additive ped-tee; inmem self-test vehicles=163 + ped crowd/lifecycles nonzero. Opus-verified. (commit 71c5a32)
+- [x] **E4** dual subscriber (`--transport=dds --live-city`) — both `DdsSubscriber` + `DdsPedReplicationSource` on one participant; **two-process DDS round-trip renders cars+peds from the wire** (cars=160 peds=164, Z-aware roads, real ids from `Names`). Opus-verified via Xvfb screenshot. ParityTests 654/4 + hash intact. (commit 71c5a32)
 
-Status: **DRAFT — awaiting owner sign-off on the design before implementation begins.**
+Status: **ALL STAGES COMPLETE (A–E).** The coupled cars+pedestrians+crossing-yield "live city" now runs in all three viewers — Raylib 2D, City3D local (live + `.simrec` replay with a scrubbable timeline + click-to-identify), and City3D remote over a single combined DDS producer — with Z/elevation and vehicle names carried additively on the wire. Parity byte-identical throughout (ParityTests 654/4, `Sim.Bench` hash `D96213B7BB4021A7`); every `src/` change additive/render-side; the `CrowdSource` golden path untouched.
+
+Deferred (owner-confirmed, separate branch): cooperative lane-change overlap fix + crossing tunneling.
+Needs the owner's GPU/desktop for final sign-off: the aesthetic smoothness look on a real GPU, and a true multi-box DDS / multi-monitor test.
 
 Deferred (owner-confirmed, separate branch): cooperative lane-change overlap fix
 (`docs/LANE-CHANGE-OVERLAP-SPEC.md`) and crossing tunneling.
