@@ -6,6 +6,7 @@ using CityLib;
 using Godot;
 using Sim.Core;
 using Sim.Ingest;
+using Sim.LiveCity;
 using Sim.Replication;
 #if CITY3D_REMOTE
 using CycloneDDS.Runtime;
@@ -81,6 +82,25 @@ public partial class Main : Node3D
     // distinct". The per-instance MultiMesh colour each ped avatar is tinted by, keyed off its regime.
     private static readonly Color PedLowPowerColor = new(0.58f, 0.64f, 0.72f);   // slate  -- low-power PathArc
     private static readonly Color PedHighPowerColor = new(0.22f, 0.74f, 0.97f);  // cyan   -- high-power FreeKinematic
+
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the `--live-city` ped regime palette (distinct
+    // from the plaza `--peds` palette above, since Sim.LiveCity.PedRegime has a THIRD state, Paused, the
+    // plaza's two-state PedRegime doesn't): grey = low-power weave, orange = promoted full-ORCA high-power,
+    // yellow = paused/dwell.
+    private static readonly Color LiveCityPedLowPowerColor = new(0.55f, 0.55f, 0.55f);  // grey
+    private static readonly Color LiveCityPedHighPowerColor = new(0.92f, 0.55f, 0.12f); // orange
+    private static readonly Color LiveCityPedPausedColor = new(0.92f, 0.85f, 0.20f);    // yellow
+
+    // docs/LIVE-CITY-VIEWERS-TASKS.md D1 -- the coupled sim's own tick length (Sim.LiveCity.LiveCityConfig.Dt
+    // default). The live-city accumulator advances LiveCitySource.Tick() in this many whole increments,
+    // exactly like AdvanceLocalSim/ProcessPeds' own fixed sim-cadence accumulators, just on ITS OWN fields
+    // (design §6: "the shared per-frame accumulator/frame counter are split per-domain").
+    private const double LiveCityTickSeconds = 0.5;
+
+    // Half-extent (metres) of the tight box the `--live-city` OVERVIEW camera frames, centred on the crop
+    // (see ReadyLiveCity's remark): small enough that cars/peds are legible in a fixed-resolution
+    // screenshot, large enough to still show several intersections' worth of the coupled scene.
+    private const float LiveCityFrameHalfExtentMeters = 180f;
 
     // Viewer-only LEGIBILITY render scale for the ped avatars (docs/DEMO-CITY3D-DESIGN.md "#### Pedestrians
     // (P7-3)"): the tested CityLib.PedTransform keeps the true ~0.5x1.8 m avatar, but at plaza camera range a
@@ -198,10 +218,23 @@ public partial class Main : Node3D
     private PedReconstructor? _pedReconstructor;
     private MultiMesh? _pedMultiMesh;
 
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md Stage D (D1) -- the `--live-city` LOCAL combined
+    // cars+peds path. When set, ReadyLiveCity/ProcessLiveCity render BOTH a car MultiMesh (via the SAME
+    // Reconstructor/UpdateCars the --scenario path uses, over LiveCitySource.Source/LocalLanes) AND a ped
+    // MultiMesh (UpdateLivePeds, fed by LiveCitySource.Peds) in ONE scene -- no `if(_peds){...return;}`
+    // mutual exclusion. Its own accumulator/frame fields (below) are SEPARATE from _accumulator/_frame (the
+    // vehicle/ped-plaza paths' own) so both domains can advance in the same tick without a field collision
+    // (design §6).
+    private bool _liveCity;
+    private LiveCitySource? _liveCitySource;
+    private double _liveCityAccumulator;
+    private int _liveCityFrame;
+
     public override void _Ready()
     {
         _transport = ParseTransportArg();
         _peds = ParsePedsArg();
+        _liveCity = ParseLiveCityArg();
 
         switch (_transport)
         {
@@ -266,6 +299,17 @@ public partial class Main : Node3D
         {
             GD.PrintErr($"Main: could not locate repo root (searched upward for Traffic.sln): {ex.Message}");
             GetTree().Quit(1);
+            return;
+        }
+
+        // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1: `--live-city` takes its OWN dedicated LOCAL
+        // path (a LiveCitySource over the coupled cars+peds+crossing-yield host, rendering both a car and a
+        // ped MultiMesh in one scene) -- checked BEFORE the `--peds` fork below so the two never collide;
+        // the vehicle-SimSource setup further down is never touched in live-city mode either.
+        _liveCity = ParseLiveCityArg();
+        if (_liveCity)
+        {
+            ReadyLiveCity(repoRoot);
             return;
         }
 
@@ -454,6 +498,81 @@ public partial class Main : Node3D
         }
     }
 
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1/D2 -- the `--live-city` LOCAL setup. Builds a
+    // CityLib.LiveCitySource (wraps Sim.LiveCity.LiveCitySim over scenarios/_ped/demo_city/box), the road
+    // meshes from ITS NetworkModel (the same RoadMeshBuilder entry point the vehicle path uses, so
+    // LiveCitySource.LocalLanes' Lane.ShapeZ threads through identically -- D2), a car MultiMesh (reused
+    // unchanged from the --scenario path) AND a ped MultiMesh (BuildPedMultiMesh, same shape as the plaza
+    // path's empty-at-load build), and points the generic `_reconstructor`/`_source`/`_lanes` fields at the
+    // live-city source so the SAME Reconstructor/UpdateCars render live-city cars -- only ProcessLiveCity
+    // (its own accumulator) ticks the sim and calls them, never AdvanceLocalSim/RenderFrame.
+    private void ReadyLiveCity(string repoRoot)
+    {
+        try
+        {
+            _liveCitySource = new LiveCitySource(repoRoot);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"Main: failed to construct LiveCitySource: {ex}");
+            GetTree().Quit(1);
+            return;
+        }
+
+        _reconstructor = new Reconstructor();
+        _source = _liveCitySource.Source;
+        _lanes = _liveCitySource.LocalLanes;
+
+        _cameraMode = ParseCameraArg();
+
+        // LiveCitySource.Network is the FULL parsed net.xml (scenarios/_ped/demo_city/box's net.xml spans
+        // 4750x4750m) -- only LiveCitySource.Crop (~840x840m) is where cars/peds actually live. Building
+        // road meshes / framing the camera over the WHOLE net would put the crop at sub-pixel scale (every
+        // lane a hairline, the camera effectively looking at the entire city from orbit) -- so the local
+        // live-city path builds/frames ONLY the crop's lanes, unlike the vehicle --scenario path (whose
+        // nets ARE the whole playable area already).
+        var (x0, y0, x1, y1) = _liveCitySource.Crop;
+        var roadBbox = BuildRoadMeshesCropped(_liveCitySource.Network, x0, y0, x1, y1);
+        _sceneBbox = roadBbox;
+
+        // Even cropped to the ~840x840m downtown block, the FULL crop bbox still leaves individual
+        // ~4.5m cars/~0.5m peds sub-legible in a fixed-resolution screenshot (whole-network framing
+        // scales the camera to the LARGEST extent). Mirrors ReadyPeds' own move (a tight frame box
+        // distinct from `_sceneBbox`, which stays the real road bbox for the close-camera fallback):
+        // frame the overview camera on a smaller box centred on the crop, wide enough to show several
+        // intersections' worth of traffic+crowd while keeping entities legible.
+        var cropCenter = new Vector3(
+            (roadBbox.Min.X + roadBbox.Max.X) / 2f, 0f, (roadBbox.Min.Z + roadBbox.Max.Z) / 2f);
+        var frameHalf = LiveCityFrameHalfExtentMeters;
+        var frameBbox = (
+            Min: cropCenter - new Vector3(frameHalf, 0f, frameHalf),
+            Max: cropCenter + new Vector3(frameHalf, 8f, frameHalf));
+
+        BuildCameraAndLight(frameBbox, makeCurrent: _cameraMode != "close");
+        _carMultiMesh = BuildCarMultiMesh();
+        _pedMultiMesh = BuildPedMultiMesh();
+
+        if (_cameraMode == "close")
+        {
+            _closeCamera = new Camera3D { Name = "CloseCamera", Current = true, Far = 2000f };
+            AddChild(_closeCamera);
+            UpdateCloseCameraFraming(_closeCamera, null);
+            GD.Print("Main: --camera=close active (low angled close-up framing).");
+        }
+
+        GD.Print("Main: --live-city active (coupled cars+peds+crossing-yield, transport=local).");
+
+        _shotPath = ParseShotArg();
+        if (_shotPath is not null)
+        {
+            var shotDelaySeconds = ParseShotDelayArg();
+            GD.Print(
+                $"Main: --shot requested, will capture to '{_shotPath}' " +
+                $"(shot-delay={shotDelaySeconds:F1}s real wall-clock before capture).");
+            CaptureScreenshotAsync(_shotPath, shotDelaySeconds);
+        }
+    }
+
 #if CITY3D_REMOTE
     // docs/DEMO-CITY3D-DESIGN.md "Data path -> Remote mode" / task T2.2b -- the REMOTE half. No
     // SimSource/Engine is ever created here (design: "do NOT create a SimSource/engine"); the only source
@@ -520,6 +639,12 @@ public partial class Main : Node3D
 
     public override void _Process(double delta)
     {
+        if (_liveCity)
+        {
+            ProcessLiveCity(delta);
+            return;
+        }
+
         if (_peds)
         {
             ProcessPeds(delta);
@@ -660,6 +785,52 @@ public partial class Main : Node3D
         }
     }
 
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the per-frame `--live-city` body: advance the
+    // coupled sim on ITS OWN fixed sim-cadence accumulator (LiveCityTickSeconds=0.5, matching
+    // LiveCityConfig.Dt -- a SEPARATE accumulator/frame pair from _accumulator/_frame, per design §6's
+    // "split per-domain accumulator" requirement), reconstruct cars through the SAME Reconstructor/UpdateCars
+    // the --scenario path uses (LiveCitySource.Source/LocalLanes are the SAME shapes SimSource exposes), and
+    // rewrite the ped MultiMesh via UpdateLivePeds off LiveCitySource.Peds. Both MultiMeshes render in ONE
+    // scene every frame -- no `if(_peds){...return;}` mutual exclusion.
+    private void ProcessLiveCity(double delta)
+    {
+        if (_liveCitySource is null || _reconstructor is null || _lanes is null)
+        {
+            return; // _Ready already reported the error.
+        }
+
+        _liveCityAccumulator += delta;
+        while (_liveCityAccumulator >= LiveCityTickSeconds)
+        {
+            _liveCitySource.Tick();
+            _liveCityAccumulator -= LiveCityTickSeconds;
+        }
+
+        var vehicles = _reconstructor.Reconstruct(_liveCitySource.Source, _liveCitySource.LocalLanes, PlayoutDelaySeconds);
+        UpdateCars(vehicles);
+
+        var peds = _liveCitySource.Peds;
+        UpdateLivePeds(peds);
+
+        if (_closeCamera is not null)
+        {
+            UpdateCloseCameraFraming(_closeCamera, vehicles);
+        }
+
+        GD.Print(
+            $"Main: frame={_liveCityFrame} liveCityTime={_liveCitySource.Time:F2} " +
+            $"cars={vehicles.Count} peds={peds.Count}");
+
+        _liveCityFrame++;
+
+        if (_liveCityFrame >= QuitAfterFrames && _shotPath is null)
+        {
+            GD.Print($"Main: reached {QuitAfterFrames} frames, quitting.");
+            DisposeSources();
+            GetTree().Quit();
+        }
+    }
+
 #if CITY3D_REMOTE
     // docs/DEMO-CITY3D-DESIGN.md "Data path -> Remote mode": "Each frame: source.Pump(); once
     // source.GeometryComplete, lazily build the road/building meshes...". Reconstructor.Reconstruct
@@ -738,6 +909,8 @@ public partial class Main : Node3D
         _sim = null;
         _pedSim?.Dispose();
         _pedSim = null;
+        _liveCitySource?.Dispose();
+        _liveCitySource = null;
 #if CITY3D_REMOTE
         _ddsPedSource?.Dispose();
         _ddsPedSource = null;
@@ -776,6 +949,48 @@ public partial class Main : Node3D
     private (Vector3 Min, Vector3 Max) BuildRoadMeshes(NetworkModel network)
         => BuildRoadMeshesFromRibbons(
             RoadMeshBuilder.BuildAll(network, includeInternal: true), network.LanesByHandle.Count);
+
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the live-city LOCAL entry point's crop-filtered
+    // counterpart to BuildRoadMeshes: only lanes with at least one shape vertex inside the crop rect
+    // (expanded by a small margin so a lane that just straddles the crop edge still renders whole rather
+    // than being clipped mid-ribbon) are built, keeping the legible downtown block from being lost in the
+    // full net's ~4750m extent (see ReadyLiveCity's own remark). RoadMeshBuilder.Build (the same per-lane
+    // ribbon math BuildAll uses internally) is called directly per surviving lane.
+    private (Vector3 Min, Vector3 Max) BuildRoadMeshesCropped(
+        NetworkModel network, double x0, double y0, double x1, double y1, double marginMeters = 60.0)
+    {
+        var minX = x0 - marginMeters;
+        var minY = y0 - marginMeters;
+        var maxX = x1 + marginMeters;
+        var maxY = y1 + marginMeters;
+
+        var filtered = new List<(int Handle, RibbonMesh Mesh)>();
+        foreach (var lane in network.LanesByHandle)
+        {
+            var inside = false;
+            foreach (var (sx, sy) in lane.Shape)
+            {
+                if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY)
+                {
+                    inside = true;
+                    break;
+                }
+            }
+
+            if (!inside)
+            {
+                continue;
+            }
+
+            filtered.Add((lane.Handle, RoadMeshBuilder.Build(lane.Shape, lane.ShapeZ, lane.Width)));
+        }
+
+        GD.Print(
+            $"Main: --live-city crop [{x0:F0},{y0:F0}]-[{x1:F0},{y1:F0}] kept {filtered.Count} of " +
+            $"{network.LanesByHandle.Count} lane(s) from the full net.");
+
+        return BuildRoadMeshesFromRibbons(filtered, filtered.Count);
+    }
 
 #if CITY3D_REMOTE
     // docs/DEMO-CITY3D-DESIGN.md "Data path -> Remote mode" / task T2.2b -- the REMOTE entry point: builds
@@ -1069,6 +1284,51 @@ public partial class Main : Node3D
             var origin = new Vector3(inst.PosX, inst.PosY, inst.PosZ);
             _pedMultiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
             _pedMultiMesh.SetInstanceColor(i, inst.IsHighPower ? PedHighPowerColor : PedLowPowerColor);
+        }
+    }
+
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the ped analog of UpdateCars for the
+    // `--live-city` path. Unlike UpdatePeds (which consumes CityLib.ReconstructedPed, already run through
+    // CityLib.PedReconstructor's DR smoothing over a wire), a live-city ped's pose comes straight off
+    // LiveCitySource.Peds (Sim.LiveCity.LiveCityPed, an in-process sample -- no wire/DR involved), so this
+    // method applies CoordinateTransform.SumoToGodot itself and colors each instance by its
+    // Sim.LiveCity.PedRegime (grey low-power / orange high-power / yellow paused) rather than reusing
+    // CityLib.PedTransform's two-state (low/high) regime enum. Same build-once/grow-only/
+    // VisibleInstanceCount discipline as UpdateCars/UpdatePeds.
+    private void UpdateLivePeds(IReadOnlyList<LiveCityPed> peds)
+    {
+        if (_pedMultiMesh is null)
+        {
+            return;
+        }
+
+        if (peds.Count > _pedMultiMesh.InstanceCount)
+        {
+            _pedMultiMesh.InstanceCount = peds.Count;
+        }
+
+        _pedMultiMesh.VisibleInstanceCount = peds.Count;
+
+        for (var i = 0; i < peds.Count; i++)
+        {
+            var p = peds[i];
+            var (gx, gy, gz) = CoordinateTransform.SumoToGodot(p.X, p.Y, p.Z);
+
+            // No yaw (matches the plaza UpdatePeds convention: a slim upright avatar reads fine without
+            // heading at demo scale); center raised half the avatar height above the reconstructed ground
+            // point so it stands ON the road/sidewalk rather than being bisected by it.
+            var scale = new Vector3(PedRenderWidthMeters, PedRenderHeightMeters, PedRenderWidthMeters);
+            var basis = Basis.Identity.Scaled(scale);
+            var origin = new Vector3(gx, gy + PedRenderHeightMeters / 2f, gz);
+            _pedMultiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+
+            var color = p.Regime switch
+            {
+                Sim.LiveCity.PedRegime.HighPower => LiveCityPedHighPowerColor,
+                Sim.LiveCity.PedRegime.Paused => LiveCityPedPausedColor,
+                _ => LiveCityPedLowPowerColor, // LowPowerWalking
+            };
+            _pedMultiMesh.SetInstanceColor(i, color);
         }
     }
 
@@ -1371,6 +1631,24 @@ public partial class Main : Node3D
         foreach (var arg in OS.GetCmdlineUserArgs())
         {
             if (arg == "--peds")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the `--live-city` USER flag (a bare flag, no
+    // `=`), parsed via the same OS.GetCmdlineUserArgs() mechanism as --peds/--scenario/--camera/--shot.
+    // When present the viewer takes the dedicated live-city path (ReadyLiveCity/ProcessLiveCity): the
+    // coupled cars+peds+crossing-yield scene over scenarios/_ped/demo_city/box, rendered together in one
+    // scene; absent, behaviour is byte-identical to before.
+    private static bool ParseLiveCityArg()
+    {
+        foreach (var arg in OS.GetCmdlineUserArgs())
+        {
+            if (arg == "--live-city")
             {
                 return true;
             }

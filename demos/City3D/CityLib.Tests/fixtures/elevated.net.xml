@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  docs/LIVE-CITY-VIEWERS-TASKS.md Stage D (D2): a tiny, committed synthetic net proving the local
+  live-city path honors the net's Z/elevation coordinate. Committed real nets (demo_city/box included) are
+  flat, so this fixture is the only way to exercise Lane.ShapeZ into RoadMeshBuilder end to end with a real
+  NetworkParser.Parse(path) call (not an inline XML string).
+
+  Two lanes:
+    E0_0: a ~100m ramp climbing 0m to 4m to 8m (a few metres of elevation change, as asked).
+    E1_0: a flat 60m lane at z=0 throughout, the control case (must yield Y approx 0 in Godot space).
+-->
+<net version="1.20">
+  <edge id="E0" from="J0" to="J1">
+    <lane id="E0_0" index="0" speed="13.9" length="100.0" width="3.2"
+          shape="0.00,0.00,0.00 50.00,0.00,4.00 100.00,0.00,8.00"/>
+  </edge>
+  <edge id="E1" from="J2" to="J3">
+    <lane id="E1_0" index="0" speed="13.9" length="60.0" width="3.2"
+          shape="200.00,0.00 260.00,0.00"/>
+  </edge>
+</net>

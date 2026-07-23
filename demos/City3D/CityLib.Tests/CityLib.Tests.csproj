@@ -31,4 +31,10 @@
     <ProjectReference Include="..\CityLib\CityLib.csproj" />
   </ItemGroup>
 
+  <!-- docs/LIVE-CITY-VIEWERS-TASKS.md D2: the committed synthetic elevated-net fixture, copied next to
+       the test binary so NetworkParser.Parse(path) (a real file, not an inline XML string) can load it. -->
+  <ItemGroup>
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

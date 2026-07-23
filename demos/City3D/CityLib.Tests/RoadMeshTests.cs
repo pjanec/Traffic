@@ -199,6 +199,52 @@ public class RoadMeshTests
         }
     }
 
+    // ---- 6: docs/LIVE-CITY-VIEWERS-TASKS.md Stage D (D2) -- the local live-city path's Z-elevation proof,
+    // off a COMMITTED fixture FILE (not an inline XML string, unlike test #4 above). Complements
+    // BuildAll_SyntheticElevatedNetwork_NonConstantVertexY (already confirms the exact same
+    // ShapeZ -> non-constant-Y threading inline); this test is the checked-in-fixture confirmation the
+    // task explicitly asks for ("if such a Z test already exists, extend/confirm it rather than
+    // duplicating"), not a duplicate -- it additionally proves the FLAT lane in the SAME net stays Y ~= 0
+    // side by side with the ramp, matching what LiveCitySource.LocalLanes (NetworkLaneSource over the same
+    // NetworkParser) feeds RoadMeshBuilder/Reconstructor with in the live-city viewer path.
+    [Fact]
+    public void BuildAll_FixtureElevatedNet_RampLaneNonConstantY_FlatLaneYNearZero()
+    {
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "fixtures", "elevated.net.xml");
+        Assert.True(File.Exists(fixturePath), $"fixture not found next to test binary: {fixturePath}");
+
+        var network = NetworkParser.Parse(fixturePath);
+        Assert.Equal(2, network.LanesByHandle.Count);
+
+        var rampLane = network.LanesByHandle.Single(l => l.Id == "E0_0");
+        var flatLane = network.LanesByHandle.Single(l => l.Id == "E1_0");
+
+        Assert.NotNull(rampLane.ShapeZ);
+        Assert.Null(flatLane.ShapeZ);
+
+        var meshes = RoadMeshBuilder.BuildAll(network, includeInternal: true).ToDictionary(x => x.Handle, x => x.Mesh);
+
+        var rampMesh = meshes[rampLane.Handle];
+        var rampYs = new List<float>();
+        for (var i = 0; i < rampMesh.Vertices.Length; i += 3)
+        {
+            rampYs.Add(rampMesh.Vertices[i + 1]);
+        }
+
+        Assert.True(rampYs.Distinct().Count() > 1, "expected non-constant vertex Y on the fixture's ramp lane (E0_0)");
+        Assert.Equal(0.0f, rampYs[0], 1e-3f);
+        Assert.Equal(0.0f, rampYs[1], 1e-3f);
+        Assert.Equal(8.0f, rampYs[^1], 1e-3f);
+        Assert.Equal(8.0f, rampYs[^2], 1e-3f);
+
+        var flatMesh = meshes[flatLane.Handle];
+        Assert.True(flatMesh.Vertices.Length > 0);
+        for (var i = 0; i < flatMesh.Vertices.Length; i += 3)
+        {
+            Assert.Equal(0.0f, flatMesh.Vertices[i + 1], 1e-5f); // Y == 0 on the fixture's flat lane (E1_0)
+        }
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
