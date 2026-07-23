@@ -63,8 +63,20 @@ render-side only (parity untouched). We formalize into design/tasks/tracker befo
 - **2D scope:** the static layers land in the **Raylib 2D viewer too** — confirmed important for orientation +
   bug-spotting, not just aesthetics. Port each layer to BOTH viewers (2D first to iterate fast, then 3D). ✔
 
-## Still open (minor, decide during build)
-- **POI prop fidelity (3D):** simple colored markers/glyphs first (fast), upgrade to modeled props
-  (benches/posts/pylons) later. Recommend markers-first.
+## POI / area rendering (owner-confirmed — keep it FLAT, no props)
+- **Everything is flat on the ground EXCEPT doors.** No modeled props (no posts, benches, blades, pylons,
+  shelters, trees) — deliberately, to avoid clutter.
+- **POI points** (`venue`, `transit_stop`, `dwell_spot`, `parking_access`): flat colored **ground
+  markers/decals** by kind (color = the reference palette). No vertical geometry.
+- **POI areas** (`parking_lot`, `park`) and **zones/districts**: flat colored **ground polygons** (translucent
+  tint, painted just below the roads). Parking lot = paved gray; park = green; zones = subtle per-type wash.
+- **`building_entrance` = the ONE vertical element: a thin, flat, vertical colored box** placed on the
+  building wall where the door would be, at the entrance `pos`, oriented by its `facing` vector, matched to its
+  `building` id. Different color so it reads as a door.
+- **Density:** `parking_access` (351) as flat ground decals is fine (no clutter now that they're flat); still
+  give a per-category show/hide toggle.
+- 3D and 2D use the same color palette so the two viewers read identically.
+
+## Still open (minor)
 - Whether to promote the "data over defaults" directive into `CLAUDE.md` as a standing project rule (happy to,
   on request).
