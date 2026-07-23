@@ -121,6 +121,12 @@ var overlayTest = false;
 // district ground tint visible; the runtime `Z` key (or the diagnostics panel's checkbox) toggles it from
 // there either way -- mirrors City3D's `--show-zones`/`Z` pair exactly.
 var showZones = false;
+// docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row: buildings are a PRIMARY feature (unlike
+// the opt-in zone tint) -- default ON for `--mode live-city` (both live and `--replay` flavors).
+// `--hide-buildings` starts the footprint-fill layer off; mirrors City3D's own `--hide-buildings` flag
+// (no runtime toggle key on the 2D side -- optional per the task, not added since `--hide-buildings` alone
+// already covers the verification need).
+var hideBuildings = false;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -215,6 +221,9 @@ for (var i = 0; i < args.Length; i++)
         case "--show-zones":
             showZones = true;
             break;
+        case "--hide-buildings":
+            hideBuildings = true;
+            break;
         default:
             inputPath ??= args[i];
             break;
@@ -269,12 +278,12 @@ if (mode == "live-city")
     {
         return liveCitySmoke
             ? RunLiveCityReplaySmoke(replayPath)
-            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones, screenshotWidth, screenshotHeight);
+            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones, hideBuildings, screenshotWidth, screenshotHeight);
     }
 
     return liveCitySmoke
         ? RunLiveCitySmoke(Math.Max(frames, 120), recordPath, resolvedSimHz)
-        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones, screenshotWidth, screenshotHeight);
+        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones, hideBuildings, screenshotWidth, screenshotHeight);
 }
 
 // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `--mode local --demo "<name>"` needs NO <path> at all --
@@ -886,7 +895,7 @@ static int RunPedPublish(double? secondsCap)
 // from ValidateSimHz/ValidateRenderHz -- simHz sets cfg.SimHz (=> cfg.Dt, which both the engine's
 // step-length AND the ped-publish Dt derive from, keeping the live-city coupling invariant); renderHz
 // seeds the window's initial target FPS and the runtime-adjustable slider in the diagnostics panel below.
-static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones, int? screenshotWidth = null, int? screenshotHeight = null)
+static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones, bool hideBuildings, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var repoRoot = DemoCatalog.RepoRoot();
     var cfg = LiveCityConfig.ForRepoRoot(repoRoot);
@@ -1005,6 +1014,14 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
             if (showZones)
             {
                 LiveCityZonesLayer.Draw(camera, sim.Scene.Zones);
+            }
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row: default ON (a primary
+            // feature, unlike the opt-in zone tint), drawn with the ground layers -- after zones, before
+            // the road/vehicle pass -- so footprints sit beside/behind the streets, never covering cars.
+            if (!hideBuildings)
+            {
+                LiveCityBuildingsLayer.Draw(camera, sim.Scene.Buildings);
             }
 
             Renderer.DrawWorldDds(camera, sim.VehicleSource.Geometry, sim.VehicleSource.TlStateByLane, draws, laneMeta);
@@ -1210,7 +1227,7 @@ static int RunLiveCitySmoke(int steps, string? recordPath, int simHz)
 // the runtime-adjustable slider in the playback panel below. Replay has no sim-hz CLI knob of its own --
 // the recording's own Dt (clock.Dt, read from the file) is displayed instead, exactly like the live
 // path's `--sim-hz` display line, just sourced from the file rather than a live LiveCityConfig.
-static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones, int? screenshotWidth = null, int? screenshotHeight = null)
+static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones, bool hideBuildings, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var clock = new PlaybackClock();
     using var fileSource = new ReplicationFileSource(replayPath, clock);
@@ -1326,6 +1343,13 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
             if (showZones)
             {
                 LiveCityZonesLayer.Draw(camera, replayScene.Zones);
+            }
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row: replay flavor, same
+            // default-ON/`--hide-buildings`-gated draw as the live path (RunLiveCity).
+            if (!hideBuildings)
+            {
+                LiveCityBuildingsLayer.Draw(camera, replayScene.Buildings);
             }
 
             Renderer.DrawWorldDds(camera, fileSource.Geometry, fileSource.TlStateByLane, draws, replayLaneMeta);

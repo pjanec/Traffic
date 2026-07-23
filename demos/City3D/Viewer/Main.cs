@@ -89,6 +89,23 @@ public partial class Main : Node3D
 
     private static readonly Color ZoneFillDefault = new(156f / 255f, 163f / 255f, 175f / 255f, 0.15f);
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row -- matches the reference renderer's
+    // BUILDING_FILL exactly (docs/reference/live-city-viz/renderer/templates/template.js:114-121),
+    // channels only (the reference's own alpha is dropped here: these buildings are OPAQUE solid massing,
+    // not a translucent ground wash like ZoneFillPalette above): mall amber, office blue, residential
+    // teal, restaurant red, garage grey; unknown types fall back to BuildingFillDefault (the reference's
+    // BUILDING_FILL_DEFAULT channels).
+    private static readonly Dictionary<string, Color> BuildingFillPalette = new(StringComparer.Ordinal)
+    {
+        ["mall"] = new Color(245f / 255f, 158f / 255f, 11f / 255f),
+        ["office"] = new Color(59f / 255f, 130f / 255f, 246f / 255f),
+        ["residential"] = new Color(45f / 255f, 212f / 255f, 191f / 255f),
+        ["restaurant"] = new Color(248f / 255f, 113f / 255f, 113f / 255f),
+        ["garage"] = new Color(107f / 255f, 114f / 255f, 128f / 255f),
+    };
+
+    private static readonly Color BuildingFillDefault = new(156f / 255f, 163f / 255f, 175f / 255f);
+
     // Small seeded car-body palette (design "Cars" / task T1.5, mirrors BuildingPalette's "variety without
     // assets" pattern) -- picked deterministically by VehicleHandle.Index (stable across frames for a given
     // vehicle, no hidden RNG), not by draw order.
@@ -323,12 +340,16 @@ public partial class Main : Node3D
     private readonly List<(int LaneHandle, MeshInstance3D HeadInstance, StandardMaterial3D HeadMaterial)> _signalHeads = new();
     private bool _signalHeadsBuilt;
 
-    // Buildings visibility toggle (`--hide-buildings` startup flag + runtime `B` key). Only `ReadyLocal`'s
-    // `--scenario` path actually calls BuildBuildings (procedural BuildingPlacer needs a NetworkModel's
-    // edge/lane grouping; `--live-city`/`--peds`/remote don't build any buildings node at all today -- see
-    // BuildBuildings/BuildRemoteScene's own remarks) -- `_buildingsNode` stays null in every other mode, so
-    // the toggle is a harmless no-op there.
-    private MultiMeshInstance3D? _buildingsNode;
+    // Buildings visibility toggle (`--hide-buildings` startup flag + runtime `B` key). `ReadyLocal`'s
+    // `--scenario` path calls BuildBuildings (procedural BuildingPlacer, one MultiMeshInstance3D); every
+    // `--live-city` entry point (local live, replay, remote) calls BuildLiveCityBuildings, which is
+    // DATA-DRIVEN FIRST (BuildDataDrivenBuildings off LiveCityScene.Buildings -- one Node3D parenting a
+    // MeshInstance3D per building, docs/LIVE-CITY-VISUALS-NOTES.md's "data over defaults" standing
+    // directive) and falls back to the SAME procedural BuildBuildings only when the scene has no
+    // buildings.json data. Typed as the common base `Node3D` (MultiMeshInstance3D IS a Node3D) so one
+    // field/one toggle covers both shapes -- `--peds` builds neither, leaving this null (harmless no-op
+    // toggle there).
+    private Node3D? _buildingsNode;
 
     // docs/LIVE-CITY-VISUALS-NOTES.md deliverable 2: zone-tint visibility toggle, same shape as
     // `_buildingsNode`/`B` above, except zones default HIDDEN (owner decision: opt-in, not the default
@@ -831,6 +852,12 @@ public partial class Main : Node3D
         BuildZoneGround(_liveCitySource.Scene);
         var roadBbox = BuildRoadMeshesCropped(_liveCitySource.Network, x0, y0, x1, y1);
         BuildCrosswalksAndLaneMarkings(_liveCitySource.Network, (x0, y0, x1, y1));
+        // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row: data-driven massing off
+        // LiveCitySource.Scene.Buildings when present, procedural BuildingPlacer fallback otherwise --
+        // built AFTER the roads (so it lands under a later scene-tree node, same read order the other
+        // live-city layers follow) but its bbox is only used for logging here; `_sceneBbox`/camera framing
+        // below stay road-bbox-driven, unchanged from before this feature.
+        BuildLiveCityBuildings(_liveCitySource.Scene, _liveCitySource.Network);
         _sceneBbox = roadBbox;
 
         // Even cropped to the ~840x840m downtown block, the FULL crop bbox still leaves individual
@@ -867,6 +894,12 @@ public partial class Main : Node3D
         {
             _zonesNode.Visible = true;
             GD.Print("Main: --show-zones active (zone tint starts visible; press Z to toggle).");
+        }
+
+        if (ParseHideBuildingsArg() && _buildingsNode is not null)
+        {
+            _buildingsNode.Visible = false;
+            GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
         }
 
         if (_cameraMode == "close")
@@ -965,9 +998,15 @@ public partial class Main : Node3D
         // purely STATIC world data, unrelated to the recorded car/ped frames, so it is loaded directly off
         // the SAME dataset dir `cfg`/`netPath` above already resolved. Mirrors ReadyLiveCityLive's own
         // "zones before roads" build order.
-        BuildZoneGround(LiveCityScene.Load(cfg.DatasetDir));
+        var replayScene = LiveCityScene.Load(cfg.DatasetDir);
+        BuildZoneGround(replayScene);
         var roadBbox = BuildRoadMeshesCropped(network, cfg.X0, cfg.Y0, cfg.X1, cfg.Y1);
         BuildCrosswalksAndLaneMarkings(network, (cfg.X0, cfg.Y0, cfg.X1, cfg.Y1));
+        // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row -- replay flavor, same "no live
+        // LiveCitySource, load the SAME dataset dir directly" reasoning BuildZoneGround's own remark just
+        // above already established for zones. `network` (parsed straight off net.xml just above) is the
+        // fallback path's input if the dataset ships no buildings.json.
+        BuildLiveCityBuildings(replayScene, network);
         _sceneBbox = roadBbox;
 
         var cropCenter = new Vector3(
@@ -997,6 +1036,12 @@ public partial class Main : Node3D
         {
             _zonesNode.Visible = true;
             GD.Print("Main: --show-zones active (zone tint starts visible; press Z to toggle).");
+        }
+
+        if (ParseHideBuildingsArg() && _buildingsNode is not null)
+        {
+            _buildingsNode.Visible = false;
+            GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
         }
 
         if (_cameraMode == "close")
@@ -1166,23 +1211,37 @@ public partial class Main : Node3D
         try
         {
             var zoneCfg = LiveCityConfig.ForRepoRoot(FindRepoRoot());
-            BuildZoneGround(LiveCityScene.Load(zoneCfg.DatasetDir));
+            var remoteScene = LiveCityScene.Load(zoneCfg.DatasetDir);
+            BuildZoneGround(remoteScene);
 
             var network = NetworkParser.Parse(Path.Combine(zoneCfg.DatasetDir, "net.xml"));
             pedByHandle = PedByHandle(network);
             BuildCrosswalksAndLaneMarkings(network, (crop.X0, crop.Y0, crop.X1, crop.Y1));
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row -- same best-effort local-read
+            // reasoning as the zone/sidewalk/crosswalk/lane-marking layers just above: buildings.json isn't
+            // carried over the DDS wire either, so this reads it off the SAME local dataset dir, inside the
+            // SAME try/catch (a subscriber with no local checkout just skips buildings too, rather than
+            // failing the whole scene build).
+            BuildLiveCityBuildings(remoteScene, network);
         }
         catch (Exception ex)
         {
             GD.Print(
-                "Main: zone-tint/sidewalk/crosswalk/lane-marking layers skipped (no local dataset access " +
-                $"for remote subscriber): {ex.Message}");
+                "Main: zone-tint/sidewalk/crosswalk/lane-marking/buildings layers skipped (no local dataset " +
+                $"access for remote subscriber): {ex.Message}");
         }
 
         if (ParseShowZonesArg() && _zonesNode is not null)
         {
             _zonesNode.Visible = true;
             GD.Print("Main: --show-zones active (zone tint starts visible; press Z to toggle).");
+        }
+
+        if (ParseHideBuildingsArg() && _buildingsNode is not null)
+        {
+            _buildingsNode.Visible = false;
+            GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
         }
 
         var roadBbox = BuildRoadMeshesFromGeometryCropped(geometry, crop.X0, crop.Y0, crop.X1, crop.Y1, pedByHandle: pedByHandle);
@@ -2552,6 +2611,112 @@ public partial class Main : Node3D
         _buildingsNode = instance;
 
         GD.Print($"Main: built {boxes.Count} building(s).");
+        return (min, max);
+    }
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row -- the single entry point every
+    // `--live-city` flavour (local live, replay, remote) calls to build ITS buildings node, applying the
+    // "data over defaults" standing directive: real footprint + real HeightM from buildings.json
+    // (BuildDataDrivenBuildings) when the scene has any, procedural BuildingPlacer boxes
+    // (BuildBuildings, unchanged) only as the no-data FALLBACK. `network` is only actually walked in the
+    // fallback branch -- a scene with buildings.json data never touches BuildingPlacer at all.
+    private (Vector3 Min, Vector3 Max) BuildLiveCityBuildings(LiveCityScene scene, NetworkModel network)
+    {
+        if (scene.Buildings.Count > 0)
+        {
+            return BuildDataDrivenBuildings(scene.Buildings);
+        }
+
+        GD.Print("Main: 0 building(s) in scene (no buildings.json) -- falling back to procedural BuildingPlacer.");
+        return BuildBuildings(network);
+    }
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Buildings (data-driven)" row / DESIGN-live-city-2d-viz.md §7
+    // "Buildings: buildings[].polygon + type -> extruded massing". Static geometry, built ONCE at load,
+    // same "build once, no per-frame cost" split as BuildBuildings/BuildZoneGround. CityLib.
+    // BuildingFromDataBuilder does the polygon+height -> mesh math (ear-clip roof cap + one flat-shaded
+    // wall quad per footprint edge, real HeightM -- not a synthetic band like BuildingPlacer's); this
+    // method only turns each ExtrudedBuildingMesh into a MeshInstance3D, coloured by
+    // BuildingFillPalette[building.Type]. One MeshInstance3D per building (not a MultiMesh like the
+    // procedural path): only 31 buildings in the committed dataset, and per-building footprints/heights
+    // vary too much to share one instanced mesh the way identical unit-cube boxes do.
+    //
+    // Every building lands under ONE parent Node3D (`_buildingsNode`, same field the procedural path
+    // uses) so `--hide-buildings` / the runtime `B` key toggles the whole layer with a single Visible
+    // flip, regardless of which of the two building-building methods actually ran.
+    private (Vector3 Min, Vector3 Max) BuildDataDrivenBuildings(IReadOnlyList<SceneBuilding> buildings)
+    {
+        var min = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+        var max = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+
+        var root = new Node3D { Name = "Buildings" };
+        AddChild(root);
+        _buildingsNode = root;
+
+        var built = 0;
+        foreach (var building in buildings)
+        {
+            var mesh = BuildingFromDataBuilder.Build(building);
+            if (mesh.Vertices.Length == 0)
+            {
+                continue; // degenerate footprint or non-positive height -- nothing to draw.
+            }
+
+            var vertexCount = mesh.Vertices.Length / 3;
+            var vertices = new Vector3[vertexCount];
+            var normals = new Vector3[vertexCount];
+            for (var i = 0; i < vertexCount; i++)
+            {
+                vertices[i] = new Vector3(mesh.Vertices[i * 3 + 0], mesh.Vertices[i * 3 + 1], mesh.Vertices[i * 3 + 2]);
+                normals[i] = new Vector3(mesh.Normals[i * 3 + 0], mesh.Normals[i * 3 + 1], mesh.Normals[i * 3 + 2]);
+
+                min.X = Mathf.Min(min.X, vertices[i].X);
+                min.Y = Mathf.Min(min.Y, vertices[i].Y);
+                min.Z = Mathf.Min(min.Z, vertices[i].Z);
+                max.X = Mathf.Max(max.X, vertices[i].X);
+                max.Y = Mathf.Max(max.Y, vertices[i].Y);
+                max.Z = Mathf.Max(max.Z, vertices[i].Z);
+            }
+
+            var arrays = new Godot.Collections.Array();
+            arrays.Resize((int)Mesh.ArrayType.Max);
+            arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+            arrays[(int)Mesh.ArrayType.Normal] = normals;
+            arrays[(int)Mesh.ArrayType.Index] = mesh.Indices;
+
+            var arrayMesh = new ArrayMesh();
+            arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+            var color = BuildingFillPalette.TryGetValue(building.Type, out var c) ? c : BuildingFillDefault;
+            var material = new StandardMaterial3D
+            {
+                AlbedoColor = color,
+                Roughness = 0.9f,
+                // Double-sided (like ZoneGroundBuilder's ground tint material): the footprint's authored
+                // winding is normalized internally by BuildingFromDataBuilder, but disabling face culling
+                // here is cheap insurance against a future dataset's footprint being wound the other way
+                // -- a solid building silhouette must never show a see-through wall/roof face.
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            };
+
+            var instance = new MeshInstance3D
+            {
+                Mesh = arrayMesh,
+                Name = $"Building_{building.Id}",
+            };
+            instance.SetSurfaceOverrideMaterial(0, material);
+            root.AddChild(instance);
+            built++;
+        }
+
+        GD.Print($"Main: built {built} data-driven building(s) from {buildings.Count} buildings.json record(s).");
+
+        if (built == 0)
+        {
+            return (new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity),
+                    new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity));
+        }
+
         return (min, max);
     }
 
