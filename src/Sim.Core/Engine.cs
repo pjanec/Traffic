@@ -1987,9 +1987,13 @@ public sealed partial class Engine : IEngine
     public bool DiagLaneChangeLog { get; set; }
     private readonly long[] _lcByPathChangerSpeed = new long[12];
     private readonly long[] _lcTargetNearStopped = new long[4]; // per path: commits with a target car <20m going <0.5
-    private void RecordLaneChangeCommit(int path, VehicleRuntime v, VehicleRuntime? nLead, VehicleRuntime? nFollow)
+    private void RecordLaneChangeCommit(int path, VehicleRuntime v, VehicleRuntime? nLead, VehicleRuntime? nFollow, bool bypassesMinSpeed)
     {
         if (!DiagLaneChangeLog) return;
+        // Count EXECUTED swaps only: the 3 CommitLaneChange paths are suppressed below LaneChangeMinSpeed
+        // (so a stopped "decision" there never actually swaps); keep-right commits inline and bypasses
+        // that guard, so it DOES execute while stopped. Mirror that here so the histogram = real swaps.
+        if (!bypassesMinSpeed && LaneChangeMinSpeed > 0.0 && v.Kinematics.Speed < LaneChangeMinSpeed) return;
         var spd = v.Kinematics.Speed;
         var sb = spd < 0.5 ? 0 : spd < 2.0 ? 1 : 2;
         System.Threading.Interlocked.Increment(ref _lcByPathChangerSpeed[path * 3 + sb]);
@@ -5618,7 +5622,7 @@ public sealed partial class Engine : IEngine
             var neighFollow = neighbors.GetNeighborFollower(v, targetHandle);
             if (IsTargetLaneSafe(v, neighLead, neighFollow, dt) && !IsTargetLaneOverlapped(v, targetHandle, neighbors, dt))
             {
-                RecordLaneChangeCommit(0, v, neighLead, neighFollow); // #15 float analysis (EV give-way vacate)
+                RecordLaneChangeCommit(0, v, neighLead, neighFollow, bypassesMinSpeed: false); // #15 float analysis (EV give-way vacate)
                 CommitLaneChange(v, targetHandle, target.Id);
                 return true;
             }
@@ -10582,7 +10586,7 @@ public sealed partial class Engine : IEngine
                 var neighFollow = postMoveNeighbors.GetNeighborFollower(v, leftLane.Handle);
                 if (IsTargetLaneSafe(v, neighLead, neighFollow, dt) && !TargetLaneBlockedByObstacle(v, leftLane, time, dt) && !IsTargetLaneOverlapped(v, leftLane.Handle, postMoveNeighbors, dt))
                 {
-                    RecordLaneChangeCommit(1, v, neighLead, neighFollow); // #15 float analysis (speed-gain left)
+                    RecordLaneChangeCommit(1, v, neighLead, neighFollow, bypassesMinSpeed: false); // #15 float analysis (speed-gain left)
                     targetLaneId = leftLane.Id;
                     targetLaneHandle = leftLane.Handle;
                     speedGainProbability = 0.0; // :1063/1080 resetState() on committed change.
@@ -10831,7 +10835,7 @@ public sealed partial class Engine : IEngine
                 // write". This write does NOT cross vehicles (every other vehicle's neighbor lookups
                 // this phase go through the frozen `postMoveNeighbors` snapshot, never a live read of
                 // `v`'s LaneId), so it stays safe/deterministic despite being applied immediately.
-                RecordLaneChangeCommit(3, v, neighLead, neighFollowKr); // #15 float analysis (keep-right, INLINE swap -- bypasses LaneChangeMinSpeed)
+                RecordLaneChangeCommit(3, v, neighLead, neighFollowKr, bypassesMinSpeed: true); // #15 float analysis (keep-right, INLINE swap -- bypasses LaneChangeMinSpeed)
                 v.LaneId = rightLane.Id;
                 // D2: keep LaneHandle in lockstep -- rightLane's own Handle field, no lookup.
                 v.LaneHandle = rightLane.Handle;
@@ -11353,7 +11357,7 @@ public sealed partial class Engine : IEngine
             return false;
         }
 
-        RecordLaneChangeCommit(2, v, neighLead, neighFollow); // #15 float analysis (strategic/urgent)
+        RecordLaneChangeCommit(2, v, neighLead, neighFollow, bypassesMinSpeed: false); // #15 float analysis (strategic/urgent)
         CommitLaneChange(v, neighborLane.Handle, neighborLane.Id);
         // MSLCM_LC2013.cpp:1063/1080 resetState() on any committed change (strategic included).
         v.SpeedGainProbability = 0.0;
