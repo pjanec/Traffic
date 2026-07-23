@@ -66,3 +66,33 @@ saturated edge (LCA_URGENT blocker-cooperation is the piece SumoSharp still lack
 `Engine.cs` TryStrategicLaneChange's "future work" note). Golden-sensitive (LC model) → design-first + nod
 before implementing; validate on THIS witness (through discharge → vanilla) + box discharge, byte-identical
 goldens.
+
+---
+
+## UPDATE (same day) — keep-right drift is MINOR here; dominant cause is the stem-through's own low discharge (crossJxnLeader regress), not mis-segregation
+
+Deeper instrumentation refined the picture — and partly reversed the "mis-segregation is the driver" read above:
+
+1. **Insertion is clean.** `flow_left2` inserts **100% on lane2** (correct); the 21% that end on lane1
+   (16/78 veh; 35% of veh-STEPS because they sit stuck) get there by **keep-right DRIFT** (L2→L1), not
+   bad insertion and not merge-in failure. Vanilla's `--lanechange-output`: **0** `flow_left2` lane changes.
+2. **But suppressing the drift barely helps.** Forcing full keep-right suppression for eligible turners
+   (`EXP_FULLSUPPRESS`) recovers the stem-through only **70→94** (d_4_1) / **55→67** (d_4_2) — vanilla is
+   252/243. Network: 316→299 running, 1081→1104 arrived. So **keep-right drift ≈ 15% of the through
+   deficit**, not the dominant driver. (Component-2 confirmed real but minor here too.)
+3. **The through's own discharge is the dominant deficit.** With drift suppressed, the d_4_2 through head
+   (`e_d_4_1_d_4_2_1`, at the stop line) is bound by **`CrossJunctionLeaderConstraint`** — car-following the
+   through vehicle just ahead across the junction, with **negative gaps** (−0.66…−2.19 = within minGap,
+   bumper-to-bumper). That is a REGRESS: each through follows the one ahead. The exit `e_d_4_2_d_4_3` is
+   nearly empty (1.3) while the queue packs tight → the through crosses at a **low discharge rate / high
+   start-up lost time**, not blocked by backpressure. `JunctionYieldConstraint` binds ~0 throughout
+   (gap-acceptance is not involved). `RedLight` binds only during genuine red.
+
+**Where this leaves the mechanism:** the knee deficit on this witness is dominated by **low stem-through
+discharge across the static-TL junction** (the through queue barely advances during its green even into an
+empty exit), with keep-right drift a real but ~15% secondary contributor. The next step is to trace the
+ABSOLUTE head-of-queue through vehicle at start-of-green (what binds the very first car when the light turns
+green and the exit is empty) — that isolates whether it is a start-up/discharge-headway effect, a
+cross-junction gap/where-the-internal-lane-ends detail, or the TL green-timing response. NOT gap-acceptance,
+NOT a through-release gate (C3), NOT primarily mis-segregation. Design deferred until the head-of-queue binder
+is pinned.
