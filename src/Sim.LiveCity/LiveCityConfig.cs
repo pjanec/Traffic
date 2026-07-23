@@ -25,9 +25,11 @@ public sealed class LiveCityConfig
     // cars + 160 peds cleanly (SceneGen.BuildLiveCity's remarks). Overridable via LIVECITY_CARS.
     public int CarTargetConcurrent { get; set; } = 160;
 
-    // A queued car must not snap sideways a full lane while essentially stopped -- it sorts into its
-    // lane while moving. Overridable via LIVECITY_LCMIN.
-    public double LaneChangeMinSpeed { get; set; } = 1.0;
+    // A queued/standing car must not snap sideways a full lane -- it sorts into its lane only while moving.
+    // 1.5 clamps more of the standing/crawling snaps than the 2D path's 1.0 (which still left ~15% residual)
+    // for the 3D impression; keep <= ~2.0 so legitimate turn-lane sorting still happens and saturated queues
+    // don't deadlock (any forward creep clears the gate). Overridable via LIVECITY_LCMIN.
+    public double LaneChangeMinSpeed { get; set; } = 1.5;
 
     // A/B switch: full crossing-yield gate + ped signal compliance vs the baseline (no coupling).
     // Overridable via LIVECITY_YIELD (0 = off).

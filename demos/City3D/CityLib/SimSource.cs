@@ -27,6 +27,14 @@ public sealed class SimSource : IDisposable
 
         _engine = new Engine();
         _engine.LoadScenario(netXmlPath, rouXmlPath, sumocfgPath);
+
+        // Realism (demo-only; 0 = off = byte-identical parity): a queued/standing car must not snap a full
+        // lane sideways -- it sorts into its lane only while moving. The --scenario path set nothing (free
+        // SUMO-parity lane changes in queues); mirror LiveCityConfig / SceneGen.BuildLiveCity. Env-tunable
+        // via CITY3D_LCMIN; keep <= ~2.0 for deadlock safety.
+        _engine.LaneChangeMinSpeed =
+            double.TryParse(System.Environment.GetEnvironmentVariable("CITY3D_LCMIN"), out var lcm) ? lcm : 1.5;
+
         _runner = new SimulationRunner(_engine);
 
         // The LOCAL, Z-aware lane source (straight off the parsed NetworkModel -- carries Lane.ShapeZ).
