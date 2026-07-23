@@ -606,3 +606,53 @@ Two prongs, in order:
 `Engine.StrandReasonHistogram` (+ `MarkStrandReason`, indices incl. 9 remainingCountLt2 / 10
 poolEdgeMismatch) and the gated `STRANDDUMP` line; surfaced via `LiveCitySim.StrandReasonHistogram` and
 the probe's `LIVECITY-STRANDREASON`. Also added `LIVECITY_DRIVETHROUGH` env override.
+
+## PRONG 1 COMPLETE — TRUE ROOT CAUSE (per-car verified): lane-change maneuver straddles a junction
+Added a gated invariant tracer (`Engine.DiagSeqDesync` / `SEQDESYNC-CREATED@<site>`, env
+`LIVECITY_SEQDESYNC=1`) that flip-detects the first operation to desync a car's `LaneSeqIndex` from its
+physical edge, checked after every mutation site (entry, boundaryCross, afterLaneChanges,
+afterUpdateReroutes, afterPeriodicReroute, postExecute). Result is unambiguous:
+
+**Every desync is created by `AdvanceLaneChanges()`** (tag `@afterLaneChanges`; `UpdateReroutes`/
+`UpdatePeriodicReroutes` are no-ops in live-city — RerouteThresholdSeconds=+inf, ReroutePeriod<=0, no
+obstacles). Decisive dump:
+```
+SEQDESYNC-CREATED@afterLaneChanges: actLane=e_d_6_3_d_5_3_2 seqIdx=1/16 actEdgeFoundAtPoolSlot=0
+   win=[0]e_d_6_3_d_5_3_1 *[1]:d_5_3_5_0 [2]e_d_5_3_d_4_3_3 [3]:d_4_3_1_2
+```
+The car's physical edge is at pool slot **0**, but `LaneSeqIndex` is **1** (the internal lane past it).
+`*` marks the seqIdx slot. `actEdgeFoundAtPoolSlot=0` proves the edge IS in the pool, one slot behind.
+
+### Mechanism (complete causal chain)
+1. The live-city demo sets `<lanechange.duration value="2.0"/>` (`LiveCitySim.cs:215`) → lane changes are
+   **4-step continuous maneuvers** (`LaneChangeSteps = 2.0/0.5`). Every PARITY golden uses
+   `LaneChangeDuration=0.0` (instant snap) — so this whole failure mode is **impossible on any golden**,
+   i.e. a fix here is byte-identical/parity-safe by construction.
+2. A vehicle mid-maneuver crosses a junction boundary during those 4 steps. The boundary-cross code
+   (`Engine.cs` ~9682-9693) advances `LaneSeqIndex++` and sets `LaneHandle = arrival[newIndex]` (the
+   internal/next lane) but does **NOT** cancel the in-progress maneuver; `LcTargetHandle` still points at
+   a lane on the **edge just left**.
+3. Next step `AdvanceLaneChanges` (`Engine.cs` ~11021) completes the maneuver: `LaneHandle =
+   LcTargetHandle` — snapping the car's physical lane **backward onto the departed edge**, while
+   `LaneSeqIndex` already points one slot ahead (the internal/next-edge). => `pool[LaneSeqIndex].edge !=
+   LaneHandle.edge` (the `poolEdgeMismatch` desync).
+4. At the next lane end the boundary guard (`v.LaneHandle != pool[seqIdx]`) sends the car to
+   `TryReResolveFromActualLane`, which only handles a wrong LANE on the SAME edge; for a wrong EDGE it
+   bails (`remaining[0] != currentLane.EdgeId`) and the caller clamps `Pos=laneLength; Speed=0` FOREVER.
+   That clamped car is the "frozen on green, nowhere to go" seed; a stream of them walls corridors and the
+   grid cascades. This is the whole of #15 (matches owner's "160 cars can't congest -> it's a bug").
+
+### THE FIX (prong 2, next — design-first, parity-safe by construction)
+A lane-change maneuver must not straddle a junction. At the boundary cross, FINALIZE any in-progress
+maneuver before advancing `LaneSeqIndex`: if the vehicle is past the maneuver midpoint snap to the target
+lane, else abort to the source lane, then clear `LcTarget*`/`LcSteps*` — so `AdvanceLaneChanges` can never
+later write a stale cross-edge target. (Equivalently: `AdvanceLaneChanges` must skip/clear a maneuver whose
+`LcTargetHandle` edge != the vehicle's current edge.) SUMO completes/aborts the lateral change at the lane
+end; it never carries a discrete lane-target across an internal junction lane. Gated implicitly by
+`LaneChangeDuration>0` (0 on every golden => inert => `Sim.ParityTests` 657/4 unchanged). This is the
+actual #15 cure; the reroute-at-approach knob (task #21) treated the symptom and is correctly default-off.
+
+### Instrumentation landed (parity-safe, gated `DiagSeqDesync` default off; 657/4 byte-identical)
+`Engine.DiagSeqDesync` + `CheckSeqDesync` (flip-detected `SEQDESYNC-CREATED@site` with a pool window),
+wired via `LIVECITY_SEQDESYNC=1`. Sweeps after AdvanceLaneChanges/UpdateReroutes/UpdatePeriodicReroutes/
+ExecuteMoves + checks at ExecuteMoveVehicle entry and each boundary cross. All no-ops when the flag is off.

@@ -218,6 +218,7 @@ public sealed class LiveCitySim : IDisposable
         _engine.JunctionYieldTimeoutSeconds = cfg.JunctionYieldTimeoutSeconds;
         _engine.DeadLaneDriveThrough = cfg.DeadLaneDriveThrough;
         _engine.WrongLaneRerouteAtApproach = cfg.WrongLaneRerouteAtApproach;
+        _engine.DiagSeqDesync = Environment.GetEnvironmentVariable("LIVECITY_SEQDESYNC") == "1"; // #15 prong-1
         _vtype = _engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
 
         _engine.CrowdSource = cfg.YieldEnabled

@@ -1978,6 +1978,35 @@ public sealed partial class Engine : IEngine
     private void MarkStrandReason(int idx) => System.Threading.Interlocked.Increment(ref _strandReasonHist[idx]);
     private int _strandDumpCount; // #15: caps the one-shot STRANDDUMP diagnostic lines (gated on WrongLaneRerouteAtApproach)
 
+    // #15 prong-1 diagnostic (parity-neutral, gated off by default): pinpoint the OPERATION that first
+    // desyncs a vehicle's LaneSeqIndex from its physical edge (pool[LaneSeqIndex].edge != LaneHandle.edge).
+    // Flip-detection (synced->desynced) attributes each creation to exactly ONE site tag. Off on every
+    // golden (DiagSeqDesync default false => no reads, byte-identical).
+    public bool DiagSeqDesync { get; set; }
+    private int _seqDesyncDumpCount;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> _seqDesyncState = new();
+    private void CheckSeqDesync(VehicleRuntime v, string site, double time)
+    {
+        if (!DiagSeqDesync || v.Arrived || v.LaneSeqLen <= 0) return;
+        if (v.LaneSeqIndex < 0 || v.LaneSeqIndex >= v.LaneSeqLen) return;
+        var poolEdge = _network!.LanesByHandle[_laneSeqPool[v.LaneSeqStart + v.LaneSeqIndex]].EdgeId;
+        var actEdge = _network.LanesByHandle[v.LaneHandle].EdgeId;
+        var desynced = poolEdge != actEdge;
+        var prev = _seqDesyncState.TryGetValue(v.EntityIndex, out var p) && p;
+        _seqDesyncState[v.EntityIndex] = desynced;
+        if (desynced && !prev && System.Threading.Interlocked.Increment(ref _seqDesyncDumpCount) <= 25)
+        {
+            var win = new List<string>();
+            for (var k = Math.Max(0, v.LaneSeqIndex - 2); k < Math.Min(v.LaneSeqLen, v.LaneSeqIndex + 3); k++)
+                win.Add($"{(k == v.LaneSeqIndex ? "*" : "")}[{k}]{_network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + k]].Id}");
+            var actInPool = -1;
+            for (var k = 0; k < v.LaneSeqLen; k++)
+                if (_network.LanesByHandle[_laneSeqPool[v.LaneSeqStart + k]].EdgeId == actEdge) { actInPool = k; break; }
+            Console.WriteLine($"SEQDESYNC-CREATED@{site} t={time:F0}: actLane={_network.LanesByHandle[v.LaneHandle].Id} " +
+                $"seqIdx={v.LaneSeqIndex}/{v.LaneSeqLen} actEdgeFoundAtPoolSlot={actInPool} win={string.Join(" ", win)}");
+        }
+    }
+
     // DIAGNOSTIC (#15): per-vehicle argmin of ComputeMoveIntent's constraint fold (which constraint bound
     // each vehicle's speed), aligned to the read columns. See ComputeMoveIntent's binder for the id map.
     public ReadOnlySpan<byte> BindingConstraints => _readBuffer.BindingConstraint.AsSpan(0, _readBuffer.Count);
@@ -2819,6 +2848,7 @@ public sealed partial class Engine : IEngine
             // reflects the maneuver's progress (source until the midpoint, then target). No-op for
             // every duration-0 scenario (no vehicle is ever mid-maneuver).
             AdvanceLaneChanges();
+            if (DiagSeqDesync) foreach (var dv in ActiveVehicles()) CheckSeqDesync(dv, "afterLaneChanges", time);
 
             // Perf (dense active list) + domain decomposition: compact active-vehicle indices and
             // (opt-in) group them by spatial region ONCE per step, right after all lane mutations
@@ -2861,6 +2891,7 @@ public sealed partial class Engine : IEngine
             // why this ordering, and why it is still a seam-4 structural mutation rather than a
             // Simulation-phase concern).
             UpdateReroutes(time, dt);
+            if (DiagSeqDesync) foreach (var dv in ActiveVehicles()) CheckSeqDesync(dv, "afterUpdateReroutes", time);
 
             // [SystemPhase.Input] P1E-4 (HIGH-DENSITY-P1E-DESIGN.md §3): the periodic congestion-
             // reactive reroute device (device.rerouting), DISTINCT from the obstacle-triggered
@@ -2870,6 +2901,7 @@ public sealed partial class Engine : IEngine
             // step (never a same-step write -- §8 risk 1); entirely inert (returns immediately)
             // whenever ScenarioConfig.ReroutePeriod<=0, the default for every pre-P1E-4 scenario.
             UpdatePeriodicReroutes(time, dt);
+            if (DiagSeqDesync) foreach (var dv in ActiveVehicles()) CheckSeqDesync(dv, "afterPeriodicReroute", time);
 
             // [SystemPhase.Input] B5-i: dead-reckon MOVING external obstacles (Speed != 0) by
             // Speed*dt. Runs BEFORE the neighbor-query Refill/PlanMovements below so the Plan
@@ -2955,6 +2987,7 @@ public sealed partial class Engine : IEngine
             // at `time + dt`, which is the SIMTIME MSInductLoop stamps entry/leave with).
             var pExec = PhaseStart();
             ExecuteMoves(time, dt);
+            if (DiagSeqDesync) foreach (var dv in ActiveVehicles()) CheckSeqDesync(dv, "postExecute", time);
             PhaseEnd("execute", pExec);
 
             // [SystemPhase.PostSimulation] P1F-2 (HIGH-DENSITY-P1F-DESIGN.md §1A/§1F, §2): the
@@ -9361,6 +9394,7 @@ public sealed partial class Engine : IEngine
     // region-parallel path is gated on there being no actuated programs.
     private void ExecuteMoveVehicle(VehicleRuntime v, double time, double dt)
     {
+            CheckSeqDesync(v, "entry", time); // #15 prong-1: desynced at step start => created before this step
             // C8-i: capture the pre-move speed BEFORE overwriting it, for the ballistic
             // trapezoidal position update below (Euler ignores it).
             var oldSpeed = v.Kinematics.Speed;
@@ -9703,6 +9737,7 @@ public sealed partial class Engine : IEngine
                 // so this is byte-identical to reading _laneSeqPool. D3: direct pool-slice read.
                 v.LaneHandle = _laneSeqArrival[v.LaneSeqStart + v.LaneSeqIndex];
                 v.LaneId = _network.LanesByHandle[v.LaneHandle].Id;
+                CheckSeqDesync(v, "boundaryCross", time); // #15 prong-1: did this cross desync index vs physical edge?
             }
 
             // Rung 8b/A2: keep-right and speed-gain lane changes are no longer decided here --
