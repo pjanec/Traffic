@@ -56,6 +56,16 @@ public sealed class LiveCitySource : IDisposable
 
     public double Time => _sim.Time;
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md-adjacent fix (ped smoothing pivot): the SAME in-memory replication
+    // wire (byte-loopback, LiveCitySim's own PedReplicationPublisher -> InMemoryPedReplicationBus) the
+    // remote/DDS ped path reconstructs from -- exposed so the LOCAL live-city viewer can reconstruct peds
+    // via CityLib.PedReconstructor (Sim.Pedestrians.Lod.PedRemoteReconstructor's continuous
+    // HeadlessIg.ReconstructSample playout) instead of interpolating discrete per-tick position snapshots.
+    // This is the "server==IG" pipeline the remote path already proves out; the local path had simply never
+    // been wired through it (it read LiveCitySim.Sample()'s ground-truth positions directly, stepped once
+    // per Dt tick, hence the visible ~1Hz jerk).
+    public IPedReplicationSource PedSource => _sim.PedSource;
+
     // The ped read-back for one render frame -- cars+peds are sampled together off LiveCitySim's last
     // stepped frame (LiveCitySim "does not render, only steps and samples", design §1); the Viewer maps
     // each ped's (X,Y,Z) through CoordinateTransform.SumoToGodot itself (no CityLib ped-transform reuse

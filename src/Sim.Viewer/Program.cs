@@ -910,12 +910,15 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
     // VIEWER-KINEMATIC-SMOOTHING §1.1/§2.2: CoarseFeed=true, same as loopback/remote -- this is a sparse
     // (Dt=0.5s => 2 Hz) DR consumer, so the junction-turn-straddle discriminator must be active.
     var recon = new KinematicReconstructor { CoarseFeed = true };
-    // Ped-smoothing fix (docs/LIVE-CITY-VISUALS-NOTES.md-adjacent): peds used to be drawn straight from
-    // sim.Sample().Peds (the raw per-tick snapshot) -- a step function at the render frame rate. Fed one
-    // sim tick at a time below (in the accumulator loop), then queried each render frame at the SAME
-    // playout instant the cars render at (drClock.RenderSim - delaySeconds) so a ped on a crosswalk and the
-    // car yielding to it stay temporally aligned.
-    var pedInterp = new PedInterpolator();
+    // Ped-smoothing fix (docs/LIVE-CITY-VISUALS-NOTES.md-adjacent), PIVOTED from snapshot-interpolation to
+    // wire reconstruction (mirrors demos/City3D/Viewer/Main.cs's ProcessLiveCity one-for-one): peds used to
+    // be drawn straight from sim.Sample().Peds (the raw per-tick snapshot) -- a step function at the render
+    // frame rate. An interim fix linearly interpolated those snapshots (PedInterpolator); this supersedes
+    // it by reconstructing off sim.PedSource -- the SAME in-memory replication wire the remote/DDS ped path
+    // already reconstructs from -- via Sim.Pedestrians.Lod.PedRemoteReconstructor's continuous
+    // HeadlessIg.ReconstructSample playout (a PathArc/ActivityTimeline leg is an analytic function of time,
+    // evaluated at whatever instant it's asked for -- no snapshot brackets, no tick-boundary kink).
+    var pedRecon = new PedRemoteReconstructor(sim.PedSource);
 
     // Real-time step accumulator: LiveCitySim.Step() always advances exactly cfg.Dt of sim time -- pace it
     // to WALL time (honoring `speedFactor`, the same knob `--sim-rate` drives for `--mode local`) instead
@@ -963,13 +966,12 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
 
                 // One ped snapshot per sim tick (matching the car track's own per-Step() cadence), not per
                 // render frame -- a stalled/late render frame that lets this loop run more than once must
-                // not silently drop the intermediate steps' ped positions from the recording OR from the
-                // interpolator's history (both are fed from the SAME sim.Sample() call this tick).
-                var stepPeds = sim.Sample().Peds;
-                pedInterp.Push(sim.Time, ToPedInterpFrames(stepPeds));
+                // not silently drop the intermediate steps' ped positions from the recording. (Rendering no
+                // longer reads this snapshot at all -- see pedRecon below -- but the `--record` tee still
+                // wants one ground-truth PEDFRAME per sim tick.)
                 if (recorder is not null)
                 {
-                    recorder.WritePedFrame(sim.Time, ToPedTuples(stepPeds));
+                    recorder.WritePedFrame(sim.Time, ToPedTuples(sim.Sample().Peds));
                 }
             }
 
@@ -979,9 +981,19 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
             RenderHelpers.PumpAndBuildVehicleDraws(sim.VehicleSource, drClock, delaySeconds, smooth: true,
                 frameStats, recon, draws, paused: false, laneSource: sim.LocalLanes);
 
-            var carPlayoutTime = drClock.RenderSim - delaySeconds;
+            // Ped-smoothing fix: `sim.Time` (the sim's own tick clock) only advances once per `cfg.Dt` (0.5s
+            // @ the 2Hz default) -- feeding THAT raw value to the reconstructor every render frame would
+            // reproduce the exact stepwise jerk this fix targets (measured via a throwaway probe: positions
+            // frozen for the whole tick, then one large jump at the boundary). `sim.Time + accumWall` is a
+            // CONTINUOUSLY-advancing render clock instead: the tick loop above's `sim.Step()` (which
+            // advances sim.Time by cfg.Dt) / `accumWall -= cfg.Dt` pair is a net no-op on their SUM, so this
+            // expression is mathematically identical to a free-running clock advancing by `dt*speed` every
+            // frame, decoupled from the 2Hz tick boundary -- exactly what HeadlessIg.ReconstructSample's
+            // continuous PathArc/ActivityTimeline evaluation needs to render smoothly between ticks.
+            var pedNow = sim.Time + accumWall;
+            pedRecon.Pump(pedNow);
             var raw = sim.Sample();
-            overlay.UpdateSnapshot(new LiveCitySnapshot(raw.Cars, ToLiveCityPeds(pedInterp.Sample(carPlayoutTime)), raw.OccupiedCrossings));
+            overlay.UpdateSnapshot(new LiveCitySnapshot(raw.Cars, BuildLiveCityPeds(pedRecon), raw.OccupiedCrossings));
         },
 
         DrawWorld = (camera, draws) =>
@@ -1054,30 +1066,27 @@ static IReadOnlyList<(int Id, float X, float Y, float Z, byte Regime, string Ani
     return arr;
 }
 
-// Ped-smoothing fix: LiveCityPed -> PedInterpolator's neutral-within-Sim.LiveCity PedInterpFrame (drops Z --
-// the ped net is flat, PedInterpolator interpolates X/Y only, same as PedFrameTrack.PedsAtInterpolated).
-static IReadOnlyList<PedInterpFrame> ToPedInterpFrames(IReadOnlyList<LiveCityPed> peds)
+// Ped-smoothing fix (pivoted to wire reconstruction): PedRemoteReconstructor's known ids -> the
+// Sim.LiveCity.LiveCityPed shape LiveCityOverlay/DrawWorldOver expect. Z is always 0 (the ped net is flat,
+// matching LiveCitySim.Sample's own peds.Add(new LiveCityPed(..., 0.0, ...))). Regime collapses to the
+// two-state low/high-power split PedRemoteReconstructor's Ig.ModelOf reports -- no third "Paused" state
+// here (unlike LiveCitySim.Sample's own PedRegime), the SAME simplification ProcessLiveCityRemote's
+// CityLib.PedReconstructor already makes on the City3D side; a ped without a render pose yet (never
+// observed on the wire) is simply omitted this frame.
+static IReadOnlyList<LiveCityPed> BuildLiveCityPeds(PedRemoteReconstructor recon)
 {
-    var arr = new PedInterpFrame[peds.Count];
-    for (var i = 0; i < peds.Count; i++)
+    var arr = new List<LiveCityPed>(recon.KnownIds.Count);
+    foreach (var id in recon.KnownIds)
     {
-        var p = peds[i];
-        arr[i] = new PedInterpFrame(p.Id, p.X, p.Y, p.Regime, p.AnimTag);
-    }
+        if (!recon.TryGetRenderPose(id, out var pos, out var visible, out var animTag) || !visible)
+        {
+            continue;
+        }
 
-    return arr;
-}
-
-// The inverse of ToPedInterpFrames -- PedInterpolator.Sample's output back into the LiveCityPed shape
-// LiveCityOverlay/DrawWorldOver expect. Z is always 0 (the ped net is flat, matching LiveCitySim.Sample's
-// own peds.Add(new LiveCityPed(..., 0.0, ...))).
-static IReadOnlyList<LiveCityPed> ToLiveCityPeds(IReadOnlyList<PedInterpFrame> peds)
-{
-    var arr = new LiveCityPed[peds.Count];
-    for (var i = 0; i < peds.Count; i++)
-    {
-        var p = peds[i];
-        arr[i] = new LiveCityPed(p.Id, p.X, p.Y, 0.0, p.Regime, p.AnimTag);
+        var regime = recon.Ig.ModelOf(id) == PedDrModel.FreeKinematic
+            ? Sim.LiveCity.PedRegime.HighPower
+            : Sim.LiveCity.PedRegime.LowPowerWalking;
+        arr.Add(new LiveCityPed(id, pos.X, pos.Y, 0.0, regime, animTag));
     }
 
     return arr;
