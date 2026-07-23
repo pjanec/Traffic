@@ -925,3 +925,30 @@ revive the channel (afec614), add the strategic informFollower, wire the demo ga
 keep-right guard and MEASURE (parity 657/4; bench hash D96213B7BB4021A7; keepRight stop=0 AND arrivals
 >=~900 with small stuckInternal). If box-block returns, cooperation isn't sorting enough up-front -> tune
 the trigger earlier, do NOT ship a flow regression.
+
+## OWNER REQUIREMENT (2026-07-23): realism is a PER-AREA level-of-detail knob (high vs low realism)
+The engine runs two realism regimes, and the lane-change realism (cooperative LC vs the cheap unrealistic
+pure-lateral swap) must be gated by them:
+- **HIGH realism** (near the player / on-screen / hero area): NEVER allow the physically-impossible
+  pure-lateral swap. Cars MUST use cooperative lane change (target follower opens a gap; merge is a moving
+  diagonal; extreme case waits). Correctness/appearance over cost.
+- **LOW realism** (distant, off-screen, not observed -- for performance): the unrealistic-but-cheaper,
+  better-flowing "cheat" (pure-lateral swap / stopped keep-right sort) is ACCEPTABLE. There is no viewer
+  to see it, and it costs less than running cooperation everywhere.
+
+Design implication for `CooperativeLaneChange` (and the keep-right float guard):
+1. It is a REALISM feature, so it must be GATED and **optionally turnable OFF** to trade realism for
+   performance/flow -- the current global `LiveCityConfig.CooperativeLaneChange` / `LIVECITY_COOP` flag
+   already provides the coarse (whole-sim) on/off, which satisfies the minimum "optionally OFF".
+2. IDEAL (future): make it PER-AREA, keyed on the same high/low-power / InterestField LOD split the ped
+   side already uses (`PedLodManager`, `Sim.Pedestrians.Lod`, `InterestField`). High-realism cells run
+   cooperative LC + forbid the pure-lateral swap; low-realism cells may keep the cheap swap. This is the
+   car-side analogue of the ped LOD reconstruction and is a natural extension, NOT part of the initial
+   cooperative-LC landing.
+3. Determinism/parity unaffected: all of this is demo/host-side gating; every parity/bench golden leaves
+   the underlying engine flags OFF (byte-identical), and a per-area gate is still a pure function of the
+   frozen start-of-step state (no System.Random, order-independent).
+
+So the initial cooperative-LC implementation ships the GLOBAL gate (correct default ON for the demo, off
+for parity); the per-area high/low-realism split is a documented follow-up so a distant/off-screen car can
+still take the cheap path for performance while on-screen cars never float.
