@@ -8,7 +8,7 @@ where a theory was refuted by data, that's called out.
 
 > **UPDATE:** Most of the original findings are now RESOLVED. The dev session's `becc224` implemented
 > #5/#6/#9/#10/#11; this testing session pushed camera/grid/smoothness (#12–#14) + the TL-crop fix
-> (#16). **Only #7, #8, #15 remain open — all DR-core / engine.** The detailed sections further down
+> (#16). **Open: #7, #8, #15 (DR-core/engine) and #17 (viewer GC).** The detailed sections further down
 > are kept as the evidence trail; the table below is the current truth.
 
 ---
@@ -33,6 +33,7 @@ where a theory was refuted by data, that's called out.
 | **7** | **DDS cruise stutter (render-clock HOLD)** | 🐛 **OPEN** — confirmed, DR-core | **dev (DrClock)** |
 | **8** | **DDS stopped-car backward creep** | 🐛 **OPEN** — confirmed, DR-core | **dev (DrClock)** |
 | **15** | **Live-city junction GRIDLOCK (cars wait on green, never clear)** | 🐛 **OPEN** — engine RoW/discharge + no teleport | **dev/engine** |
+| **17** | **Viewer GC stalls at high ped counts (per-frame per-ped allocation)** | 🐛 **OPEN** — measured (GC, not CPU) | **dev (viewer/recon)** |
 
 Details on the open items are in their sections below. The ✅ sections are retained as evidence.
 
@@ -152,6 +153,21 @@ Not a viewer bug — it's `Sim.Core` engine behavior. Dedicated fix/diagnosis br
 line and re-test the demo; the turn-lane-segregation work is the deeper unfinished item. All are
 parity-gated `Sim.Core` changes — engine session's call. (Interim demo mitigation: lower
 `LIVECITY_CARS`, but if it locks at low density that only delays it, not a cure.)
+
+### 17. Viewer GC stalls at high ped counts — per-frame per-ped allocation (viewer/recon)
+Cranking `LIVECITY_PEDS` to 16000 (100× the tuned 160) makes the viewer hitch **~1 s smooth / ~1 s
+hang, periodically** — the classic GC signature (a CPU-bound O(n) cost would be a *steady* slowdown,
+not periodic freezes). **Measured** (GC counters, viewer-side, ~14k peds): allocation **~20–40 MB per
+30 frames (≈0.7–1.3 GB/s)**, **gen2 collections climbing steadily** (9→14 in ~10 s), and the **worst
+frame per interval 109–148 ms** — the stalls line up with the gen2 bumps. So it's **allocation
+pressure → gen2 GC pauses**, not CPU.
+
+The low-power ped SIM path is cheap (design targets ~90k), but the **viewer's per-frame ped path**
+re-reconstructs and returns a fresh N-element ped list (+ per-ped conversions) **every render frame**,
+so alloc scales with ped count × 60 fps → ~1 MB/frame at 16k → gen2 pressure. Fix: **pool/reuse the
+per-frame ped buffers** (avoid per-frame per-ped allocation in `PedReconstructor.Reconstruct` /
+`UpdatePeds` / the `ToLiveCityPeds`-style conversions). Caps the viewer's usable ped count well below
+the headless sim's target until addressed. (New `LIVECITY_PEDS` knob makes this easy to reproduce.)
 
 ### 16. TL poles rendered outside the cropped road net — ✅ FIXED `6edbad8` (CropTlLaneHandles: same crop rule as roads)
 Roads render **cropped** to the downtown block (`BuildRoadMeshesCropped`, `LiveCityConfig` X0..Y1 =
