@@ -2499,10 +2499,11 @@ public partial class Main : Node3D
             var box = boxes[i];
 
             // Scale the unit cube to (SizeX, SizeY, SizeZ) in its own local axes, THEN rotate the whole
-            // scaled box about +Y by YawRad (Basis.Scaled multiplies as R*S, i.e. scale-then-rotate for a
-            // transformed vector) so its SizeX face runs along the local road tangent.
+            // scaled box about +Y by YawRad. Basis.ScaledLocal right-multiplies (R*S), i.e. it scales in the
+            // box's OWN axes and then rotates -- so SizeX runs along the local road tangent. (Plain
+            // Basis.Scaled left-multiplies (S*R) and would stretch along fixed WORLD axes, hiding the yaw.)
             var scale = new Vector3(box.SizeX, box.SizeY, box.SizeZ);
-            var basis = new Basis(Vector3.Up, box.YawRad).Scaled(scale);
+            var basis = new Basis(Vector3.Up, box.YawRad).ScaledLocal(scale);
             var origin = new Vector3(box.CX, box.CY, box.CZ);
             multiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
             multiMesh.SetInstanceColor(i, BuildingPalette[i % BuildingPalette.Length]);
@@ -2825,8 +2826,10 @@ public partial class Main : Node3D
             var v = vehicles[i];
             var car = CityLib.CarTransform.ForVehicle(v, CarHeightMeters);
 
+            // ScaledLocal (R*S) scales in the car's OWN axes then rotates by yaw, so the box points down
+            // its heading. Plain Scaled (S*R) would stretch along fixed world axes -> heading invisible.
             var scale = new Vector3(car.ScaleX, car.ScaleY, car.ScaleZ);
-            var basis = new Basis(Vector3.Up, car.YawRad).Scaled(scale);
+            var basis = new Basis(Vector3.Up, car.YawRad).ScaledLocal(scale);
             var origin = new Vector3(car.PosX, car.PosY, car.PosZ);
             _carMultiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
 
