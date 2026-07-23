@@ -540,8 +540,14 @@ public partial class Main : Node3D
         // only elsewhere.
         _simHz = ValidateSimHz(ParseSimHzArg());
         _renderHz = ValidateRenderHz(ParseRenderHzArg());
-        Godot.Engine.MaxFps = _renderHz;
-        GD.Print($"Main: tick rates -- sim-hz={_simHz} (live-city only) render-hz={_renderHz} (Engine.MaxFps).");
+        // Smoothness fix (Windows GPU testing session): by DEFAULT leave the render FPS UNCAPPED
+        // (Engine.MaxFps = 0, i.e. vsync-paced at the display's native refresh). The old fixed 60fps cap
+        // caused visible judder while panning/flying on a high-refresh panel (measured on a 240Hz display):
+        // the engine's variable frame time made 60fps frames land on 3/4/5 of the 240Hz refreshes unevenly.
+        // Rendering at native refresh removed it. A user who WANTS a cap can still pass --render-hz (honored
+        // below) or drag the rate-panel slider at runtime (OnRenderHzSliderChanged re-applies MaxFps).
+        Godot.Engine.MaxFps = ParseRenderHzArg() is null ? 0 : _renderHz;
+        GD.Print($"Main: tick rates -- sim-hz={_simHz} (live-city only) render-hz={_renderHz} (Engine.MaxFps={Godot.Engine.MaxFps}; 0=uncapped/vsync).");
 
         // BLOCKER fix: the in-code QuitAfterFrames=200 auto-quit used to fire unconditionally, closing an
         // interactive windowed run after ~3.3s at 60fps on a real GPU. It is REDUNDANT outside headless --
