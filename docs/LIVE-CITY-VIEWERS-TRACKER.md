@@ -21,10 +21,10 @@ Re-capture fresh per task (other sessions may edit the engine).
 - [x] **B1** `--mode live-city` + `LiveCityOverlay` (dedicated mode, NOT DemoKind — LiveCitySim owns its coupled engine + pre-step gate). Cars via the shared KinematicReconstructor path (`RenderHelpers.PumpAndBuildVehicleDraws` widened DdsSubscriber→IReplicationSource, backward-compatible), peds regime-colored discs. Opus-verified: headless smoke reconstructedCars=161/peds=160/peakOccupied=46; Xvfb screenshot shows both (HUD cars:148 peds:160); ParityTests 654/4 + hash intact.
 - [x] **B2** click-select vehicle + SUMO-id label; `PickNearest` pure helper, 5/5 unit tests (incl. tie-break fix). Opus-verified.
 
-## Stage C — Shared record/replay + playback (Raylib)
-- [ ] **C1** `.simrec` format + `ReplicationRecorder` (cars + peds); round-trip test
-- [ ] **C2** `ReplicationFileSource` + `PedReplicationFileSource` (seekable); replay==live within tol; SeekTo test
-- [ ] **C3** Raylib playback panel (play/pause/restart/speed/frame-step + drag slider) + `--record`/`--replay`
+## Stage C — Shared record/replay + playback (Raylib)  ✅ (commit ef4969a)
+- [x] **C1** `.simrec` format (`SimRecFormat`) + `RecordingReplicationSink` (car tee) + PEDFRAME snapshots; round-trip test green (geometry=1, lifecycle/frame>0, pedFrames==steps). Opus-verified.
+- [x] **C2** `ReplicationFileSource` (wraps InMemory bus, seekable via `PlaybackClock`) + `PedFrameTrack`; replay matches live arc-length within 0.05 m; SeekTo (interior + backward) == linear playthrough (3 dp + same lane). Opus-verified.
+- [x] **C3** Raylib playback panel (pause/restart/step/speed + drag-to-seek timeline) + `--record`/`--replay`. Xvfb screenshot shows the scrubbing timeline (t=22.62/75.00s). Additive only → ParityTests 654/4 + hash intact; Sim.Viewer.Tests 9/9. Opus-verified.
 
 ## Stage D — City3D local (live + replay, click, Z)
 - [ ] **D1** drop cars-XOR-peds; `--live-city` renders cars + peds over demo_city/box (legacy modes intact)
