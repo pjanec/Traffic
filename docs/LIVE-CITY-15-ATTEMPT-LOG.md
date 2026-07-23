@@ -58,10 +58,11 @@ LIVECITY_WITNESS=1 LIVECITY_TELEPORT=0 LIVECITY_CARS=160 \
 **Knobs (env overrides, all default to the parity-safe/measured setting; only set to experiment):**
 `LIVECITY_CARS=<n>` concurrent car cap (80/120/160 all gridlock) · `LIVECITY_PEDS=<n>` ·
 `LIVECITY_TELEPORT=<s>` SUMO jam-teleport seconds (0=off; owner-rejected cure) ·
-`LIVECITY_WRONGLANE=0|1` reroute-at-approach (default off, measured regression) ·
-`LIVECITY_DRIVETHROUGH=0|1` any-forward-connection fallback · `LIVECITY_YIELDTIMEOUT=<s>` ·
-`LIVECITY_LCMIN=<mps>` lane-change min speed (default 1.5; **owner: must NOT be 0** — no slow-speed lane
-changes) · `LIVECITY_HZ=<hz>` · `LIVECITY_DUMPROUTES=<path>` export the sustained demand as SUMO `<trip>`s.
+`LIVECITY_WRONGLANE=0|1` reroute-at-approach (**now default ON** — the never-clamp blockage cure) ·
+`LIVECITY_DRIVETHROUGH=0|1` any-forward-connection fallback (**now default ON**) · `LIVECITY_YIELDTIMEOUT=<s>` ·
+`LIVECITY_LCMIN=<mps>` lane-change min speed (currently 1.5; **under revision** — see "UPDATED LANE-CHANGE
+RULES" below: the true rule is "no PURELY-lateral motion", not "no slow-speed change") · `LIVECITY_HZ=<hz>` ·
+`LIVECITY_SEQDESYNC=1` desync tracer · `LIVECITY_DUMPROUTES=<path>` export the sustained demand as SUMO `<trip>`s.
 
 **Gates that must hold for any code change:** `dotnet test tests/Sim.ParityTests -c Release` = **657
 passed / 4 skipped** byte-identical; `dotnet run --project src/Sim.Bench -c Release` → `deterministic=True`,
@@ -708,3 +709,42 @@ displacement must always be accompanied by FORWARD displacement (a car can dodge
 turning + creeping forward, but never slides purely sideways), and only if the target lane is free.
 => Fix is render/maneuver-kinematics (couple the lateral interpolation to forward progress, not wall
 time), verified in the viewer -- tracked separately.
+
+## UPDATED LANE-CHANGE / DODGE RULES (owner, 2026-07-23, supersede the earlier "no slow-speed change" note)
+The earlier `LaneChangeMinSpeed=1.5` "no lane change while slow/stopped" rule was a PROXY for the real
+intent and is too coarse. The owner clarified the actual physical model, in four refinements:
+1. **The only thing forbidden is PURELY LATERAL motion** — a car sliding sideways with ZERO forward
+   progress. That is physically impossible and is the unrealistic "float".
+2. **Forward + lateral is always allowed** — a normal lane change / dodge traces a diagonal (forward and
+   a bit of sideways). Fully physical.
+3. **Even a FULLY STOPPED car may dodge** — it turns its wheels and creeps forward+sideways. So "speed==0"
+   is NOT a valid reason to forbid a change; the constraint is on the MOTION (must have some forward
+   component whenever there is lateral), not on the starting speed.
+4. **Only if the target (parallel/overtaking) lane is FREE** — changing into an occupied lane is
+   physically impossible and forbidden (standard lane-change gap safety; the engine already enforces this
+   via its safe-gap check, i.e. it never opens an overlap).
+Net rule to implement: *a car may change lanes from any speed including a stop, iff the target lane has a
+safe gap, AND its lateral displacement is always accompanied by forward displacement (never pure-lateral).*
+
+## NEW PROBLEM SET (current, post-#15-cure)
+- **[SOLVED, primary] Floater that blocks a queue.** Root: a wrong-lane car that clamps `Speed=0` forever
+  (`capSpent`), walling its lane while parallel lanes are free. Fixed by the never-clamp defaults
+  (`WrongLaneRerouteAtApproach` + `DeadLaneDriveThrough`): the car reroutes/drives-through and keeps
+  moving, so the blocker never forms. Owner: solving the CAUSE (blocker never forms) is preferred over the
+  dodge fallback. Verified headlessly (arrivals 258->1025, 0 strand clamps).
+- **[OPEN, secondary, VISUAL] Lateral "float".** The engine keeps every car on a lane centerline
+  (`LatOffset` is written only by overtaking-evasion, never by the lane-change maneuver, which flips
+  `LaneHandle` DISCRETELY at the maneuver midpoint). The renderer interpolates that ~1-lane-width discrete
+  jump over the tick => a visible sideways slide, which looks like pure-lateral float when the car is not
+  also moving forward. FIX DIRECTION (needs the 3D viewer to verify; NOT headlessly measurable): couple
+  the rendered lateral interpolation to FORWARD progress (arc length travelled), not wall-clock time, so a
+  car with no forward motion shows no lateral motion; and let the engine permit a change to START from a
+  stop (rule #3 above) with the lateral realized only as the car creeps forward. Likely touches the
+  City3D/DR lateral-interp path + the `LaneChangeMinSpeed`/AdvanceLaneChanges hold policy.
+- **[OPEN, fallback] Dodge past a stopped blocker.** If a blocker ever does form, a follower should be
+  able to change into a free parallel lane and pass (rules #1-4). Lower priority than removing the blocker
+  itself; only needed as a safety net.
+- **[PROPOSED] Liveness/throughput regression test.** Add a headless, no-SUMO test (fixed seeds) that runs
+  the live-city smoke ~1000 s and asserts `arrivals >= threshold` and late `stoppedFrac <= threshold` —
+  the guard the parity gate structurally cannot provide (the #15 bug was inert on every golden). Separate
+  from the parity gate; thresholds set from the post-cure baseline.
