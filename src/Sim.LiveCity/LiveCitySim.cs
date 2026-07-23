@@ -268,6 +268,12 @@ public sealed class LiveCitySim : IDisposable
 
     public int PeakPeds { get; private set; }
 
+    // Cumulative count of vehicles that finished their route and left the sim (Engine.Events, kind
+    // Arrived, tallied each Step). The #15 gridlock signal: in free flow this climbs steadily; under the
+    // junction-discharge deadlock it flatlines near zero even while cars are still on the road (cars have
+    // destinations but never reach them). Host-side read-only metric only -- never feeds the engine.
+    public long ArrivedTotal { get; private set; }
+
     public int OccupiedCrossings => _crossingOccupancy.OccupiedCount;
 
     public int PeakOccupiedCrossings { get; private set; }
@@ -345,6 +351,12 @@ public sealed class LiveCitySim : IDisposable
         // (e) step the engine -- its CrowdSource query now sees the current gates + promoted peds.
         _engine.Step();
         _now = tNext;
+
+        // Tally trip completions this step (Engine.Events is fresh each Step) -- the #15 arrival signal.
+        foreach (var ev in _engine.Events)
+        {
+            if (ev.Kind == SimEventKind.Arrived) ArrivedTotal++;
+        }
 
         if (_engine.VehicleHandles.Length > PeakCars) PeakCars = _engine.VehicleHandles.Length;
         if (_demand.LiveCount > PeakPeds) PeakPeds = _demand.LiveCount;

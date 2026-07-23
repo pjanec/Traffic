@@ -1192,6 +1192,23 @@ static int RunLiveCitySmoke(int steps, string? recordPath, int simHz)
     var draws = new List<Renderer.DrVehicleDraw>();
 
     var snap = sim.Sample();
+
+    // issue #15 gridlock probe (docs/LIVE-CITY-HARNESS-GUIDE.md "Reproducing / measuring #15"): per
+    // ~40-step interval, log stopped-fraction (cars whose step displacement is < 0.05 m == < 0.1 m/s),
+    // mean speed, aggregate metres moved (throughput proxy), and arrivals-so-far. A healthy sim keeps
+    // stoppedFrac low and ArrivedTotal climbing; the junction-discharge deadlock shows stoppedFrac
+    // marching to ~0.8-0.97 while arrivals flatline. Pure read-back off Sample()/ArrivedTotal -- no
+    // engine mutation, so it never perturbs what it measures. Interval chosen so a ~200 s (sim-hz 2)
+    // run prints ~10 lines.
+    var lastPos = new Dictionary<VehicleHandle, (double X, double Y)>();
+    var intervalSteps = 40;
+    var intMatched = 0;
+    var intStopped = 0;
+    var intSumSpd = 0.0;
+    var intAggMove = 0.0;
+    var dtProbe = cfg.Dt;
+    Console.WriteLine("LIVECITY-GRIDLOCK: t(s) liveCars stoppedFrac meanSpd(m/s) aggMove(m) arrivals peds");
+
     try
     {
         for (var i = 0; i < steps; i++)
@@ -1202,6 +1219,32 @@ static int RunLiveCitySmoke(int steps, string? recordPath, int simHz)
                 frameStats, recon, draws, paused: false, laneSource: sim.LocalLanes);
             snap = sim.Sample();
             recorder?.WritePedFrame(sim.Time, ToPedTuples(snap.Peds));
+
+            var cur = new Dictionary<VehicleHandle, (double X, double Y)>(snap.Cars.Count);
+            foreach (var c in snap.Cars)
+            {
+                cur[c.Handle] = (c.X, c.Y);
+                if (lastPos.TryGetValue(c.Handle, out var prev))
+                {
+                    var d = Math.Sqrt(((c.X - prev.X) * (c.X - prev.X)) + ((c.Y - prev.Y) * (c.Y - prev.Y)));
+                    intMatched++;
+                    intSumSpd += d / dtProbe;
+                    intAggMove += d;
+                    if (d < 0.05) intStopped++;
+                }
+            }
+
+            lastPos = cur;
+
+            if ((i + 1) % intervalSteps == 0)
+            {
+                var stoppedFrac = intMatched > 0 ? (double)intStopped / intMatched : 0.0;
+                var meanSpd = intMatched > 0 ? intSumSpd / intMatched : 0.0;
+                Console.WriteLine(
+                    $"LIVECITY-GRIDLOCK: {sim.Time,6:F0} {snap.Cars.Count,7} {stoppedFrac,10:F2} " +
+                    $"{meanSpd,11:F2} {intAggMove,9:F0} {sim.ArrivedTotal,8} {snap.Peds.Count,4}");
+                intMatched = 0; intStopped = 0; intSumSpd = 0.0; intAggMove = 0.0;
+            }
         }
     }
     finally
