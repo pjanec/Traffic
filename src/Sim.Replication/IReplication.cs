@@ -13,15 +13,21 @@ namespace Sim.Replication;
 // A vehicle spawn/despawn + physical dims announcement (durable, once per vehicle) -- the transport-
 // neutral analog of DdsVehicleLifecycle (Sim.Replication.Dds), minus the wire-specific Index/Generation
 // split (VehicleHandle already carries both).
+//
+// `Name` (docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1, -TASKS.md E2): the real SUMO vehicle id, ADDITIVE and
+// populated on SPAWN only (empty string on despawn -- a despawn tombstone needs no identity, the consumer
+// already has it from the matching spawn). Travels ONCE per entity on this lifecycle event, never on the
+// per-frame VehicleRecord/DdsWireFrame -- at 100k entities the hot per-step path pays nothing extra for it.
 public readonly struct LifecycleRecord
 {
-    public LifecycleRecord(VehicleHandle handle, bool isSpawn, int vTypeId, float length, float width)
+    public LifecycleRecord(VehicleHandle handle, bool isSpawn, int vTypeId, float length, float width, string name = "")
     {
         Handle = handle;
         IsSpawn = isSpawn;
         VTypeId = vTypeId;
         Length = length;
         Width = width;
+        Name = name ?? "";
     }
 
     public VehicleHandle Handle { get; }
@@ -29,6 +35,8 @@ public readonly struct LifecycleRecord
     public int VTypeId { get; }
     public float Length { get; }
     public float Width { get; }
+    // The real SUMO vehicle id, set on spawn; "" on despawn (see class remark).
+    public string Name { get; }
 }
 
 // Transport-neutral SEND contract. DDS is one binding; in-memory (InMemoryReplicationBus) is another.
@@ -48,6 +56,11 @@ public interface IReplicationSource : IDisposable
     bool GeometryComplete { get; }
     IReadOnlyDictionary<VehicleHandle, IVehicleSampleHistory> History { get; }
     IReadOnlyDictionary<VehicleHandle, (float Length, float Width)> Dims { get; }
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1, -TASKS.md E2: the handle->SUMO-id table accumulated from
+    // LifecycleRecord.Name on spawn (removed on despawn, mirroring Dims). Built purely from the lifecycle
+    // stream, never the per-frame record, so every IReplicationSource binding (in-memory, DDS, file replay)
+    // gets it "for free" the same way Dims already is.
+    IReadOnlyDictionary<VehicleHandle, string> Names { get; }
     IReadOnlyDictionary<int, byte> TlStateByLane { get; }
     double? LatestVehicleSampleTime { get; }
     bool Connected { get; }

@@ -169,6 +169,7 @@ public sealed class ReplicationFileSource : IReplicationSource
     public bool GeometryComplete => _bus.Source.GeometryComplete;
     public IReadOnlyDictionary<VehicleHandle, IVehicleSampleHistory> History => _bus.Source.History;
     public IReadOnlyDictionary<VehicleHandle, (float Length, float Width)> Dims => _bus.Source.Dims;
+    public IReadOnlyDictionary<VehicleHandle, string> Names => _bus.Source.Names;
     public IReadOnlyDictionary<int, byte> TlStateByLane => _bus.Source.TlStateByLane;
     public double? LatestVehicleSampleTime => _bus.Source.LatestVehicleSampleTime;
     public bool Connected => _bus.Source.Connected;

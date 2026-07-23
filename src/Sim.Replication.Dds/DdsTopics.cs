@@ -65,6 +65,13 @@ public unsafe partial struct DdsWireFrame
 // affordable because it is low-rate. Spawn carries the immutable dims the renderer needs (the high-rate
 // state topic then never repeats them); despawn tombstones the instance. TRANSIENT_LOCAL so late joiners
 // get the current fleet.
+//
+// `Name` (docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1, -TASKS.md E2): the real SUMO vehicle id, ADDITIVE. Uses
+// CycloneDDS.NET's zero-alloc `FixedString64` (README "High-Performance Schema") rather than a plain
+// `string` -- this topic's other fields are all unmanaged/fixed-size (no `[DdsManaged]` opt-in anywhere in
+// this project), and FixedString64 keeps that zero-GC-allocation write/read path while still mapping to an
+// IDL bounded string for wire interop. 64 chars comfortably covers SUMO's `id` attribute (route/flow-
+// generated ids like "veh12.7" or "flow_0.3"); empty ("") on despawn, matching LifecycleRecord.Name.
 [DdsTopic]
 public partial struct DdsVehicleLifecycle
 {
@@ -74,4 +81,5 @@ public partial struct DdsVehicleLifecycle
     [DdsId(3)] public int VTypeId;
     [DdsId(4)] public float Length;
     [DdsId(5)] public float Width;
+    [DdsId(6)] public FixedString64 Name;
 }

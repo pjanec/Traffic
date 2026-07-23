@@ -197,7 +197,11 @@ public static class RoadMeshBuilder
     // ReplicationLaneShapeSource itself wraps). This overload feeds the identical Build(...) ribbon math
     // from that dictionary instead, so the local and remote viewers build byte-for-byte the same kind of
     // RibbonMesh from whichever geometry source they actually have -- only the INPUT shape differs
-    // (LaneGeo.Points, float, no elevation) never the ribbon algorithm itself.
+    // (LaneGeo.Points/Z, float, vs the NetworkModel's double Shape/ShapeZ) never the ribbon algorithm itself.
+    //
+    // docs/LIVE-CITY-VIEWERS-TASKS.md Stage E (E1): threads the wire's ADDITIVE per-point Z
+    // (GeometryCodec.LaneGeo.Z) through as `shapeZ` when the publisher had any -- null (flat, Y=0) exactly
+    // like the NetworkModel overload when the source lane had no elevation.
     public static IEnumerable<(int Handle, RibbonMesh Mesh)> BuildAll(
         IReadOnlyDictionary<int, GeometryCodec.LaneGeo> geometry, bool includeInternal = true)
     {
@@ -214,10 +218,17 @@ public static class RoadMeshBuilder
                 shape[i] = (lane.Points[i].X, lane.Points[i].Y);
             }
 
-            // The wire never carries elevation (GeometryCodec.LaneGeo has no z field -- see
-            // ReplicationLaneShapeSource's own doc comment on this asymmetry), so shapeZ is always null
-            // here; Build(...) already treats a null shapeZ as flat (Y=0), same as any 2-D local net.
-            yield return (lane.Handle, Build(shape, shapeZ: null, lane.Width));
+            double[]? shapeZ = null;
+            if (lane.Z is { Length: > 0 } laneZ)
+            {
+                shapeZ = new double[laneZ.Length];
+                for (var i = 0; i < laneZ.Length; i++)
+                {
+                    shapeZ[i] = laneZ[i];
+                }
+            }
+
+            yield return (lane.Handle, Build(shape, shapeZ, lane.Width));
         }
     }
 

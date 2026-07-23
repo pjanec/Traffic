@@ -42,6 +42,10 @@ public sealed class DdsSubscriber : IReplicationSource
 
     private readonly Dictionary<VehicleHandle, VehicleSampleHistory> _history = new();
     private readonly Dictionary<VehicleHandle, (float Length, float Width)> _dims = new();
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1, -TASKS.md E2: handle->SUMO-id, accumulated from the lifecycle
+    // topic's spawn events (Name), removed on despawn -- the "dictionary table sent once" a consumer reads
+    // to label a picked vehicle. Never touched by PumpVehicles (the per-frame path stays untouched).
+    private readonly Dictionary<VehicleHandle, string> _names = new();
     private readonly Dictionary<int, byte> _tlState = new();
 
     // Read-only adapter presenting `_history` (concrete VehicleSampleHistory values, needed internally for
@@ -110,6 +114,7 @@ public sealed class DdsSubscriber : IReplicationSource
     {
         _history.Clear();
         _dims.Clear();
+        _names.Clear();
         LatestVehicleSampleTime = null;
     }
 
@@ -127,6 +132,9 @@ public sealed class DdsSubscriber : IReplicationSource
 
     // Dims announced over the lifecycle topic (spawn), removed on despawn.
     public IReadOnlyDictionary<VehicleHandle, (float Length, float Width)> Dims => _dims;
+
+    // SUMO ids announced over the lifecycle topic (spawn), removed on despawn -- see the field remark.
+    public IReadOnlyDictionary<VehicleHandle, string> Names => _names;
 
     // Latest TL signal char per controlled lane handle.
     public IReadOnlyDictionary<int, byte> TlStateByLane => _tlState;
@@ -210,10 +218,12 @@ public sealed class DdsSubscriber : IReplicationSource
             if (d.Event == 0)
             {
                 _dims[handle] = (d.Length, d.Width);
+                _names[handle] = d.Name.ToString();
             }
             else
             {
                 _dims.Remove(handle);
+                _names.Remove(handle);
                 _history.Remove(handle);
             }
         }

@@ -1,4 +1,5 @@
 using CycloneDDS.Runtime;
+using CycloneDDS.Schema;
 using Sim.Replication;
 
 namespace Sim.Replication.Dds;
@@ -78,8 +79,31 @@ public sealed class DdsReplicationSink : IDisposable, IReplicationSink
             VTypeId = record.VTypeId,
             Length = record.Length,
             Width = record.Width,
+            Name = ToFixedName(record.Name),
         };
         _lifecycleWriter.Write(rec);
+    }
+
+    // FixedString64's ctor THROWS if the UTF-8 encoding exceeds its 64-byte capacity -- defensively clamp
+    // a pathologically long SUMO id (well beyond any real route/flow-generated id) rather than let one
+    // vehicle's lifecycle announcement crash the whole publish loop. Every id seen in this repo's
+    // scenarios/tests fits comfortably; this is a belt-and-braces guard, not the expected path.
+    private static FixedString64 ToFixedName(string? name)
+    {
+        var s = name ?? string.Empty;
+        if (FixedString64.TryFrom(s, out var fs))
+        {
+            return fs;
+        }
+
+        // Trim from the front (chars, not bytes -- conservative for multi-byte UTF-8) until it fits.
+        var trimmed = s.Length > 63 ? s.Substring(0, 63) : s;
+        while (trimmed.Length > 0 && !FixedString64.TryFrom(trimmed, out fs))
+        {
+            trimmed = trimmed.Substring(0, trimmed.Length - 1);
+        }
+
+        return fs;
     }
 
     // IReplicationSink.PublishFrame — chunk + DDS-write the selected movers. Same chunk-planning and

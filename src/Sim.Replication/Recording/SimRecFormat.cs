@@ -22,10 +22,17 @@ namespace Sim.Replication.Recording;
 // apply it unconditionally the first time they see it.
 //
 // Payload per record type (reusing the existing wire codecs verbatim where one exists):
-//   GEOMETRY       int byteLen + GeometryCodec.WriteGeometry(...) bytes
+//   GEOMETRY       int byteLen + GeometryCodec.WriteGeometry(...) bytes (GeometryCodec itself is
+//                  version-dispatched -- see its own header comment -- so bumping ITS version needed no
+//                  change here; the blob is opaque to SimRecFormat)
 //   VLIFECYCLE     handle.Index(u32) handle.Generation(u16) isSpawn(bool) vTypeId(i32) length(f32) width(f32)
-//                  -- LifecycleRecord has no Name field yet (docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1 is a
-//                  separate, not-yet-landed stage), so none is recorded here either.
+//                  name(string)  -- FormatVersion 2 (docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1,
+//                  -TASKS.md E2): LifecycleRecord.Name landed, so it is recorded here too (BinaryWriter's
+//                  length-prefixed string; "" on despawn, matching the wire). FormatVersion 1 files had no
+//                  `name` field at this position -- SimRecReader REJECTS anything but the current
+//                  FormatVersion (see its ctor) rather than silently misreading an old file, and no
+//                  FormatVersion-1 `.simrec` is committed anywhere in this repo (recordings are ephemeral,
+//                  regenerated on demand), so there is nothing to migrate.
 //   VFRAME         int byteLen + FrameCodec.WriteVehicleFrame(...) bytes (its own step/time/count header
 //                  travels inside the blob too; the OUTER `time` above is what readers actually key off)
 //   TL             step(u32) + int byteLen + TlCodec.WriteTl(...) bytes
@@ -33,7 +40,7 @@ namespace Sim.Replication.Recording;
 public static class SimRecFormat
 {
     public const uint Magic = 0x43455253U; // ASCII "SREC" read little-endian as a uint
-    public const int FormatVersion = 1;
+    public const int FormatVersion = 2;
 
     public enum RecordType : byte
     {
@@ -132,6 +139,7 @@ public sealed class SimRecWriter : IDisposable
         _w.Write(rec.VTypeId);
         _w.Write(rec.Length);
         _w.Write(rec.Width);
+        _w.Write(rec.Name ?? string.Empty);
     }
 
     public void WriteVehicleFrame(uint step, double time, ReadOnlySpan<VehicleRecord> movers)
@@ -266,7 +274,8 @@ public sealed class SimRecReader : IDisposable
                 var vTypeId = _r.ReadInt32();
                 var length = _r.ReadSingle();
                 var width = _r.ReadSingle();
-                var rec = new LifecycleRecord(new VehicleHandle(index, gen), isSpawn, vTypeId, length, width);
+                var name = _r.ReadString();
+                var rec = new LifecycleRecord(new VehicleHandle(index, gen), isSpawn, vTypeId, length, width, name);
                 entry = SimRecEntry.ForLifecycle(time, rec);
                 return true;
             }

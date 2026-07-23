@@ -46,6 +46,7 @@ public sealed class InMemoryReplicationBus
 
     private readonly Dictionary<VehicleHandle, VehicleSampleHistory> _history = new();
     private readonly Dictionary<VehicleHandle, (float Length, float Width)> _dims = new();
+    private readonly Dictionary<VehicleHandle, string> _names = new();
     private readonly Dictionary<int, byte> _tlState = new();
     private bool _pumpedAfterPublish;
 
@@ -127,6 +128,7 @@ public sealed class InMemoryReplicationBus
         public bool GeometryComplete => _bus._geometryComplete;
         public IReadOnlyDictionary<VehicleHandle, IVehicleSampleHistory> History => _bus._historyView;
         public IReadOnlyDictionary<VehicleHandle, (float Length, float Width)> Dims => _bus._dims;
+        public IReadOnlyDictionary<VehicleHandle, string> Names => _bus._names;
         public IReadOnlyDictionary<int, byte> TlStateByLane => _bus._tlState;
         public double? LatestVehicleSampleTime { get; internal set; }
         public bool Connected => _bus._pumpedAfterPublish;
@@ -135,6 +137,7 @@ public sealed class InMemoryReplicationBus
         {
             _bus._history.Clear();
             _bus._dims.Clear();
+            _bus._names.Clear();
             LatestVehicleSampleTime = null;
         }
 
@@ -175,10 +178,12 @@ public sealed class InMemoryReplicationBus
                     if (lc.IsSpawn)
                     {
                         _dims[lc.Handle] = (lc.Length, lc.Width);
+                        _names[lc.Handle] = lc.Name;
                     }
                     else
                     {
                         _dims.Remove(lc.Handle);
+                        _names.Remove(lc.Handle);
                         _history.Remove(lc.Handle);
                     }
 

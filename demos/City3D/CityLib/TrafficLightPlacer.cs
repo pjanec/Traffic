@@ -134,9 +134,10 @@ public static class TrafficLightPlacer
     // the received wire geometry (IReplicationSource.Geometry, GeometryCodec.LaneGeo per lane handle) --
     // which DOES carry everything this placement math actually needs (Points, Width), so the identical
     // downstream-end + right-edge-nudge recipe below runs unchanged; only the per-lane lookup source
-    // differs (a LaneGeo dictionary vs NetworkModel.LanesByHandle), same asymmetry
-    // ReplicationLaneShapeSource already documents for elevation (the wire carries no shapeZ, so groundZ
-    // is always the flat-net fallback of 0 here).
+    // differs (a LaneGeo dictionary vs NetworkModel.LanesByHandle). docs/LIVE-CITY-VIEWERS-TASKS.md Stage E
+    // (E1): the wire CAN carry elevation now (GeometryCodec.LaneGeo.Z), but this placer doesn't sample it
+    // yet (out of E1's scope -- ReplicationLaneShapeSource/RoadMeshBuilder are the two files that task
+    // touches) -- groundZ stays the flat-net fallback of 0 here regardless of the net's real elevation.
     public static IReadOnlyList<SignalHead> Place(
         IReadOnlyDictionary<int, GeometryCodec.LaneGeo> geometry, IEnumerable<int> controlledLaneHandles)
     {

@@ -10,28 +10,50 @@ namespace Sim.Replication;
 // size buffers, and PlanChunks to split a large network across multiple <=64 KiB DDS payloads (mirroring
 // FrameChunker's byte-budget chunking for the DdsWireFrame blob).
 //
-// Header (4 B): version(1) reserved(1) count(u16). Per-lane record (15 B + points*8 B):
-//   handle(i32) isInternal(u8) width(f32) length(f32) pointCount(u16) then pointCount*(x,y)(f32,f32).
+// Header (4 B): version(1) reserved(1) count(u16). Per-lane record, VERSION-dependent layout:
+//
+//   Version 1 (legacy, still READ, never WRITTEN): 15 B fixed + points*8 B --
+//     handle(i32) isInternal(u8) width(f32) length(f32) pointCount(u16) then pointCount*(x,y)(f32,f32).
+//
+//   Version 2 (current, ADDITIVE over v1 -- docs/LIVE-CITY-VIEWERS-DESIGN.md §3.2 / -TASKS.md E1): 16 B
+//   fixed + points*8 B + (hasZ ? points*4 B : 0) -- the SAME v1 prefix plus one `hasZ` flag byte, plus an
+//   APPENDED per-point Z block (not interleaved with x/y, so a v1-shaped reader's field layout for
+//   handle/isInternal/width/length/pointCount/points is untouched -- only a version-aware reader looks
+//   past the point block for Z):
+//     handle(i32) isInternal(u8) width(f32) length(f32) pointCount(u16) hasZ(u8)
+//     then pointCount*(x,y)(f32,f32)
+//     then [only if hasZ==1] pointCount*z(f32)
+//   `hasZ` is per-lane (not a global net property) because a mixed net can have some lanes with real
+//   elevation data (Lane.ShapeZ from a 3-tuple net.xml shape) and others without.
 public static class GeometryCodec
 {
-    public const byte Version = 1;
+    // The WRITER always emits the current version; ReadGeometry dispatches on the version byte so a v1
+    // stream (no hasZ byte, no Z block -- e.g. an old .simrec recorded before this task) still parses,
+    // with every decoded LaneGeo.Z left null (== "Z absent"), exactly like a v2 lane with hasZ==0.
+    public const byte Version = 2;
 
     public const int HeaderSize = 4;
-    public const int LaneFixedSize = 4 + 1 + 4 + 4 + 2; // handle + isInternal + width + length + pointCount
+    public const int LaneFixedSizeV1 = 4 + 1 + 4 + 4 + 2; // handle + isInternal + width + length + pointCount
+    public const int LaneFixedSize = LaneFixedSizeV1 + 1; // + hasZ
     public const int PointSize = 8; // (float x, float y)
+    public const int ZSize = 4; // (float z), appended per point only when hasZ
 
     // One lane's static geometry: a dense lane handle, whether it is an internal (":"-prefixed id) lane,
     // its width/length, and its polyline points (already float — the wire precision). `Points` is an array
     // (not a span) so a decoded LaneGeo can outlive the source buffer, e.g. held in a subscriber's registry.
+    // `Z` is the ADDITIVE per-point elevation (index-aligned with `Points`, mirroring Sim.Ingest's
+    // `Lane.Shape`/`Lane.ShapeZ` pairing) -- null when the source lane carried no elevation (the common
+    // case today; every committed net is flat), never a breaking change to the `Points` tuple shape itself.
     public readonly struct LaneGeo
     {
-        public LaneGeo(int handle, bool isInternal, float width, float length, (float X, float Y)[] points)
+        public LaneGeo(int handle, bool isInternal, float width, float length, (float X, float Y)[] points, float[]? z = null)
         {
             Handle = handle;
             IsInternal = isInternal;
             Width = width;
             Length = length;
             Points = points;
+            Z = z is { Length: > 0 } && z.Length == points.Length ? z : null;
         }
 
         public int Handle { get; }
@@ -39,11 +61,14 @@ public static class GeometryCodec
         public float Width { get; }
         public float Length { get; }
         public (float X, float Y)[] Points { get; }
+        // Null when absent; otherwise index-aligned 1:1 with Points (same length).
+        public float[]? Z { get; }
     }
 
-    public static int LaneSize(int pointCount) => LaneFixedSize + pointCount * PointSize;
+    public static int LaneSize(int pointCount, bool hasZ = false) =>
+        LaneFixedSize + pointCount * PointSize + (hasZ ? pointCount * ZSize : 0);
 
-    public static int LaneSize(in LaneGeo lane) => LaneSize(lane.Points.Length);
+    public static int LaneSize(in LaneGeo lane) => LaneSize(lane.Points.Length, lane.Z is not null);
 
     public static int GeometrySize(ReadOnlySpan<LaneGeo> lanes)
     {
@@ -78,10 +103,20 @@ public static class GeometryCodec
             WriteF32(dst.Slice(o, 4), lane.Length); o += 4;
             var points = lane.Points;
             BinaryPrimitives.WriteUInt16LittleEndian(dst.Slice(o, 2), (ushort)points.Length); o += 2;
+            var z = lane.Z; // already validated non-empty + length-matched by the LaneGeo ctor
+            dst[o++] = (byte)(z is not null ? 1 : 0);
             for (var p = 0; p < points.Length; p++)
             {
                 WriteF32(dst.Slice(o, 4), points[p].X); o += 4;
                 WriteF32(dst.Slice(o, 4), points[p].Y); o += 4;
+            }
+
+            if (z is not null)
+            {
+                for (var p = 0; p < z.Length; p++)
+                {
+                    WriteF32(dst.Slice(o, 4), z[p]); o += 4;
+                }
             }
         }
 
@@ -97,7 +132,8 @@ public static class GeometryCodec
             throw new ArgumentException("geometry frame shorter than header.", nameof(src));
         }
 
-        // src[0] version, src[1] reserved — not currently checked (only Version 1 exists).
+        // src[0] version (1 = legacy 2-D-only, 2 = current, additive Z); src[1] reserved.
+        var version = src[0];
         var count = BinaryPrimitives.ReadUInt16LittleEndian(src.Slice(2, 2));
         var o = HeaderSize;
         for (var i = 0; i < count; i++)
@@ -107,6 +143,13 @@ public static class GeometryCodec
             var width = ReadF32(src.Slice(o, 4)); o += 4;
             var length = ReadF32(src.Slice(o, 4)); o += 4;
             var pointCount = BinaryPrimitives.ReadUInt16LittleEndian(src.Slice(o, 2)); o += 2;
+
+            var hasZ = false;
+            if (version >= 2)
+            {
+                hasZ = src[o++] != 0;
+            }
+
             var points = new (float X, float Y)[pointCount];
             for (var p = 0; p < pointCount; p++)
             {
@@ -115,7 +158,17 @@ public static class GeometryCodec
                 points[p] = (x, y);
             }
 
-            dst.Add(new LaneGeo(handle, isInternal, width, length, points));
+            float[]? z = null;
+            if (hasZ)
+            {
+                z = new float[pointCount];
+                for (var p = 0; p < pointCount; p++)
+                {
+                    z[p] = ReadF32(src.Slice(o, 4)); o += 4;
+                }
+            }
+
+            dst.Add(new LaneGeo(handle, isInternal, width, length, points, z));
         }
 
         return count;

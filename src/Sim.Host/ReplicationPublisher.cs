@@ -75,8 +75,11 @@ public sealed class ReplicationPublisher
 
             var length = snap.Length[i];
             var width = snap.Width[i];
-            // no handle-based vType registry yet (viewer-side dims only need Length/Width) -> vTypeId 0
-            sink.PublishLifecycle(new LifecycleRecord(handle, isSpawn: true, vTypeId: 0, length, width));
+            // no handle-based vType registry yet (viewer-side dims only need Length/Width) -> vTypeId 0.
+            // Name (docs/LIVE-CITY-VIEWERS-DESIGN.md §3.1, -TASKS.md E2): the real SUMO id for this handle,
+            // from the SAME snapshot index -- SimulationSnapshot.VehicleId[] is parallel to Handles[] (both
+            // indexed by `i`), so this is the id belonging to THIS spawn, not a stale/mismatched lookup.
+            sink.PublishLifecycle(new LifecycleRecord(handle, isSpawn: true, vTypeId: 0, length, width, snap.VehicleId[i]));
             _knownVehicles[handle] = (length, width);
         }
 
@@ -183,8 +186,23 @@ public sealed class ReplicationPublisher
                 points[i] = ((float)shape[i].X, (float)shape[i].Y);
             }
 
+            // docs/LIVE-CITY-VIEWERS-DESIGN.md §3.2, -TASKS.md E1: thread Lane.ShapeZ (index-aligned with
+            // Shape, null on every flat net -- the common case today) into the wire's additive per-point Z.
+            // GeometryCodec.LaneGeo's ctor itself null-guards a length mismatch, but ShapeZ is parsed
+            // 1:1 with Shape (Sim.Ingest.NetworkParser), so a mismatch never happens on real data.
+            float[]? z = null;
+            var shapeZ = lane.ShapeZ;
+            if (shapeZ is not null && shapeZ.Count == shape.Count)
+            {
+                z = new float[shapeZ.Count];
+                for (var i = 0; i < shapeZ.Count; i++)
+                {
+                    z[i] = (float)shapeZ[i];
+                }
+            }
+
             result.Add(new GeometryCodec.LaneGeo(
-                lane.Handle, lane.Id.StartsWith(':'), (float)lane.Width, (float)lane.Length, points));
+                lane.Handle, lane.Id.StartsWith(':'), (float)lane.Width, (float)lane.Length, points, z));
         }
 
         return result;

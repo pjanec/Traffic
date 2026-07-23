@@ -19,6 +19,10 @@ public sealed class ReplicationLaneShapeSource : ILaneShapeSource
     // this cache is safe to keep for the lifetime of the source.
     private readonly Dictionary<int, (double X, double Y)[]> _shapeCache = new();
 
+    // Decoded Z, cached the same way as `_shapeCache` -- see LaneShapeZ below. A separate cache (not folded
+    // into a 3-tuple) because most lanes have no Z (Value=null is the common, cheap-to-cache case too).
+    private readonly Dictionary<int, double[]?> _shapeZCache = new();
+
     public ReplicationLaneShapeSource(IReadOnlyDictionary<int, GeometryCodec.LaneGeo> geometry)
         => _geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
 
@@ -42,13 +46,32 @@ public sealed class ReplicationLaneShapeSource : ILaneShapeSource
         return points;
     }
 
-    // The wire's GeometryCodec.LaneGeo carries only 2-D points (float X, Y) -- elevation is NOT on the
-    // replication wire yet (see GeometryCodec's header comment: "15 B + points*8 B", no z field). A
-    // wire-fed lane source is therefore always flat here; the LOCAL path gets real elevation from
-    // Sim.Core.NetworkLaneSource (built straight off the parsed NetworkModel, which does carry Lane.ShapeZ)
-    // instead. This is the one asymmetry between the two ILaneShapeSource implementations the demo uses --
-    // documented rather than silently returning stale/zeroed data.
-    public IReadOnlyList<double>? LaneShapeZ(int laneHandle) => null;
+    // docs/LIVE-CITY-VIEWERS-DESIGN.md §3.2, -TASKS.md E1: GeometryCodec.LaneGeo now carries an ADDITIVE
+    // per-point Z (GeometryCodec.cs's header comment), so a wire-fed lane source returns REAL elevation
+    // when the publisher had any (ReplicationPublisher.BuildLaneGeos, from NetworkModel's Lane.ShapeZ) --
+    // null only when the source lane genuinely has none (every committed net today), matching the LOCAL
+    // path's Sim.Core.NetworkLaneSource for the same net (both now agree, not merely both-flat-by-luck).
+    public IReadOnlyList<double>? LaneShapeZ(int laneHandle)
+    {
+        if (_shapeZCache.TryGetValue(laneHandle, out var cached))
+        {
+            return cached;
+        }
+
+        var lane = Get(laneHandle);
+        double[]? z = null;
+        if (lane.Z is { Length: > 0 } laneZ)
+        {
+            z = new double[laneZ.Length];
+            for (var i = 0; i < laneZ.Length; i++)
+            {
+                z[i] = laneZ[i];
+            }
+        }
+
+        _shapeZCache[laneHandle] = z;
+        return z;
+    }
 
     private GeometryCodec.LaneGeo Get(int laneHandle)
     {

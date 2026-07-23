@@ -48,7 +48,9 @@ public class ReplicationLaneShapeSourceTests
             // Also assert LaneLength matches (the other half of ILaneShapeSource PoseResolver relies on).
             Assert.Equal(lane.Length, wire.LaneLength(handle), 3);
 
-            // The wire carries no elevation (GeometryCodec has no z field) -- always null.
+            // docs/LIVE-CITY-VIEWERS-TASKS.md Stage E (E1): the wire CAN carry elevation now (GeometryCodec
+            // LaneGeo.Z), but this scenario's net is flat (no lane has ShapeZ), so it is still null here --
+            // see RoadMeshTests' elevated-fixture coverage for the non-null case.
             Assert.Null(wire.LaneShapeZ(handle));
 
             checkedLanes++;
