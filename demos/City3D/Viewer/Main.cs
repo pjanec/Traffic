@@ -45,6 +45,19 @@ public partial class Main : Node3D
     // MeshInstance3D reuses it (a single StandardMaterial3D resource, not one per lane).
     private static readonly Color AsphaltColor = new(0.08f, 0.085f, 0.09f);
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks" row / DESIGN-live-city-2d-viz.md §2 layer 2b -- a
+    // pedestrian-only lane (Sim.Ingest.Lane.AllowsRoadVehicle == false) renders as a lighter "concrete"
+    // band, matching the reference renderer's own `#8a8f99` (138,143,153) vs `#4a4d55` car-asphalt hex
+    // exactly (normalized to 0..1), so the two viewers read the same footpath-vs-road contrast even though
+    // this 3D path's own AsphaltColor above is a much darker absolute tone than the reference's.
+    private static readonly Color ConcreteColor = new(138f / 255f, 143f / 255f, 153f / 255f);
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Lane markings" / "Crosswalk zebra" rows -- unshaded near-white paint
+    // for both the seam dashes (CityLib.LaneMarkingBuilder) and the zebra stripes (CityLib.CrosswalkBuilder)
+    // so they read as bright road paint regardless of the scene's DirectionalLight3D angle, matching the
+    // reference renderer's own near-opaque white strokes (`rgba(255,255,255,0.85)` / `rgba(255,255,255,0.6)`).
+    private static readonly Color RoadPaintColor = new(0.92f, 0.92f, 0.94f);
+
     // Small seeded grey palette (design "Buildings": "variety without assets = scale + a small palette of
     // seeded materials") -- picked by instance index, which is itself a deterministic function of
     // (edge, step, side) via BuildingPlacer, so the palette assignment is reproducible too.
@@ -778,6 +791,7 @@ public partial class Main : Node3D
         // VISUALS-NOTES.md's stated per-layer sequencing).
         BuildZoneGround(_liveCitySource.Scene);
         var roadBbox = BuildRoadMeshesCropped(_liveCitySource.Network, x0, y0, x1, y1);
+        BuildCrosswalksAndLaneMarkings(_liveCitySource.Network, (x0, y0, x1, y1));
         _sceneBbox = roadBbox;
 
         // Even cropped to the ~840x840m downtown block, the FULL crop bbox still leaves individual
@@ -914,6 +928,7 @@ public partial class Main : Node3D
         // "zones before roads" build order.
         BuildZoneGround(LiveCityScene.Load(cfg.DatasetDir));
         var roadBbox = BuildRoadMeshesCropped(network, cfg.X0, cfg.Y0, cfg.X1, cfg.Y1);
+        BuildCrosswalksAndLaneMarkings(network, (cfg.X0, cfg.Y0, cfg.X1, cfg.Y1));
         _sceneBbox = roadBbox;
 
         var cropCenter = new Vector3(
@@ -1096,20 +1111,33 @@ public partial class Main : Node3D
         var geometry = _ddsSource!.Geometry;
         _lanes = new ReplicationLaneShapeSource(geometry);
 
-        // docs/LIVE-CITY-VISUALS-NOTES.md deliverable 2: the zone tint is static world data, not carried
-        // over the DDS wire at all (unlike lane geometry) -- this method's own remark above notes the
-        // subscriber is designed to need "no repo/dataset access of its own" for the crop rect, so this
-        // load is a BEST-EFFORT local read (the same dataset dir a same-machine/checkout producer publishes
-        // from), wrapped so a genuinely remote subscriber with no local scenarios/ tree just skips the
-        // layer rather than failing the whole DDS scene build.
+        var crop = new LiveCityConfig(); // pinned defaults only -- no dataset dir needed just for X0..Y1.
+
+        // docs/LIVE-CITY-VISUALS-NOTES.md deliverable 2 (zone tint) + "Sidewalks"/"Crosswalk zebra"/"Lane
+        // markings" rows: none of these four overlays are carried over the DDS wire at all (GeometryCodec.
+        // LaneGeo has no Id/EdgeId/AllowsRoadVehicle -- only Handle/Width/Length/Points/Z), so ALL FOUR are
+        // BEST-EFFORT local reads off the SAME net.xml a same-machine/checkout producer publishes from (this
+        // method's own remark above notes the subscriber is designed to need "no repo/dataset access of its
+        // own" just for the crop rect) -- one try/catch, one parse, so a genuinely remote subscriber with no
+        // local scenarios/ tree just skips every one of them rather than failing the whole DDS scene build.
+        // The parsed NetworkModel's lane Handles are guaranteed to match the wire's (NetworkParser assigns
+        // them in the SAME deterministic parse order for the SAME net.xml file the publisher itself parsed),
+        // so `pedByHandle` below correctly keys the wire-built ribbon meshes' own material choice.
+        IReadOnlyDictionary<int, bool>? pedByHandle = null;
         try
         {
             var zoneCfg = LiveCityConfig.ForRepoRoot(FindRepoRoot());
             BuildZoneGround(LiveCityScene.Load(zoneCfg.DatasetDir));
+
+            var network = NetworkParser.Parse(Path.Combine(zoneCfg.DatasetDir, "net.xml"));
+            pedByHandle = PedByHandle(network);
+            BuildCrosswalksAndLaneMarkings(network, (crop.X0, crop.Y0, crop.X1, crop.Y1));
         }
         catch (Exception ex)
         {
-            GD.Print($"Main: zone-tint layer skipped (no local dataset access for remote subscriber): {ex.Message}");
+            GD.Print(
+                "Main: zone-tint/sidewalk/crosswalk/lane-marking layers skipped (no local dataset access " +
+                $"for remote subscriber): {ex.Message}");
         }
 
         if (ParseShowZonesArg() && _zonesNode is not null)
@@ -1118,8 +1146,7 @@ public partial class Main : Node3D
             GD.Print("Main: --show-zones active (zone tint starts visible; press Z to toggle).");
         }
 
-        var crop = new LiveCityConfig(); // pinned defaults only -- no dataset dir needed just for X0..Y1.
-        var roadBbox = BuildRoadMeshesFromGeometryCropped(geometry, crop.X0, crop.Y0, crop.X1, crop.Y1);
+        var roadBbox = BuildRoadMeshesFromGeometryCropped(geometry, crop.X0, crop.Y0, crop.X1, crop.Y1, pedByHandle: pedByHandle);
         _sceneBbox = roadBbox;
 
         var cropCenter = new Vector3(
@@ -2137,7 +2164,24 @@ public partial class Main : Node3D
     // ArrayMesh construction.
     private (Vector3 Min, Vector3 Max) BuildRoadMeshes(NetworkModel network)
         => BuildRoadMeshesFromRibbons(
-            RoadMeshBuilder.BuildAll(network, includeInternal: true), network.LanesByHandle.Count);
+            RoadMeshBuilder.BuildAll(network, includeInternal: true), network.LanesByHandle.Count,
+            PedByHandle(network));
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks" row -- Handle -> "is this a pedestrian-only lane"
+    // (Sim.Ingest.Lane.AllowsRoadVehicle == false), built once off a NetworkModel and threaded into
+    // BuildRoadMeshesFromRibbons's material choice. Shared by every NetworkModel-backed road-mesh caller
+    // (BuildRoadMeshes, BuildRoadMeshesCropped) so the ped-vs-car material split is computed in exactly one
+    // place.
+    private static Dictionary<int, bool> PedByHandle(NetworkModel network)
+    {
+        var dict = new Dictionary<int, bool>(network.LanesByHandle.Count);
+        foreach (var lane in network.LanesByHandle)
+        {
+            dict[lane.Handle] = !lane.AllowsRoadVehicle;
+        }
+
+        return dict;
+    }
 
     // docs/LIVE-CITY-VIEWERS-DESIGN.md §6, -TASKS.md D1 -- the live-city LOCAL entry point's crop-filtered
     // counterpart to BuildRoadMeshes: only lanes with at least one shape vertex inside the crop rect
@@ -2178,7 +2222,7 @@ public partial class Main : Node3D
             $"Main: --live-city crop [{x0:F0},{y0:F0}]-[{x1:F0},{y1:F0}] kept {filtered.Count} of " +
             $"{network.LanesByHandle.Count} lane(s) from the full net.");
 
-        return BuildRoadMeshesFromRibbons(filtered, filtered.Count);
+        return BuildRoadMeshesFromRibbons(filtered, filtered.Count, PedByHandle(network));
     }
 
 #if CITY3D_REMOTE
@@ -2201,7 +2245,8 @@ public partial class Main : Node3D
     // RoadMeshBuilder.BuildAll's own geometry-dictionary overload does.
     private (Vector3 Min, Vector3 Max) BuildRoadMeshesFromGeometryCropped(
         IReadOnlyDictionary<int, GeometryCodec.LaneGeo> geometry,
-        double x0, double y0, double x1, double y1, double marginMeters = 60.0)
+        double x0, double y0, double x1, double y1, double marginMeters = 60.0,
+        IReadOnlyDictionary<int, bool>? pedByHandle = null)
     {
         var minX = x0 - marginMeters;
         var minY = y0 - marginMeters;
@@ -2249,7 +2294,7 @@ public partial class Main : Node3D
             $"Main: --live-city --transport=dds crop [{x0:F0},{y0:F0}]-[{x1:F0},{y1:F0}] kept " +
             $"{filtered.Count} of {geometry.Count} lane(s) from the wire.");
 
-        return BuildRoadMeshesFromRibbons(filtered, filtered.Count);
+        return BuildRoadMeshesFromRibbons(filtered, filtered.Count, pedByHandle);
     }
 #endif
 
@@ -2259,12 +2304,24 @@ public partial class Main : Node3D
     // computed (from a NetworkModel locally, from received wire geometry remotely -- see the two callers
     // above) into Godot ArrayMesh/MeshInstance3D nodes. Returns the Godot-space bounding box of every
     // emitted vertex, so the camera can frame the whole network.
+    //
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks" row -- `pedByHandle` (Handle -> Sim.Ingest.
+    // Lane.AllowsRoadVehicle == false), when supplied, picks the lighter ConcreteColor material for that
+    // lane's MeshInstance3D instead of the shared AsphaltColor one; null (every non-live-city caller) keeps
+    // every lane on the single asphalt material, byte-identical to before this layer existed.
     private (Vector3 Min, Vector3 Max) BuildRoadMeshesFromRibbons(
-        IEnumerable<(int Handle, RibbonMesh Mesh)> perLane, int totalLaneCount)
+        IEnumerable<(int Handle, RibbonMesh Mesh)> perLane, int totalLaneCount,
+        IReadOnlyDictionary<int, bool>? pedByHandle = null)
     {
-        var material = new StandardMaterial3D
+        var asphaltMaterial = new StandardMaterial3D
         {
             AlbedoColor = AsphaltColor,
+            Roughness = 0.95f,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+        };
+        var concreteMaterial = new StandardMaterial3D
+        {
+            AlbedoColor = ConcreteColor,
             Roughness = 0.95f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
         };
@@ -2272,6 +2329,7 @@ public partial class Main : Node3D
         var min = new Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
         var max = new Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
         var laneCount = 0;
+        var pedLaneCount = 0;
 
         foreach (var (handle, mesh) in perLane)
         {
@@ -2309,17 +2367,25 @@ public partial class Main : Node3D
             var arrayMesh = new ArrayMesh();
             arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
+            var isPed = pedByHandle is not null && pedByHandle.TryGetValue(handle, out var pedFlag) && pedFlag;
+            if (isPed)
+            {
+                pedLaneCount++;
+            }
+
             var instance = new MeshInstance3D
             {
                 Mesh = arrayMesh,
                 Name = $"Lane_{handle}",
             };
-            instance.SetSurfaceOverrideMaterial(0, material);
+            instance.SetSurfaceOverrideMaterial(0, isPed ? concreteMaterial : asphaltMaterial);
             AddChild(instance);
             laneCount++;
         }
 
-        GD.Print($"Main: built {laneCount} road ribbon mesh(es) from {totalLaneCount} lane(s).");
+        GD.Print(
+            $"Main: built {laneCount} road ribbon mesh(es) from {totalLaneCount} lane(s) " +
+            $"({pedLaneCount} sidewalk/concrete).");
 
         if (laneCount == 0)
         {
@@ -2502,6 +2568,133 @@ public partial class Main : Node3D
         }
 
         GD.Print($"Main: built {built3D} zone ground tile(s) from {scene.Zones.Count} zone(s).");
+    }
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Crosswalk zebra" + "Lane markings" rows / DESIGN-live-city-2d-viz.md
+    // §2 layers 9/3. Both are static, ALWAYS-visible overlays (unlike the opt-in zone tint) built once, off
+    // a NetworkModel -- crossing lanes (CrosswalkBuilder.IsCrossingLaneId) get zebra stripes; every CAR lane
+    // (AllowsRoadVehicle) that has a car left-neighbour on the same edge (Lane.LeftNeighbor, precomputed by
+    // NetworkParser -- it already excludes non-vehicular siblings, see NetworkModel.Lane's own remark) gets
+    // a dashed seam marking. `crop`, when given, keeps only lanes with at least one shape vertex inside the
+    // rect (+margin) -- the SAME filtering BuildRoadMeshesCropped/BuildRoadMeshesFromGeometryCropped apply,
+    // so this overlay never outruns the cropped road ribbons it sits on. All stripes collapse into ONE
+    // MeshInstance3D and all dashes into another (CrosswalkBuilder.MergeRibbons), matching BuildRoadMeshes'
+    // own "one draw call" ethos.
+    private void BuildCrosswalksAndLaneMarkings(
+        NetworkModel network, (double X0, double Y0, double X1, double Y1)? crop = null, double marginMeters = 60.0)
+    {
+        double minX = 0, minY = 0, maxX = 0, maxY = 0;
+        if (crop is { } c)
+        {
+            minX = c.X0 - marginMeters;
+            minY = c.Y0 - marginMeters;
+            maxX = c.X1 + marginMeters;
+            maxY = c.Y1 + marginMeters;
+        }
+
+        bool Inside(IReadOnlyList<(double X, double Y)> shape)
+        {
+            if (crop is null)
+            {
+                return true;
+            }
+
+            foreach (var (sx, sy) in shape)
+            {
+                if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        var crosswalkParts = new List<RibbonMesh>();
+        var markingParts = new List<RibbonMesh>();
+        var crossingLaneCount = 0;
+        var markingLaneCount = 0;
+
+        foreach (var lane in network.LanesByHandle)
+        {
+            if (!Inside(lane.Shape))
+            {
+                continue;
+            }
+
+            if (CrosswalkBuilder.IsCrossingLaneId(lane.Id))
+            {
+                var (mesh, stripeCount) = CrosswalkBuilder.Build(lane.Shape, lane.Width);
+                if (stripeCount > 0)
+                {
+                    crosswalkParts.Add(mesh);
+                    crossingLaneCount++;
+                }
+
+                continue;
+            }
+
+            if (lane.AllowsRoadVehicle && lane.LeftNeighbor >= 0)
+            {
+                var (mesh, dashCount) = LaneMarkingBuilder.Build(lane.Shape, lane.Width);
+                if (dashCount > 0)
+                {
+                    markingParts.Add(mesh);
+                    markingLaneCount++;
+                }
+            }
+        }
+
+        if (crosswalkParts.Count > 0)
+        {
+            var merged = CrosswalkBuilder.MergeRibbons(crosswalkParts);
+            AddChild(BuildRoadPaintMeshInstance(merged, "CrosswalkZebras"));
+        }
+
+        if (markingParts.Count > 0)
+        {
+            var merged = CrosswalkBuilder.MergeRibbons(markingParts);
+            AddChild(BuildRoadPaintMeshInstance(merged, "LaneMarkings"));
+        }
+
+        GD.Print(
+            $"Main: built crosswalk zebra(s) on {crossingLaneCount} crossing lane(s) and seam marking(s) " +
+            $"on {markingLaneCount} lane(s) (out of {network.LanesByHandle.Count} lane(s) considered).");
+    }
+
+    // Shared "unshaded near-white paint" MeshInstance3D construction for BuildCrosswalksAndLaneMarkings'
+    // two overlays -- mirrors BuildZoneGround's own per-mesh ArrayMesh/StandardMaterial3D pattern (unshaded,
+    // double-sided, since a flat road-paint quad has no meaningful back face at overview-camera range).
+    private static MeshInstance3D BuildRoadPaintMeshInstance(RibbonMesh mesh, string name)
+    {
+        var vertexCount = mesh.Vertices.Length / 3;
+        var vertices = new Vector3[vertexCount];
+        var normals = new Vector3[vertexCount];
+        for (var i = 0; i < vertexCount; i++)
+        {
+            vertices[i] = new Vector3(mesh.Vertices[i * 3 + 0], mesh.Vertices[i * 3 + 1], mesh.Vertices[i * 3 + 2]);
+            normals[i] = new Vector3(mesh.Normals[i * 3 + 0], mesh.Normals[i * 3 + 1], mesh.Normals[i * 3 + 2]);
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.Index] = mesh.Indices;
+
+        var arrayMesh = new ArrayMesh();
+        arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        var material = new StandardMaterial3D
+        {
+            AlbedoColor = RoadPaintColor,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+        };
+
+        var instance = new MeshInstance3D { Mesh = arrayMesh, Name = name };
+        instance.SetSurfaceOverrideMaterial(0, material);
+        return instance;
     }
 
     // docs/DEMO-CITY3D-DESIGN.md "Procedural scene generation -> Cars" / task T1.5. The ONLY per-frame

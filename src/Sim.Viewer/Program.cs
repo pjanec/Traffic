@@ -7,6 +7,7 @@ using Raylib_cs;
 using rlImGui_cs;
 using ImGuiNET;
 using Sim.Core;
+using Sim.Ingest;
 using Sim.LiveCity;
 using Sim.Pedestrians.Lod;
 using Sim.Replication;
@@ -62,6 +63,13 @@ string? mode = null;
 string? inputPath = null;
 string? screenshotPath = null;
 string? selftestPath = null;
+// Optional window/screenshot resolution override (`--mode live-city` / `--replay`, verification tool only)
+// -- default null keeps ViewerHostConfig's own 1280x800 default, byte-identical to before this flag
+// existed. Higher resolution raises the SAME fit-to-view zoom's effective pixels-per-metre, which is what
+// makes fine detail (the seam-marking dashes, the crosswalk zebra stripes) legible in a screenshot without
+// changing the camera or the world in any way.
+int? screenshotWidth = null;
+int? screenshotHeight = null;
 // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5/§1: pick the INITIAL demo from DemoCatalog.Resolve by name
 // (case-insensitive substring match), for `--mode local`. Omit it (with an ad-hoc <path> instead) to keep
 // today's behaviour exactly -- see RunLocal.
@@ -126,6 +134,12 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--screenshot":
             screenshotPath = args[++i];
+            break;
+        case "--width":
+            screenshotWidth = int.Parse(args[++i], CultureInfo.InvariantCulture);
+            break;
+        case "--height":
+            screenshotHeight = int.Parse(args[++i], CultureInfo.InvariantCulture);
             break;
         case "--frames":
             frames = int.Parse(args[++i]);
@@ -255,12 +269,12 @@ if (mode == "live-city")
     {
         return liveCitySmoke
             ? RunLiveCityReplaySmoke(replayPath)
-            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones);
+            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones, screenshotWidth, screenshotHeight);
     }
 
     return liveCitySmoke
         ? RunLiveCitySmoke(Math.Max(frames, 120), recordPath, resolvedSimHz)
-        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones);
+        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones, screenshotWidth, screenshotHeight);
 }
 
 // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `--mode local --demo "<name>"` needs NO <path> at all --
@@ -872,7 +886,7 @@ static int RunPedPublish(double? secondsCap)
 // from ValidateSimHz/ValidateRenderHz -- simHz sets cfg.SimHz (=> cfg.Dt, which both the engine's
 // step-length AND the ped-publish Dt derive from, keeping the live-city coupling invariant); renderHz
 // seeds the window's initial target FPS and the runtime-adjustable slider in the diagnostics panel below.
-static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones)
+static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var repoRoot = DemoCatalog.RepoRoot();
     var cfg = LiveCityConfig.ForRepoRoot(repoRoot);
@@ -883,6 +897,12 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
         : null;
 
     using var sim = new LiveCitySim(cfg, recorder);
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks"/"Crosswalk zebra"/"Lane markings" rows: built ONCE (the
+    // network is static for the whole run), off LiveCitySim.Network -- the SAME NetworkModel this local
+    // in-process sim parsed from net.xml, whose lane Handles line up with sim.VehicleSource.Geometry's own
+    // (both come from the identical parse).
+    var laneMeta = BuildLaneRenderMeta(sim.Network);
 
     var overlay = new LiveCityOverlay();
     var frameStats = new FrameStats();
@@ -912,6 +932,8 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
         ScreenshotPath = screenshotPath,
         Frames = frames,
         TargetFps = renderHz,
+        Width = screenshotWidth ?? new ViewerHostConfig().Width,
+        Height = screenshotHeight ?? new ViewerHostConfig().Height,
 
         InitialCameraBounds = () => (cfg.X0, cfg.Y0, cfg.X1, cfg.Y1),
 
@@ -959,7 +981,7 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
                 LiveCityZonesLayer.Draw(camera, sim.Scene.Zones);
             }
 
-            Renderer.DrawWorldDds(camera, sim.VehicleSource.Geometry, sim.VehicleSource.TlStateByLane, draws);
+            Renderer.DrawWorldDds(camera, sim.VehicleSource.Geometry, sim.VehicleSource.TlStateByLane, draws, laneMeta);
             overlay.DrawWorldOver(camera, SimulationSnapshot.Empty, draws);
         },
 
@@ -1016,6 +1038,28 @@ static IReadOnlyList<(int Id, float X, float Y, float Z, byte Regime, string Ani
     }
 
     return arr;
+}
+
+// docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks"/"Crosswalk zebra"/"Lane markings" rows -- builds the
+// per-Handle Renderer.LaneRenderMeta DrawWorldDds's live-city overlay layers need, off a NetworkModel this
+// process happens to have LOCALLY (LiveCitySim.Network for the live path; a best-effort net.xml re-parse
+// for replay -- see both call sites), keyed by the SAME dense lane Handle NetworkParser assigns (matching
+// whatever Handle the wire geometry itself carries for that lane, since both are parsed from the identical
+// net.xml in the identical deterministic order). `IsPed` = !AllowsRoadVehicle; `IsCrossing` = the
+// Renderer.IsCrossingLaneId regex on the lane's own id; `HasCarLeftNeighbor` = a car lane whose precomputed
+// LeftNeighbor (NetworkParser -- already excludes non-vehicular siblings) is present.
+static Dictionary<int, Renderer.LaneRenderMeta> BuildLaneRenderMeta(NetworkModel network)
+{
+    var meta = new Dictionary<int, Renderer.LaneRenderMeta>(network.LanesByHandle.Count);
+    foreach (var lane in network.LanesByHandle)
+    {
+        var isPed = !lane.AllowsRoadVehicle;
+        var isCrossing = Renderer.IsCrossingLaneId(lane.Id);
+        var hasCarLeftNeighbor = lane.AllowsRoadVehicle && lane.LeftNeighbor >= 0;
+        meta[lane.Handle] = new Renderer.LaneRenderMeta(isPed, isCrossing, hasCarLeftNeighbor);
+    }
+
+    return meta;
 }
 
 // docs/LIVE-CITY-VIEWERS-TASKS.md Stage B success condition ("headless smoke, the gating functional
@@ -1114,7 +1158,7 @@ static int RunLiveCitySmoke(int steps, string? recordPath, int simHz)
 // the runtime-adjustable slider in the playback panel below. Replay has no sim-hz CLI knob of its own --
 // the recording's own Dt (clock.Dt, read from the file) is displayed instead, exactly like the live
 // path's `--sim-hz` display line, just sourced from the file rather than a live LiveCityConfig.
-static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones)
+static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var clock = new PlaybackClock();
     using var fileSource = new ReplicationFileSource(replayPath, clock);
@@ -1129,13 +1173,22 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
     // `.simrec` played back without the dataset checked out (or the box companion files absent) just
     // renders with an empty zones list rather than failing the whole replay.
     var replayScene = LiveCityScene.Empty;
+    // docs/LIVE-CITY-VISUALS-NOTES.md "Sidewalks"/"Crosswalk zebra"/"Lane markings" rows: same best-effort
+    // reasoning as the zone tint just above -- replay has no LiveCitySim (no `.Network` to read off either),
+    // so the per-Handle Renderer.LaneRenderMeta DrawWorldDds's overlay layers need is built off a fresh
+    // NetworkParser.Parse of the SAME pinned net.xml (its lane Handles match the recording's wire geometry
+    // 1:1, since both trace back to the identical net.xml parsed in the identical deterministic order).
+    // Empty (no overlay layers, road ribbons unchanged) when the dataset isn't locally available.
+    var replayLaneMeta = new Dictionary<int, Renderer.LaneRenderMeta>();
     try
     {
-        replayScene = LiveCityScene.Load(LiveCityConfig.ForRepoRoot(DemoCatalog.RepoRoot()).DatasetDir);
+        var replayCfg = LiveCityConfig.ForRepoRoot(DemoCatalog.RepoRoot());
+        replayScene = LiveCityScene.Load(replayCfg.DatasetDir);
+        replayLaneMeta = BuildLaneRenderMeta(NetworkParser.Parse(Path.Combine(replayCfg.DatasetDir, "net.xml")));
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"RunLiveCityReplay: zone-tint layer skipped ({ex.Message}).");
+        Console.Error.WriteLine($"RunLiveCityReplay: zone-tint/sidewalk/crosswalk/lane-marking layers skipped ({ex.Message}).");
     }
 
     var overlay = new LiveCityOverlay();
@@ -1155,6 +1208,8 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
         ScreenshotPath = screenshotPath,
         Frames = frames,
         TargetFps = renderHz,
+        Width = screenshotWidth ?? new ViewerHostConfig().Width,
+        Height = screenshotHeight ?? new ViewerHostConfig().Height,
 
         InitialCameraBounds = () => null,
 
@@ -1216,7 +1271,7 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
                 LiveCityZonesLayer.Draw(camera, replayScene.Zones);
             }
 
-            Renderer.DrawWorldDds(camera, fileSource.Geometry, fileSource.TlStateByLane, draws);
+            Renderer.DrawWorldDds(camera, fileSource.Geometry, fileSource.TlStateByLane, draws, replayLaneMeta);
             overlay.DrawWorldOver(camera, SimulationSnapshot.Empty, draws);
 
             if (!fileSource.GeometryComplete)
