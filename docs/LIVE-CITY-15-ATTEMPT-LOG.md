@@ -345,6 +345,30 @@ The gated knobs (`DeadLaneDriveThrough`, `JunctionYieldTimeoutSeconds`, `TimeToT
 kept, default-off, parity-safe, available for experimentation. Design (kept for the record):
 `docs/LIVE-CITY-15-DEADLANE-DRIVETHROUGH-DESIGN.md`.
 
+## 2026-07-23 — PIVOTAL: SUMO does NOT gridlock on the same net+demand -> it's OUR ENGINE, and it's FIXABLE
+Owner refused "give up"; hypothesis "scenario is wrong / car has nowhere to go". Checked the net: 51
+traffic lights, ALL `type="static"` (fixed-time), `offset="0"` (uncoordinated) -> a plausible spillback
+cause. DECISIVE TEST: dumped the EXACT sustained demand our engine spawns over 1000 s (418 trips,
+`LIVECITY_DUMPROUTES`) and ran **SUMO 1.20 on the SAME net + SAME 418 trips**, teleport OFF:
+```
+        our engine            SUMO 1.20
+t=100   ~free flow start      running=153 halting=12 meanSpeed 11.5
+t=300   degrading             running= 99 halting=30 meanSpeed  9.0
+t=500   heading to lock       running= 49 halting= 5 meanSpeed 11.3  (drained/recovered)
+t=900   0.99 STOPPED          running= 12 halting= 3 meanSpeed  2.3  (nearly done)
+final   gridlock, 258 arr     drains the demand, meanSpeed 9-11 throughout
+```
+**SUMO DRAINS it; our engine GRIDLOCKS on the identical net + demand.** Therefore:
+- **NOT the scenario** — the static/uncoordinated lights are fine; SUMO discharges them. "Scenario is
+  wrong" REFUTED.
+- **NOT inherent / not density-saturation** — SUMO proves the same load flows.
+- **It IS our engine's junction discharge** — a REAL, FIXABLE bug. SUMO is the existence proof.
+
+This vindicates continuing. Next: engine-vs-SUMO DIFFERENTIAL to localize WHERE our discharge lags
+(per-junction throughput diff, or a trip SUMO completes fast that our engine never completes -> trace
+that car's hold in our engine). This is the dense-flow branch's core deficit, now PROVEN solvable, so
+worth the dig. Teleport was masking a real bug, not curing an inherent limit -- correctly rejected.
+
 ## Retired-machinery note (shelved, for the record — NOT to build now)
 Mechanism-gathering found the follower-cooperation channel was already built and RETIRED in `afec614`
 ("Retire the cooperative informFollower"): `VehicleRuntime.CoopSpeedAdvice` (+∞ default) +
