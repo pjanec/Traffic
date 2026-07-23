@@ -58,6 +58,30 @@ public class CoordinateTransformTests
         }
     }
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md building-entrance door: DirectionToGodotYawRad is the general form of
+    // NaviDegToGodotYawRad for a caller that already has an (x,y) direction vector (e.g. a pois.json
+    // `facing`) instead of a navi-degree angle -- for a UNIT direction vector (sin(theta), cos(theta)) the
+    // two must agree exactly.
+    [Theory]
+    [InlineData(0f, 1f, 0f)]      // facing north (SUMO +y) == navi 0
+    [InlineData(1f, 0f, 90f)]     // facing east (SUMO +x) == navi 90
+    [InlineData(0f, -1f, 180f)]   // facing south (SUMO -y) == navi 180
+    [InlineData(-1f, 0f, 270f)]   // facing west (SUMO -x) == navi 270
+    public void DirectionToGodotYawRad_UnitVector_MatchesNaviDegEquivalent(float dirX, float dirY, float naviDeg)
+    {
+        var yaw = CoordinateTransform.DirectionToGodotYawRad(dirX, dirY);
+        AssertAngleClose(CoordinateTransform.NaviDegToGodotYawRad(naviDeg), yaw, toleranceRad: 1e-4f);
+    }
+
+    [Fact]
+    public void DirectionToGodotYawRad_IsInvariantToVectorMagnitude()
+    {
+        // Only the direction matters -- scaling (dirX,dirY) by any positive factor must yield the same yaw.
+        var yawUnit = CoordinateTransform.DirectionToGodotYawRad(0.6, 0.8);
+        var yawScaled = CoordinateTransform.DirectionToGodotYawRad(6.0, 8.0);
+        AssertAngleClose(yawUnit, yawScaled, toleranceRad: 1e-5f);
+    }
+
     private static void AssertAngleClose(float expectedRad, float actualRad, float toleranceRad)
     {
         var diff = MathF.Atan2(MathF.Sin(expectedRad - actualRad), MathF.Cos(expectedRad - actualRad));

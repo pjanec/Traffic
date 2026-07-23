@@ -40,6 +40,20 @@ public static class CoordinateTransform
         return NormalizeRad(-thetaRad);
     }
 
+    // General form of the heading mapping above, for a caller that already HAS a SUMO-plane (x, y)
+    // direction vector (not a navi-degree angle) -- e.g. a pois.json `facing` unit vector
+    // (docs/LIVE-CITY-VISUALS-NOTES.md's building-entrance door: "oriented so its face aligns with the
+    // Facing vector"). `(dirX, dirY)` need not be unit length (only its direction matters).
+    //
+    // Reusing the derivation above with "theta" generalized to "the angle of (dirX,dirY)" -- i.e.
+    // dirX = r*sin(theta), dirY = r*cos(theta) for some r>0 -- the SAME solve (yaw = -theta) gives
+    // yaw = atan2(-dirX, dirY): substituting sin(theta)=dirX/r, cos(theta)=dirY/r into
+    // atan2(sin(theta), cos(theta)) = theta and negating gives atan2(-dirX, dirY) = -theta = yaw.
+    // Math.Atan2 already returns a value in (-pi, pi], so no extra normalization is needed (matches
+    // NormalizeRad's own output range).
+    public static float DirectionToGodotYawRad(double dirX, double dirY)
+        => (float)Math.Atan2(-dirX, dirY);
+
     private static float NormalizeRad(float rad)
     {
         const float twoPi = 2f * MathF.PI;

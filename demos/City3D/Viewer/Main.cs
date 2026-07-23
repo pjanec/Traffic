@@ -106,6 +106,37 @@ public partial class Main : Node3D
 
     private static readonly Color BuildingFillDefault = new(156f / 255f, 163f / 255f, 175f / 255f);
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block -- "Same color palette
+    // in 2D and 3D so they read identically" -- these hex values are duplicated verbatim in
+    // src/Sim.Viewer/LiveCityPoiLayer.cs (the 2D side; mirrors ZoneFillPalette/BuildingFillPalette's own
+    // cross-viewer duplication, since the two viewers don't share a rendering-side assembly). Flat, opaque
+    // ground-marker colours by POI kind: venue=amber, dwell_spot=pink, transit_stop=cyan,
+    // parking_access=light-blue. `building_entrance` is deliberately absent -- that kind renders as a DOOR
+    // (DoorColor below), never a ground marker (PoiGroundBuilder.Build already excludes it).
+    private static readonly Dictionary<string, Color> PoiMarkerPalette = new(StringComparer.Ordinal)
+    {
+        ["venue"] = new Color(245f / 255f, 158f / 255f, 11f / 255f),
+        ["dwell_spot"] = new Color(244f / 255f, 114f / 255f, 182f / 255f),
+        ["transit_stop"] = new Color(34f / 255f, 211f / 255f, 238f / 255f),
+        ["parking_access"] = new Color(96f / 255f, 165f / 255f, 250f / 255f),
+    };
+
+    private static readonly Color PoiMarkerDefault = new(200f / 255f, 200f / 255f, 200f / 255f);
+
+    // "building_entrance = the ONE vertical element ... Different color (green) so it reads as a door."
+    private static readonly Color DoorColor = new(34f / 255f, 197f / 255f, 94f / 255f);
+
+    // POI AREAS (parking_lot/park, pois.json records that carry a `polygon`): "parking = grey, park =
+    // green" -- reuses ZoneGroundBuilder's flat-ground-mesh math (same polygon -> tinted-plane pipeline as
+    // the zones layer), just with its own palette and ground offset (see BuildPoiAreas).
+    private static readonly Dictionary<string, Color> PoiAreaFillPalette = new(StringComparer.Ordinal)
+    {
+        ["parking_lot"] = new Color(148f / 255f, 163f / 255f, 184f / 255f, 0.35f),
+        ["park"] = new Color(34f / 255f, 197f / 255f, 94f / 255f, 0.30f),
+    };
+
+    private static readonly Color PoiAreaFillDefault = new(156f / 255f, 163f / 255f, 175f / 255f, 0.20f);
+
     // Small seeded car-body palette (design "Cars" / task T1.5, mirrors BuildingPalette's "variety without
     // assets" pattern) -- picked deterministically by VehicleHandle.Index (stable across frames for a given
     // vehicle, no hidden RNG), not by draw order.
@@ -359,6 +390,15 @@ public partial class Main : Node3D
     // point, since the zone tint is a live-city-only overlay (no `--scenario`/`--peds` dataset carries a
     // zones.json today). Null (harmless no-op toggle) wherever it wasn't built.
     private Node3D? _zonesNode;
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: ONE parent Node3D for
+    // the whole "POI + doors + areas" group (per the task's explicit "one toggle for the whole ... group is
+    // fine") -- parents three children (BuildLiveCityPois): "PoiAreas" (parking_lot/park ground tint),
+    // "PoiMarkers" (the flat venue/transit_stop/dwell_spot/parking_access ground discs), "Doors" (the
+    // vertical building_entrance boxes). Default VISIBLE (a primary feature, same as `_buildingsNode`/`B`)
+    // -- `--hide-pois` starts it hidden; the runtime `P` key (_UnhandledInput) toggles it from there. Null
+    // (harmless no-op toggle) wherever it wasn't built (e.g. `--peds`, `--scenario`).
+    private Node3D? _poisNode;
 
     // Task T1.5 -- ONE MultiMeshInstance3D for every car, built once in _Ready and reused every frame:
     // only the per-instance transforms/colors are rewritten each _Process; the underlying buffer
@@ -858,6 +898,10 @@ public partial class Main : Node3D
         // live-city layers follow) but its bbox is only used for logging here; `_sceneBbox`/camera framing
         // below stay road-bbox-driven, unchanged from before this feature.
         BuildLiveCityBuildings(_liveCitySource.Scene, _liveCitySource.Network);
+        // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: POI markers +
+        // building-entrance doors + parking_lot/park areas, built AFTER buildings (same "ground layer,
+        // then roads" read order every other live-city overlay follows here).
+        BuildLiveCityPois(_liveCitySource.Scene);
         _sceneBbox = roadBbox;
 
         // Even cropped to the ~840x840m downtown block, the FULL crop bbox still leaves individual
@@ -900,6 +944,12 @@ public partial class Main : Node3D
         {
             _buildingsNode.Visible = false;
             GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
+        }
+
+        if (ParseHidePoisArg() && _poisNode is not null)
+        {
+            _poisNode.Visible = false;
+            GD.Print("Main: --hide-pois active (POIs/doors/areas start hidden; press P to toggle).");
         }
 
         if (_cameraMode == "close")
@@ -1007,6 +1057,10 @@ public partial class Main : Node3D
         // above already established for zones. `network` (parsed straight off net.xml just above) is the
         // fallback path's input if the dataset ships no buildings.json.
         BuildLiveCityBuildings(replayScene, network);
+        // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: replay flavor, same
+        // "no live LiveCitySource, use the SAME already-loaded scene" reasoning BuildLiveCityBuildings just
+        // used above.
+        BuildLiveCityPois(replayScene);
         _sceneBbox = roadBbox;
 
         var cropCenter = new Vector3(
@@ -1042,6 +1096,12 @@ public partial class Main : Node3D
         {
             _buildingsNode.Visible = false;
             GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
+        }
+
+        if (ParseHidePoisArg() && _poisNode is not null)
+        {
+            _poisNode.Visible = false;
+            GD.Print("Main: --hide-pois active (POIs/doors/areas start hidden; press P to toggle).");
         }
 
         if (_cameraMode == "close")
@@ -1224,12 +1284,16 @@ public partial class Main : Node3D
             // SAME try/catch (a subscriber with no local checkout just skips buildings too, rather than
             // failing the whole scene build).
             BuildLiveCityBuildings(remoteScene, network);
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block -- same
+            // best-effort local-read reasoning as buildings just above (pois.json isn't carried over the
+            // DDS wire either).
+            BuildLiveCityPois(remoteScene);
         }
         catch (Exception ex)
         {
             GD.Print(
-                "Main: zone-tint/sidewalk/crosswalk/lane-marking/buildings layers skipped (no local dataset " +
-                $"access for remote subscriber): {ex.Message}");
+                "Main: zone-tint/sidewalk/crosswalk/lane-marking/buildings/pois layers skipped (no local " +
+                $"dataset access for remote subscriber): {ex.Message}");
         }
 
         if (ParseShowZonesArg() && _zonesNode is not null)
@@ -1242,6 +1306,12 @@ public partial class Main : Node3D
         {
             _buildingsNode.Visible = false;
             GD.Print("Main: --hide-buildings active (buildings start hidden; press B to toggle).");
+        }
+
+        if (ParseHidePoisArg() && _poisNode is not null)
+        {
+            _poisNode.Visible = false;
+            GD.Print("Main: --hide-pois active (POIs/doors/areas start hidden; press P to toggle).");
         }
 
         var roadBbox = BuildRoadMeshesFromGeometryCropped(geometry, crop.X0, crop.Y0, crop.X1, crop.Y1, pedByHandle: pedByHandle);
@@ -1895,6 +1965,19 @@ public partial class Main : Node3D
                 {
                     _zonesNode.Visible = !_zonesNode.Visible;
                     GD.Print($"Main: zones visible={_zonesNode.Visible} (Z toggle).");
+                }
+
+                GetViewport().SetInputAsHandled();
+                break;
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: runtime toggle
+            // for the WHOLE POI+doors+areas group (`_poisNode`), mirrors the B/buildings and Z/zones
+            // toggles immediately above -- one key flips one node's Visible, no per-layer sub-toggles.
+            case InputEventKey { Pressed: true } key when key.Keycode == Key.P:
+                if (_poisNode is not null)
+                {
+                    _poisNode.Visible = !_poisNode.Visible;
+                    GD.Print($"Main: pois visible={_poisNode.Visible} (P toggle).");
                 }
 
                 GetViewport().SetInputAsHandled();
@@ -2816,6 +2899,211 @@ public partial class Main : Node3D
         GD.Print($"Main: built {built3D} zone ground tile(s) from {scene.Zones.Count} zone(s).");
     }
 
+    // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block -- the single entry
+    // point every `--live-city` flavour (local live, replay, remote) calls to build the WHOLE "POI + doors
+    // + areas" group under one `_poisNode` (so the `--hide-pois`/`P` toggle flips everything with one
+    // Visible flip, per the task's "one toggle for the whole group is fine"). Static geometry, built ONCE
+    // at load -- same "build once, no per-frame cost" split every other live-city overlay layer uses.
+    // Sub-builds, in the group's own internal draw order (areas -> markers -> doors, i.e. flattest/most
+    // ground-hugging first): BuildPoiAreas (parking_lot/park ground tint, reusing ZoneGroundBuilder),
+    // BuildPoiMarkers (the flat venue/transit_stop/dwell_spot/parking_access ground discs), BuildDoors (the
+    // vertical building_entrance boxes -- "the ONE vertical element").
+    private void BuildLiveCityPois(LiveCityScene scene)
+    {
+        var root = new Node3D { Name = "Pois" };
+        AddChild(root);
+        _poisNode = root;
+
+        BuildPoiAreas(root, scene.Areas);
+        BuildPoiMarkers(root, scene.Pois);
+        BuildDoors(root, scene.Pois);
+    }
+
+    // POI AREAS (parking_lot/park -- pois.json records that carry a `polygon`): "flat colored ground
+    // polygons (parking = grey, park = green)". Reuses CityLib.ZoneGroundBuilder's polygon -> flat-mesh math
+    // verbatim (the SAME fan-triangulation + SUMO->Godot ground-offset pipeline the zones layer uses) --
+    // just with the POI-area palette and a ground offset that sits "just above the zone tint, below roads"
+    // per the task (zones default -0.05m, roads sit at 0m -- -0.03m lands strictly between the two).
+    // Largest-area-first, mirroring BuildZoneGround's own ordering (only 6 areas in the committed dataset,
+    // but the same "big area's tint shouldn't get buried under a small nested one" reasoning applies).
+    private static void BuildPoiAreas(Node3D parent, IReadOnlyList<SceneArea> areas)
+    {
+        if (areas.Count == 0)
+        {
+            GD.Print("Main: 0 POI area(s) in scene -- parking_lot/park layer skipped.");
+            return;
+        }
+
+        const double groundOffsetSumoZ = -0.03;
+
+        var built = new List<(SceneArea Area, FlatGroundMesh Mesh)>(areas.Count);
+        foreach (var area in areas)
+        {
+            built.Add((area, ZoneGroundBuilder.Build(area.Polygon, groundOffsetSumoZ)));
+        }
+
+        built.Sort((a, b) => b.Mesh.Area.CompareTo(a.Mesh.Area));
+
+        var root = new Node3D { Name = "PoiAreas" };
+        parent.AddChild(root);
+
+        var built3D = 0;
+        foreach (var (area, flat) in built)
+        {
+            if (flat.Vertices.Length == 0)
+            {
+                continue; // degenerate (<3-point) polygon -- nothing to draw.
+            }
+
+            var vertexCount = flat.Vertices.Length / 3;
+            var vertices = new Vector3[vertexCount];
+            var normals = new Vector3[vertexCount];
+            for (var i = 0; i < vertexCount; i++)
+            {
+                vertices[i] = new Vector3(flat.Vertices[i * 3 + 0], flat.Vertices[i * 3 + 1], flat.Vertices[i * 3 + 2]);
+                normals[i] = new Vector3(flat.Normals[i * 3 + 0], flat.Normals[i * 3 + 1], flat.Normals[i * 3 + 2]);
+            }
+
+            var arrays = new Godot.Collections.Array();
+            arrays.Resize((int)Mesh.ArrayType.Max);
+            arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+            arrays[(int)Mesh.ArrayType.Normal] = normals;
+            arrays[(int)Mesh.ArrayType.Index] = flat.Indices;
+
+            var arrayMesh = new ArrayMesh();
+            arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+            var color = PoiAreaFillPalette.TryGetValue(area.Kind, out var c) ? c : PoiAreaFillDefault;
+            var material = new StandardMaterial3D
+            {
+                AlbedoColor = color,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            };
+
+            var instance = new MeshInstance3D
+            {
+                Mesh = arrayMesh,
+                Name = $"PoiArea_{area.Id}",
+            };
+            instance.SetSurfaceOverrideMaterial(0, material);
+            root.AddChild(instance);
+            built3D++;
+        }
+
+        GD.Print($"Main: built {built3D} POI area ground tile(s) from {areas.Count} area(s).");
+    }
+
+    // POI POINT markers (venue/transit_stop/dwell_spot/parking_access -- NOT building_entrance, which
+    // BuildDoors owns): "flat colored ground markers/decals by kind. NO posts/benches/pylons/models."
+    // CityLib.PoiGroundBuilder does the polygon-free point -> (position, per-kind radius) math; this method
+    // turns its plain instances into ONE MultiMeshInstance3D (a thin unit disc/puck, one per-instance
+    // transform+colour per marker) -- the SAME instancing idiom BuildBuildings/BuildCarMultiMesh use.
+    // A round cylinder (not a flat quad) sidesteps any "which local axis does an unrotated PlaneMesh lie
+    // in" ambiguity entirely -- a very short cylinder unavoidably reads as a flat puck regardless of
+    // orientation assumptions, matching BuildPedMultiMesh's own reasoning for picking a cylinder mesh.
+    private static void BuildPoiMarkers(Node3D parent, IReadOnlyList<ScenePoi> pois)
+    {
+        var markers = PoiGroundBuilder.Build(pois);
+        if (markers.Count == 0)
+        {
+            GD.Print("Main: 0 POI marker(s) in scene.");
+            return;
+        }
+
+        const float puckHeightMeters = 0.04f; // thin -- reads as a flat ground decal, not a raised disc.
+
+        var material = new StandardMaterial3D
+        {
+            VertexColorUseAsAlbedo = true, // per-instance MultiMesh colours (the per-kind palette) modulate albedo
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, // flat decal -- reads the same regardless of light angle
+        };
+
+        var multiMesh = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = true,
+            // unit cylinder (radius 0.5, height 1); per-instance transform scales it to each marker's real
+            // (2*RadiusMeters, puckHeightMeters, 2*RadiusMeters) footprint.
+            Mesh = new CylinderMesh { TopRadius = 0.5f, BottomRadius = 0.5f, Height = 1f, RadialSegments = 12 },
+            InstanceCount = markers.Count,
+        };
+
+        for (var i = 0; i < markers.Count; i++)
+        {
+            var m = markers[i];
+            var diameter = m.RadiusMeters * 2f;
+            var basis = Basis.Identity.Scaled(new Vector3(diameter, puckHeightMeters, diameter));
+            // Raise by half the puck's own thickness so it sits ON TOP of PoiGroundBuilder's ground point
+            // (PosY already carries the small +0.02m "above road" offset) rather than being bisected by it.
+            var origin = new Vector3(m.PosX, m.PosY + (puckHeightMeters / 2f), m.PosZ);
+            multiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+            multiMesh.SetInstanceColor(i, PoiMarkerPalette.TryGetValue(m.Kind, out var c) ? c : PoiMarkerDefault);
+        }
+
+        var instance = new MultiMeshInstance3D
+        {
+            Multimesh = multiMesh,
+            Name = "PoiMarkers",
+            MaterialOverride = material,
+        };
+        parent.AddChild(instance);
+
+        GD.Print($"Main: built {markers.Count} POI marker(s).");
+    }
+
+    // BUILDING-ENTRANCE DOORS: "the ONE vertical element: a thin, flat, vertical colored box ... oriented
+    // by its `facing` vector. Different color (green) so it reads as a door." CityLib.DoorBuilder does the
+    // pure position+yaw math (facing -> Godot yaw, ground point -> box centre raised half the door's own
+    // height); this method turns its plain instances into ONE MultiMeshInstance3D (a thin unit box, one
+    // per-instance transform per door) -- same idiom BuildCarMultiMesh/UpdateCars use for oriented boxes
+    // (ScaledLocal(scale) so the box's THIN axis, not a fixed world axis, points along Facing).
+    private static void BuildDoors(Node3D parent, IReadOnlyList<ScenePoi> pois)
+    {
+        var doors = DoorBuilder.Build(pois);
+        if (doors.Count == 0)
+        {
+            GD.Print("Main: 0 building_entrance door(s) in scene.");
+            return;
+        }
+
+        var material = new StandardMaterial3D
+        {
+            AlbedoColor = DoorColor,
+            Roughness = 0.6f,
+        };
+
+        var multiMesh = new MultiMesh
+        {
+            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+            UseColors = false, // every door is the SAME colour (DoorColor, baked into the material) -- no per-instance tint needed.
+            Mesh = new BoxMesh { Size = Vector3.One }, // unit cube; per-instance transform scales it to (WidthMeters, HeightMeters, ThicknessMeters)
+            InstanceCount = doors.Count,
+        };
+
+        for (var i = 0; i < doors.Count; i++)
+        {
+            var d = doors[i];
+            var scale = new Vector3(DoorBuilder.WidthMeters, DoorBuilder.HeightMeters, DoorBuilder.ThicknessMeters);
+            // ScaledLocal (R*S) scales in the door's OWN axes then rotates by yaw, so the box's thin face
+            // points down Facing -- same reasoning UpdateCars' own remark gives for its own ScaledLocal use.
+            var basis = new Basis(Vector3.Up, d.YawRad).ScaledLocal(scale);
+            var origin = new Vector3(d.PosX, d.PosY, d.PosZ);
+            multiMesh.SetInstanceTransform(i, new Transform3D(basis, origin));
+        }
+
+        var instance = new MultiMeshInstance3D
+        {
+            Multimesh = multiMesh,
+            Name = "Doors",
+            MaterialOverride = material,
+        };
+        parent.AddChild(instance);
+
+        GD.Print($"Main: built {doors.Count} building_entrance door(s).");
+    }
+
     // docs/LIVE-CITY-VISUALS-NOTES.md "Crosswalk zebra" + "Lane markings" rows / DESIGN-live-city-2d-viz.md
     // §2 layers 9/3. Both are static, ALWAYS-visible overlays (unlike the opt-in zone tint) built once, off
     // a NetworkModel -- crossing lanes (CrosswalkBuilder.IsCrossingLaneId) get zebra stripes; every CAR lane
@@ -3530,6 +3818,24 @@ public partial class Main : Node3D
         foreach (var arg in OS.GetCmdlineUserArgs())
         {
             if (arg == "--hide-buildings")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: POIs/doors/areas are a
+    // PRIMARY feature (default ON, same as `_buildingsNode`/`--hide-buildings`) -- but `parking_access`
+    // alone is 351 records, so a hide flag is required (per the task's explicit "make sure the toggle
+    // works so it can be turned off"). `--hide-pois` starts the WHOLE group (`_poisNode`: areas + markers +
+    // doors, one toggle) hidden; the runtime `P` key (_UnhandledInput) toggles it from there.
+    private static bool ParseHidePoisArg()
+    {
+        foreach (var arg in OS.GetCmdlineUserArgs())
+        {
+            if (arg == "--hide-pois")
             {
                 return true;
             }

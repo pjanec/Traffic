@@ -127,6 +127,12 @@ var showZones = false;
 // (no runtime toggle key on the 2D side -- optional per the task, not added since `--hide-buildings` alone
 // already covers the verification need).
 var hideBuildings = false;
+// docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: POIs/doors/areas are a
+// PRIMARY feature (default ON, same as buildings) -- but `parking_access` alone is 351 records, so a hide
+// flag is required (task's explicit "make sure the toggle works so it can be turned off"). `--hide-pois`
+// starts the WHOLE group (areas + markers + doors, one flag/one runtime `P` key) hidden; mirrors
+// `--hide-buildings`/`B`'s shape exactly.
+var hidePois = false;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -224,6 +230,9 @@ for (var i = 0; i < args.Length; i++)
         case "--hide-buildings":
             hideBuildings = true;
             break;
+        case "--hide-pois":
+            hidePois = true;
+            break;
         default:
             inputPath ??= args[i];
             break;
@@ -278,12 +287,12 @@ if (mode == "live-city")
     {
         return liveCitySmoke
             ? RunLiveCityReplaySmoke(replayPath)
-            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones, hideBuildings, screenshotWidth, screenshotHeight);
+            : RunLiveCityReplay(replayPath, screenshotPath, frames, resolvedRenderHz, showZones, hideBuildings, hidePois, screenshotWidth, screenshotHeight);
     }
 
     return liveCitySmoke
         ? RunLiveCitySmoke(Math.Max(frames, 120), recordPath, resolvedSimHz)
-        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones, hideBuildings, screenshotWidth, screenshotHeight);
+        : RunLiveCity(screenshotPath, frames, delaySeconds, simRate, recordPath, resolvedSimHz, resolvedRenderHz, showZones, hideBuildings, hidePois, screenshotWidth, screenshotHeight);
 }
 
 // docs/SUMOSHARP-VIEWER-DEMO-EVAC-DESIGN.md §5: `--mode local --demo "<name>"` needs NO <path> at all --
@@ -895,7 +904,7 @@ static int RunPedPublish(double? secondsCap)
 // from ValidateSimHz/ValidateRenderHz -- simHz sets cfg.SimHz (=> cfg.Dt, which both the engine's
 // step-length AND the ped-publish Dt derive from, keeping the live-city coupling invariant); renderHz
 // seeds the window's initial target FPS and the runtime-adjustable slider in the diagnostics panel below.
-static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones, bool hideBuildings, int? screenshotWidth = null, int? screenshotHeight = null)
+static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, double? speedFactor, string? recordPath, int simHz, int renderHz, bool showZones, bool hideBuildings, bool hidePois, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var repoRoot = DemoCatalog.RepoRoot();
     var cfg = LiveCityConfig.ForRepoRoot(repoRoot);
@@ -967,6 +976,13 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
                 showZones = !showZones;
             }
 
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: runtime toggle
+            // for the WHOLE POI+doors+areas group, mirrors the Z/zones toggle immediately above.
+            if (global::Raylib_cs.Raylib.IsKeyPressed(global::Raylib_cs.KeyboardKey.P))
+            {
+                hidePois = !hidePois;
+            }
+
             accumWall += dt * speed;
             while (accumWall >= cfg.Dt)
             {
@@ -1022,6 +1038,15 @@ static int RunLiveCity(string? screenshotPath, int frames, float delaySeconds, d
             if (!hideBuildings)
             {
                 LiveCityBuildingsLayer.Draw(camera, sim.Scene.Buildings);
+            }
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: default ON (a
+            // primary feature, same as buildings), drawn with the ground layers -- after buildings, before
+            // the road/vehicle pass -- so areas/markers/doors sit beside/behind the streets, never covering
+            // cars.
+            if (!hidePois)
+            {
+                LiveCityPoiLayer.Draw(camera, sim.Scene.Areas, sim.Scene.Pois);
             }
 
             Renderer.DrawWorldDds(camera, sim.VehicleSource.Geometry, sim.VehicleSource.TlStateByLane, draws, laneMeta);
@@ -1227,7 +1252,7 @@ static int RunLiveCitySmoke(int steps, string? recordPath, int simHz)
 // the runtime-adjustable slider in the playback panel below. Replay has no sim-hz CLI knob of its own --
 // the recording's own Dt (clock.Dt, read from the file) is displayed instead, exactly like the live
 // path's `--sim-hz` display line, just sourced from the file rather than a live LiveCityConfig.
-static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones, bool hideBuildings, int? screenshotWidth = null, int? screenshotHeight = null)
+static int RunLiveCityReplay(string replayPath, string? screenshotPath, int frames, int renderHz, bool showZones, bool hideBuildings, bool hidePois, int? screenshotWidth = null, int? screenshotHeight = null)
 {
     var clock = new PlaybackClock();
     using var fileSource = new ReplicationFileSource(replayPath, clock);
@@ -1293,6 +1318,13 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
                 showZones = !showZones;
             }
 
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: runtime toggle,
+            // replay flavor -- same "polled every frame" shape as RunLiveCity's.
+            if (global::Raylib_cs.Raylib.IsKeyPressed(global::Raylib_cs.KeyboardKey.P))
+            {
+                hidePois = !hidePois;
+            }
+
             clock.Tick(dt);
 
             fileSource.Pump();
@@ -1350,6 +1382,13 @@ static int RunLiveCityReplay(string replayPath, string? screenshotPath, int fram
             if (!hideBuildings)
             {
                 LiveCityBuildingsLayer.Draw(camera, replayScene.Buildings);
+            }
+
+            // docs/LIVE-CITY-VISUALS-NOTES.md OWNER-CONFIRMED "POI / area rendering" block: replay flavor,
+            // same default-ON/`--hide-pois`-gated draw as the live path (RunLiveCity).
+            if (!hidePois)
+            {
+                LiveCityPoiLayer.Draw(camera, replayScene.Areas, replayScene.Pois);
             }
 
             Renderer.DrawWorldDds(camera, fileSource.Geometry, fileSource.TlStateByLane, draws, replayLaneMeta);
