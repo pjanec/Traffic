@@ -9708,7 +9708,7 @@ public sealed partial class Engine : IEngine
             // link and crosses instead of teleporting. INERT for every committed golden: gated on the
             // current lane having no connection to the next route edge (a dead lane), which no golden
             // vehicle is ever on. See TryRerouteStuckDeadLane.
-            TryRerouteStuckDeadLane(v);
+            TryRerouteStuckDeadLane(v, dt);
     }
 
     // GAP-1: reroute a vehicle that is STALLED on a dead lane (its current lane cannot reach its next
@@ -9719,7 +9719,9 @@ public sealed partial class Engine : IEngine
     // unless the vehicle is on a genuine dead lane AND has stalled -- so byte-identical for every
     // committed golden (none strands on a dead lane). Execute phase, mutates only this vehicle's own
     // LaneSeq* (same discipline as TryReResolveFromActualLane).
-    private void TryRerouteStuckDeadLane(VehicleRuntime v)
+    // #15 (Engine.WrongLaneRerouteAtApproach, default off): `dt` is only used by the knob's own
+    // approach-brake-distance check below -- unread on the (byte-identical) knob-off path.
+    private void TryRerouteStuckDeadLane(VehicleRuntime v, double dt)
     {
         if (v.Arrived || v.LaneSeqIndex >= v.LaneSeqLen)
         {
@@ -9762,18 +9764,36 @@ public sealed partial class Engine : IEngine
             return;
         }
 
+        // #15 (Engine.WrongLaneRerouteAtApproach, default off = inert): when on, treat the vehicle as
+        // ripe for reroute the moment it is APPROACHING this dead lane's end -- within its own brake
+        // distance of the boundary/stop line -- instead of only after WaitingTime has piled up.
+        // Mirrors DeadLaneMergeBrakeConstraint's own usableDist/BrakeGap test (the Plan phase is
+        // already smoothly braking this vehicle toward the very same point), so "approaching" here
+        // means the same physical moment that constraint starts binding. This fires while the car is
+        // still MOVING, well before the permanent Speed=0 clamp -- and because TryRerouteStuckDeadLane
+        // runs every step (unconditionally, see its call site), a car that is still clamped after a
+        // failed attempt is retried again next step, and the one after that, etc. -- never one-shot.
+        var approachingDeadLaneEnd = false;
+        if (WrongLaneRerouteAtApproach)
+        {
+            var usableDist = currentLane.Length - v.Kinematics.Pos;
+            var brakeDist = KraussModel.BrakeGap(v.Kinematics.Speed, v.VType.Decel, headwayTime: 0.0, dt);
+            approachingDeadLaneEnd = usableDist <= brakeDist + v.Kinematics.Speed * dt;
+        }
+
         // Last-resort gate: a stalled dead-lane car held at a yield/red is rerouted only when it is
         // close to teleporting (StuckDeadLaneRerouteWaitSeconds), NOT at the boundary path's 5 s. An
         // eager stuck-reroute churns the dense case (it pipes stalled cars onto alternate corridors
         // that then jam -- measured 2x teleports 3->6). Deferring to just before time-to-teleport
         // reroutes only the cars that would otherwise teleport, leaving the rest to drain normally.
-        if (v.WaitingTime < StuckDeadLaneRerouteWaitSeconds)
+        // WrongLaneRerouteAtApproach bypasses this wait via `approachingDeadLaneEnd` above.
+        if (v.WaitingTime < StuckDeadLaneRerouteWaitSeconds && !approachingDeadLaneEnd)
         {
             return;
         }
 
         // Defer to the boundary reroute's own logic (cap + U-turn skip + cost routing); its internal
-        // 5 s gate is already satisfied here.
+        // 5 s gate (and, with the knob on, its reroute cap) is handled there -- see that method.
         TryRerouteFromDeadLane(v, currentLane, remaining);
     }
 
@@ -9927,7 +9947,13 @@ public sealed partial class Engine : IEngine
         // not on the first touch of the lane end -- see DeadLaneRerouteWaitSeconds. Below the
         // threshold, clamp this step and retry next step (WaitingTime keeps accumulating while
         // clamped).
-        if (v.WaitingTime < DeadLaneRerouteWaitSeconds)
+        // #15 (Engine.WrongLaneRerouteAtApproach, default off = inert): the knob's whole point is to
+        // reroute BEFORE the vehicle stalls -- both callers (TryReResolveFromActualLane at the
+        // physical boundary, and TryRerouteStuckDeadLane's own approach-brake-distance check) already
+        // establish the vehicle is genuinely on a dead lane and either at or approaching its end, so
+        // making it ALSO wait out DeadLaneRerouteWaitSeconds here would defeat the "at approach, not
+        // only at the lane end" requirement -- skip this wait while the knob is on.
+        if (v.WaitingTime < DeadLaneRerouteWaitSeconds && !WrongLaneRerouteAtApproach)
         {
             return false;
         }
@@ -9935,8 +9961,13 @@ public sealed partial class Engine : IEngine
         // Anti-loop hard bound: a vehicle whose every route to the destination loops back through the
         // lane it is stuck on would otherwise reroute forever (veh 58 looped 300+ times). After the
         // cap it clamps once, exactly like pre-GAP-1.
+        // #15 (WrongLaneRerouteAtApproach, default off = inert): a permanently-capped car is exactly
+        // the one-shot terminal clamp this knob exists to eliminate -- lift the cap while it is on.
+        // Safe to retry unbounded: each attempt is a fresh congestion-weighted route search (with
+        // DeadLaneDriveThrough's free-flow/any-connection fallback still available), not a blind
+        // repeat, so a genuine path is found as soon as one exists rather than never trying again.
         _deadLaneRerouteCount.TryGetValue(v.EntityIndex, out var already);
-        if (already >= MaxDeadLaneReroutes)
+        if (already >= MaxDeadLaneReroutes && !WrongLaneRerouteAtApproach)
         {
             return false;
         }
@@ -10918,6 +10949,24 @@ public sealed partial class Engine : IEngine
     // SUMO's ignore-route-errors behaviour. Guarantees a car NEVER freezes forever, so the accumulating
     // dead-lane strands that seed the live-city terminal gridlock cannot form. Set by the live-city demo.
     public bool DeadLaneDriveThrough { get; set; }
+
+    // Realism knob (NOT a SUMO default; false = off = byte-identical, the dead-lane path is already
+    // inert on every golden). Issue #15 residual: DeadLaneDriveThrough alone measured NO improvement
+    // on the terminal gridlock because the reroute attempt itself was gated too conservatively --
+    // TryRerouteFromDeadLane only ever gets a first look once a stranded car has waited
+    // DeadLaneRerouteWaitSeconds (5 s) at the physical lane end, or StuckDeadLaneRerouteWaitSeconds
+    // (90 s) short of it, and even then MaxDeadLaneReroutes (2) permanently caps it after two
+    // successful reroutes -- a wrong-lane car whose 3rd wrong-lane occurrence coincides with dense
+    // traffic clamps at Speed=0 forever. When true: (1) TryRerouteStuckDeadLane also fires the moment
+    // the vehicle is APPROACHING the dead lane's end -- within its own KraussModel.BrakeGap of the
+    // boundary, mirroring the same physical point DeadLaneMergeBrakeConstraint is already braking it
+    // toward -- instead of waiting for WaitingTime to accumulate; (2) TryRerouteFromDeadLane's
+    // DeadLaneRerouteWaitSeconds gate and MaxDeadLaneReroutes cap are both bypassed, so a clamped
+    // wrong-lane vehicle re-attempts the reroute EVERY subsequent step (TryRerouteStuckDeadLane runs
+    // unconditionally each step) until it succeeds -- never a one-shot permanent clamp. Combine with
+    // DeadLaneDriveThrough so a car always finds SOME forward connection. Set by the live-city demo;
+    // every parity/bench scenario leaves it false (inert -> byte-identical).
+    public bool WrongLaneRerouteAtApproach { get; set; }
 
     private void CommitLaneChange(VehicleRuntime v, int targetHandle, string targetId)
     {

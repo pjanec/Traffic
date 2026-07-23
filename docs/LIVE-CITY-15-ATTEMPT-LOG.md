@@ -376,3 +376,61 @@ Mechanism-gathering found the follower-cooperation channel was already built and
 later in `ComputeMoveIntent` — a determinism-safe shape (recoverable via `git show afec614`). Ego
 brake-to-wait template = the `WaitingTime` self-write/next-step-read pattern (`VehicleRuntime.cs`).
 Its retired failure mode: organic-net follower over-braking for OPTIONAL overtakes. Shelved.
+
+## DECISIVE ROOT-CAUSE PROOF (this session) — "frozen on green" = WRONG-TURN-LANE strand at the lane end
+Ran the per-car autopsy (`LIVECITY_WITNESS=1` -> `LIVECITY-STUCKCLEAR` + per-car `CAR` dumps) on the
+baseline (knob off) terminal-gridlock repro and read the individual frozen cars. Result, unambiguous:
+
+- The dominant binder among cars **stuck with a totally clear road** (Speed<0.3, own-lane gap>15 AND
+  exit-mouth>15) is **`freeFlow`** (id 3): 13-31 such cars per 20 s sample. `freeFlow` for a Krauss car
+  just returns `laneVehicleMaxSpeed` (~11-13 m/s) -- i.e. **no speed constraint is holding these cars;
+  the constraint fold says GO.** They are frozen anyway -> the hold is DOWNSTREAM of `ComputeMoveIntent`,
+  in the MOVE EXECUTOR.
+- The per-car dumps show them on **GREEN** (`tlLane=G`/`g`), **no leader** (`gap=inf`), **clear exit
+  mouth** (`exitMouth=inf`), binder `freeFlow`, and **frozen at a FIXED pos that never changes** over
+  hundreds of seconds. Examples: `e_d_4_3_d_4_4_2 pos=223.0`, `e_d_2_3_d_2_2_1 pos=223.0`,
+  `e_d_4_5_d_3_5_1 pos=233.4`.
+- **`pos` == the lane's physical length, EXACTLY** (net.xml: `e_d_4_3_d_4_4_2 length="223.00"`,
+  `e_d_4_5_d_3_5_1 length="233.40"`). So every "frozen on green" car is sitting AT THE LANE END -- it is
+  the dead-lane strand clamp (`Pos=laneLength; Speed=0`), re-applied every step. `ComputeMoveIntent`
+  keeps computing `freeFlow` (unaware of the clamp); ExecuteMoves keeps re-clamping.
+- **WHY it strands (the connection topology proves it):** edge `e_d_4_3_d_4_4` has
+  `lane 0 -> :d_4_4_w1` (pedestrian walking area ONLY, no vehicular connection),
+  `lane 1 -> d_5_4(right) + d_4_5(straight)`, `lane 2 -> d_4_5(straight) + d_3_4(left)`.
+  A car whose next route edge is the RIGHT turn (`d_5_4`) but which is on **lane 2** has **no connection
+  to its next edge** (lane 2 serves straight+left only). It drives to the lane end and freezes forever.
+  This is a **wrong-TURN-LANE** failure: the car never got sorted into the lane that serves its turn.
+
+### What this means (answers the owner's "no visible reason" directly)
+The "cars standing on green with no visible reason" ARE cars that reached a junction on a lane whose
+connections do not include their next (turn) edge. The reason is invisible in the viewer because the
+light is green and the road ahead is clear -- but the car's LANE physically cannot take it where its
+route needs to go. It is not a yield, not a leader, not a red, not box-block (`stuckInternal=0` in
+baseline): it is a **lane-assignment / strategic-lane-change parity gap**. SUMO drains the identical
+demand because SUMO sorts vehicles into a turn-compatible lane before the junction (best-lanes +
+strategic LC) and, failing that, does not permanently freeze them; our engine leaves them on the wrong
+lane and then clamps them dead.
+
+### Why the `WrongLaneRerouteAtApproach` fix (task #21) does NOT cure it (measured, subagent run)
+Generalising the reroute to fire at the approach + retry every step (Engine knob, default off; parity
+verified 657/4, bench hash `D96213B7BB4021A7` unchanged) was implemented and MEASURED:
+| t(s) | OFF arrivals / stoppedFrac | ON arrivals / stoppedFrac |
+|---|---|---|
+| 580 | 228 / 0.86 | 214 / 0.93 |
+| 940 | 257 / 0.99 | 225 / 0.99 |
+Both still go terminal; **ON is WORSE** (225 vs 258 final arrivals). Diagnostics: `strandedDeadEnd` is
+tamer with the knob on (bounded 9-14 vs 8-22), BUT `stuckInternal` (cars frozen ON an internal
+`:`-junction lane = box-blocking) goes from **0 throughout baseline** to a **sustained 14-19** with the
+knob on. I.e. rerouting the wrong-lane car earlier just drives it INTO the junction, where it then jams
+against a full downstream lane -- **relocating** the block from "clamped before the stop line" to "stuck
+inside the box," a strictly worse failure mode. So reroute-at-approach is NOT the cure; knob left in the
+engine (parity-safe, default OFF) but the LiveCityConfig default is set back to OFF (was a regression).
+
+### The real direction (SUMO-faithful)
+The cure is upstream of the strand: get the car into a **turn-compatible lane before the junction**, the
+way SUMO's best-lanes + LC2013 strategic model does (`lcStrategicLookahead=1000` in the vTypes). The gap
+to investigate next is our strategic lane-change / best-lanes lane selection under dense, long-vehicle
+(army 7-14 m) traffic: are our cars even attempting the strategic change into the turn lane, and if so
+why do they fail where SUMO succeeds on the identical params? That is the parity gap to close; the
+dead-lane clamp is only the symptom of un-sorted cars. This is real engine work (LC/best-lanes), not a
+scoped knob -- next session's target.

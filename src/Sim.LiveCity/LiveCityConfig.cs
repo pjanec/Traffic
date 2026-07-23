@@ -57,6 +57,19 @@ public sealed class LiveCityConfig
     // knob (SUMO ignore-route-errors), not a demo default. off = SUMO-parity clamp.
     public bool DeadLaneDriveThrough { get; set; } = false;
 
+    // Issue #15: generalises TryReResolveFromActualLane/TryRerouteFromDeadLane to fire while a
+    // wrong-lane car is still APPROACHING the junction (within its own brake distance of the dead
+    // lane's end) and to retry every step rather than permanently one-shot-capping after
+    // MaxDeadLaneReroutes -- see Engine.WrongLaneRerouteAtApproach's own header comment for the full
+    // mechanism. MEASURED (docs/LIVE-CITY-15-ATTEMPT-LOG.md, "frozen on green" proof): does NOT cure the
+    // terminal gridlock -- it REGRESSES it (arrivals 258->225, and box-blocking `stuckInternal` 0->14-19)
+    // because rerouting the wrong-turn-lane car earlier just drives it INTO the junction where it jams
+    // against a full downstream lane, relocating the block instead of clearing it. The real cure is
+    // upstream (sort the car into a turn-compatible lane before the junction, SUMO best-lanes/strategic
+    // LC), not this reroute. Left as a parity-safe, DEFAULT-OFF experimental knob; the underlying Engine
+    // property is false on every scenario/bench path (byte-identical). Overridable via LIVECITY_WRONGLANE.
+    public bool WrongLaneRerouteAtApproach { get; set; } = false;
+
     public int CarSpawnPerStep { get; set; } = 5;
 
     // step-length 0.5 == the ped/frame Dt, so cars and peds advance the same sim-time per Step().
@@ -123,6 +136,14 @@ public sealed class LiveCityConfig
         if (double.TryParse(Environment.GetEnvironmentVariable("LIVECITY_TELEPORT"), out var tel) && tel >= 0.0)
         {
             cfg.TimeToTeleportSeconds = tel;
+        }
+
+        // Default OFF (measured regression, see the property's header); only an explicit
+        // LIVECITY_WRONGLANE toggles it: "0" forces off, anything else forces on for experimentation.
+        var wrongLaneEnv = Environment.GetEnvironmentVariable("LIVECITY_WRONGLANE");
+        if (wrongLaneEnv != null)
+        {
+            cfg.WrongLaneRerouteAtApproach = wrongLaneEnv != "0";
         }
 
         // LIVECITY_HZ: same env-knob convention as LIVECITY_CARS/LCMIN above, expressed in Hz (via

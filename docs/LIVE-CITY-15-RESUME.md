@@ -4,10 +4,20 @@
 investigation and the in-flight fix. Companion trail (full detail, newest at bottom):
 `docs/LIVE-CITY-15-ATTEMPT-LOG.md`. Diagnosis of record: `docs/DENSE-FLOW-THROUGHPUT-DIAGNOSIS.md`.
 
-Branch: **`claude/livecity-15-turnlane-segregation`**. Last commit I pushed: **`dce80db`** (the pivotal
-SUMO-vs-engine finding). **An implementer subagent is IN FLIGHT** building the fix (has already edited
-`LiveCityConfig.cs`, `LiveCitySim.cs`, and `Engine.cs` — knob `WrongLaneRerouteAtApproach`); its result
-was NOT yet reviewed/committed by me when this doc was written. Check `git status` + the agent's report.
+Branch: **`claude/livecity-15-turnlane-segregation`**.
+
+> **UPDATE (root cause now PROVEN at the per-car level; the task-#21 reroute fix was measured and does
+> NOT cure it — it regresses).** The "cars frozen on green with no visible reason" are cars sitting at
+> `pos == laneLength` (the physical lane end) whose lane has **no connection to their next (turn) route
+> edge** — a **wrong-turn-lane strand**, permanently clamped `Speed=0`. Proven by the `LIVECITY-STUCKCLEAR`
+> per-car dumps (binder=`freeFlow`, i.e. no speed constraint holds them — the MOVE EXECUTOR does) + the
+> net.xml connection topology (e.g. edge `e_d_4_3_d_4_4`: lane 2 serves straight+left only, so a car
+> needing the right turn `d_5_4` on lane 2 can never proceed). `Engine.WrongLaneRerouteAtApproach`
+> (reroute at approach) was implemented parity-safe (657/4, bench hash unchanged) but MEASURED to make it
+> WORSE (arrivals 258→225, `stuckInternal` 0→14-19 box-blocking) — knob kept, **default OFF**. The real
+> cure is upstream: sort cars into a turn-compatible lane before the junction (SUMO best-lanes/strategic
+> LC). See `docs/LIVE-CITY-15-ATTEMPT-LOG.md` bottom section for the full proof + numbers. That LC gap is
+> the next target (real engine work, not a knob).
 
 ---
 
