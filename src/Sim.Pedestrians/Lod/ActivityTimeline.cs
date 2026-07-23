@@ -122,6 +122,14 @@ public sealed class ActivityTimeline
     // interface breathes, it does not swing the whole corridor.
     private const double CenterShiftFrac = 0.35;
 
+    // Pedestrian junction-turn back-step fix (docs/LIVE-CITY-VISUALS-NOTES.md-adjacent; see
+    // PathArcMotion.WeaveAxisAt's remarks for the full mechanism): the arc-length window, straddling
+    // every interior route vertex, over which the weave's projection tangent blends between the two bounding
+    // segments' bisector instead of snapping. Small relative to WeaveParams.Default's WavelengthMeters (55m)
+    // and any real sidewalk/crossing leg length, so it only ever smooths the corner itself -- it never reaches
+    // into a segment's own interior weave behaviour.
+    private const double CornerBlendMeters = 0.75;
+
     public ActivityTimeline(double t0, IReadOnlyList<ActivitySegment> segments, ulong seed = 0, ulong globalSeed = 0)
     {
         if (segments.Count == 0)
@@ -300,7 +308,17 @@ public sealed class ActivityTimeline
                     }
 
                     var off = LateralWeave.Offset(sClamped, routeLen, Seed, room, WeaveParams.Default);
-                    centre += tangent.PerpCW * (c + off); // positive == the ped's right side
+
+                    // Junction-turn back-step fix: project the weave along the CORNER-BLENDED, self-
+                    // shrinking axis (PathArcMotion.WeaveAxisAt's remarks), not the raw (vertex-discontinuous,
+                    // always-unit) `tangent` above -- `heading` (already captured) still reports the sharp
+                    // per-segment direction, unaffected. Its magnitude is <= 1 by construction (never > the
+                    // pre-fix lateral distance), collapsing to exactly 0 only at a near-reversal turn, so no
+                    // fallback/Zero-guard is needed here (Vec2.Zero.PerpCW is itself Zero -- a harmless
+                    // "no lateral offset AT a full reversal" rather than a divide-by-zero).
+                    var weaveAxis = PathArcMotion.WeaveAxisAt(w.Path, sClamped, CornerBlendMeters);
+
+                    centre += weaveAxis.PerpCW * (c + off); // positive == the ped's right side
                 }
 
                 return new PoseSample(centre, heading, WalkAnimTag, true);
