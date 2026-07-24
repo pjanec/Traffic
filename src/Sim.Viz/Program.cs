@@ -75,6 +75,7 @@ internal static class Program
             "--live-city-demo" => RunLiveCityDemo(args),
             "--live-city-yielddump" => RunLiveCityYieldDump(args),
             "--live-city-yieldtrace" => RunLiveCityYieldTrace(args),
+            "--live-city-orcatrace" => RunLiveCityOrcaTrace(args),
             "--engine-replay" => RunEngineReplay(args),
             "--ped-remote" => RunPedRemote(args),
             "--ped-subarea-fcd" => RunPedSubareaFcd(args),
@@ -516,6 +517,92 @@ internal static class Program
         return 0;
     }
 
+    // DEFECT-#1 residual: ORCA (high-power) peds driven through ANYWHERE, incl. mid-JUNCTION (on a walking-
+    // area, NOT a marked crossing polygon) -- which the crossing-polygon yieldtrace metric misses. Runs the
+    // real LiveCitySim at whatever LIVECITY_PEDS density and classifies every MOVING car whose front bumper is
+    // over an ORCA ped: split by lane type (internal ':' junction lane vs normal), speed, and whether the
+    // crowd-brake engaged (binder==13). Optional arg 2 = a vehicle id (e.g. __veh24) -> full per-tick dump of
+    // that car whenever it is near an ORCA ped, to localize the owner's exact repro.
+    private static int RunLiveCityOrcaTrace(string[] args)
+    {
+        var steps = args.Length >= 2 && int.TryParse(args[1], out var s) ? s : 400;
+        var focusCar = args.Length >= 3 ? args[2] : null;
+        var cfg = Sim.LiveCity.LiveCityConfig.ForRepoRoot(RepoRoot());
+        using var sim = new Sim.LiveCity.LiveCitySim(cfg);
+        var dt = cfg.Dt;
+        const double PedR = 0.3;
+
+        var prev = new Dictionary<Sim.Core.VehicleHandle, (double X, double Y)>();
+        long through = 0, throughInternal = 0, throughFast = 0, throughNoBrake = 0;
+        var worst = new List<(double T, string Car, double Spd, string Lane, byte Binder, int Discs, double Lat, double Along)>();
+
+        for (var step = 0; step < steps; step++)
+        {
+            sim.Step();
+            var snap = sim.Sample();
+            var t = (step + 1) * dt;
+            var wit = new Dictionary<Sim.Core.VehicleHandle, Sim.LiveCity.LiveCitySim.CarAuthWitness>();
+            foreach (var w in sim.WitnessAuthoritative()) wit[w.Handle] = w;
+
+            // ORCA (high-power) peds this tick
+            var orca = new List<(double X, double Y)>();
+            foreach (var p in snap.Peds) if (p.Regime == Sim.LiveCity.PedRegime.HighPower) orca.Add((p.X, p.Y));
+            if (orca.Count == 0) { prev.Clear(); foreach (var c in snap.Cars) prev[c.Handle] = (c.X, c.Y); continue; }
+
+            foreach (var c in snap.Cars)
+            {
+                if (!prev.TryGetValue(c.Handle, out var pp)) continue;
+                var fx = c.X - pp.X; var fy = c.Y - pp.Y;
+                var fn = Math.Sqrt((fx * fx) + (fy * fy));
+                var spd = wit.TryGetValue(c.Handle, out var wv) ? wv.Speed : fn / dt;
+                if (fn < 1e-3 || spd < 0.5) continue;
+                var ux = fx / fn; var uy = fy / fn;
+                var halfW = c.Width * 0.5; var halfLen = c.Length * 0.5;
+                var lane = wv.LaneId ?? "";
+                var isInternal = lane.StartsWith(":");
+                var isFocus = focusCar != null && c.Name == focusCar;
+
+                double bestAlong = double.PositiveInfinity, bestLat = 0; var nearAhead = false;
+                foreach (var (px, py) in orca)
+                {
+                    var vx = px - c.X; var vy = py - c.Y;
+                    var along = (vx * ux) + (vy * uy);
+                    var lat = Math.Abs((vx * (-uy)) + (vy * ux));
+                    if (along > 0 && along < 12.0 && lat < 3.0 && along < bestAlong) { bestAlong = along; bestLat = lat; nearAhead = true; }
+                    if (along > -0.5 && along < halfLen + PedR && lat < halfW + PedR)
+                    {
+                        through++;
+                        if (isInternal) throughInternal++;
+                        if (spd >= 4.0) throughFast++;
+                        if (wv.Binder != 13) throughNoBrake++;
+                        if (worst.Count < 20)
+                        {
+                            var (hi, oc) = sim.CrowdDiscCountsNear(c.X, c.Y, spd * 3.0 + 2.5 + 2.0 * c.Length + 5.0);
+                            worst.Add((t, c.Name, spd, lane, wv.Binder, hi + oc, lat, along));
+                        }
+                    }
+                }
+
+                if (isFocus && nearAhead)
+                {
+                    var (hi, oc) = sim.CrowdDiscCountsNear(c.X, c.Y, spd * 3.0 + 2.5 + 2.0 * c.Length + 5.0);
+                    Console.WriteLine($"  FOCUS {focusCar} t={t:F1} spd={spd:F1} lane={lane} internal={isInternal} "
+                        + $"binder={wv.Binder} discs={hi + oc} nearestOrca(along={bestAlong:F1} lat={bestLat:F2})");
+                }
+            }
+
+            prev.Clear();
+            foreach (var c in snap.Cars) prev[c.Handle] = (c.X, c.Y);
+        }
+
+        Console.WriteLine($"LIVECITY-ORCATRACE: steps={steps} ({steps * dt:F0}s) LIVECITY_PEDS density-dependent");
+        Console.WriteLine($"  ORCA drive-through ticks (moving car bumper over an ORCA ped, ANY location) = {through}");
+        Console.WriteLine($"    on INTERNAL (junction) lane = {throughInternal}  |  FAST(>=4 m/s) = {throughFast}  |  crowd-brake NOT engaged (binder!=13) = {throughNoBrake}");
+        foreach (var w in worst)
+            Console.WriteLine($"    t={w.T:F1} car={w.Car} spd={w.Spd:F1} lane={w.Lane} binder={w.Binder} discsNear={w.Discs} lat={w.Lat:F2} along={w.Along:F2}");
+        return 0;
+    }
+
     private static int RunLiveCityDemo(string[] args)
     {
         if (args.Length < 2)
@@ -525,6 +612,7 @@ internal static class Program
         }
 
         var outPath = args[1];
+        var steps = args.Length >= 3 && int.TryParse(args[2], out var st) && st > 0 ? st : 160; // optional duration
         using var source = new LiveCitySource(RepoRoot());
         var opts = new VizReplayOptions(
             "Live-city DEMO (faithful, DR-smoothed): cars + peds, real LiveCityConfig",
@@ -534,7 +622,8 @@ internal static class Program
             + "DrClock + KinematicReconstructor (center + emitted heading + upcoming-lane look-ahead: "
             + "continuous junction arcs, no facet-snaps), peds via PedRemoteReconstructor (analytic playout, "
             + "no tick kink). Grey = low-power ped, orange = promoted full-ORCA, yellow = paused; boxes = "
-            + "cars. A fix verified in this replay transfers directly to the demo.");
+            + "cars. A fix verified in this replay transfers directly to the demo.",
+            Steps: steps);
         var scene = VizReplayBuilder.Build(source, opts);
         var payload = new ReplayData(new[] { scene });
         if (!WriteHtml(payload, scene.Name, outPath))

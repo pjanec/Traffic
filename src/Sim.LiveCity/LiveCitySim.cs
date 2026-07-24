@@ -264,9 +264,15 @@ public sealed class LiveCitySim : IDisposable
         _engine.DiagLaneChangeLog = Environment.GetEnvironmentVariable("LIVECITY_LCLOG") == "1"; // #15 float/swap analysis
         _vtype = _engine.DefineVType(new VTypeParams { VClass = "passenger", Sigma = 0.0 });
 
-        _engine.CrowdSource = cfg.YieldEnabled
-            ? new CompositeFootprintSource(_manager.HighPowerFootprints, _crossingOccupancy)
+        // ORCA peds present to the vehicle crowd-brake via HighPowerFootprints, optionally inflated so a car
+        // "sees" and preventively slows for an ORCA ped anywhere (incl. mid-junction), surviving the internal-
+        // lane projection error (realism #1). Velocity preserved -> follows a walking ORCA ped, no dead stop.
+        Sim.Core.Bridge.ICrowdFootprintSource orcaFootprints = cfg.OrcaFootprintExtraRadius > 0.0
+            ? new InflatedFootprintSource(_manager.HighPowerFootprints, cfg.OrcaFootprintExtraRadius)
             : _manager.HighPowerFootprints;
+        _engine.CrowdSource = cfg.YieldEnabled
+            ? new CompositeFootprintSource(orcaFootprints, _crossingOccupancy)
+            : orcaFootprints;
 
         var routeEdges = ReadDrivableEdges(Path.Combine(cfg.DatasetDir, "scenario.rou.xml"));
         _cropEdges = new List<(string Id, int Lane)>();

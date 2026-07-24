@@ -79,9 +79,21 @@ public sealed class LiveCityConfig
     // false = ORCA peds gate cars via footprint only. Overridable via LIVECITY_GATE_ORCA (1 = on).
     // DEFAULT OFF: measured to cut car throughput ~15% (velocity-0 gate over-brakes a walking ORCA ped) for
     // little nose-in gain once the crowd-disc query cap is fixed (that un-truncation alone cut ORCA nose-ins
-    // 11->3 at 10x density). The proper ORCA fix -- a velocity-PRESERVING wide vehicle-facing footprint -- is
-    // a follow-up; this knob stays for experimentation.
+    // 11->3 at 10x density). Superseded by OrcaFootprintExtraRadius below (velocity-preserving); kept for A/B.
     public bool GateOrcaPedsOnCrossing { get; set; } = false;
+
+    // realism #1 (mid-junction ORCA): inflate the ORCA ped's VEHICLE-FACING footprint disc by this many
+    // metres (InflatedFootprintSource), so a car "sees" and preventively slows for an ORCA ped ANYWHERE --
+    // including the junction interior, not just marked crossings -- from farther out, and the wider corridor
+    // survives the lane-projection error that lets a fast car drive through an ORCA ped on a curved internal
+    // junction lane. Velocity is PRESERVED (unlike the velocity-0 crossing gate), so the car follows a walking
+    // ORCA ped's motion rather than stopping dead. 0.6 -> a 0.3 m footprint becomes 0.9 m (corridor half
+    // egoHalf+0.9 = 1.8 m, well < 4 m lane spacing). 0 = off (footprint only). Overridable via
+    // LIVECITY_ORCA_RADIUS. 0.6 chosen by A/B sweep: drives ORCA drive-throughs (incl. mid-junction) to ZERO
+    // AND RAISES car throughput (490->684 at 1x/2000 steps -- preventive smooth slowing avoids the abrupt
+    // junction conflicts that stall flow). 0.8+ over-brakes and cliffs throughput (372), so 0.6 sits safely
+    // below that edge.
+    public double OrcaFootprintExtraRadius { get; set; } = 0.6;
 
     // docs/LIVE-CITY-15-YIELD-TIMEOUT-DESIGN.md: after this many seconds waiting at a junction, a car
     // forces its gap through APPROACHING cross-traffic (impatience) instead of yielding forever -- the
@@ -215,6 +227,11 @@ public sealed class LiveCityConfig
         if (gateOrcaEnv != null)
         {
             cfg.GateOrcaPedsOnCrossing = gateOrcaEnv != "0";
+        }
+
+        if (double.TryParse(Environment.GetEnvironmentVariable("LIVECITY_ORCA_RADIUS"), out var orcaR) && orcaR >= 0.0)
+        {
+            cfg.OrcaFootprintExtraRadius = orcaR;
         }
 
         if (double.TryParse(Environment.GetEnvironmentVariable("LIVECITY_YIELDTIMEOUT"), out var yto) && yto >= 0.0)
