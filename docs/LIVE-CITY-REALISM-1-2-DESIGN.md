@@ -109,3 +109,34 @@ defensively.
 **Residual:** 1 ORCA nose-in — a promotion/footprint-timing edge (a ped around promotion isn't in
 `HighPowerFootprints` for a tick). Out of scope here; folded into realism defects **#3/#4** (ped LOD
 transitions).
+
+---
+
+## 4. Density robustness (owner stress-test at 10× ped density)
+
+At 10× ped density (`LIVECITY_PEDS=1600`) the r=1.5 fix regressed badly — nose-in **28** (15 *fast* ≥4 m/s,
+median 6.5 m/s), i.e. cars driving *through* both low-power and ORCA peds. The trace (`--live-city-yieldtrace`
++ `LiveCitySim.CrowdDiscCountsNear`) localized two density-only bugs:
+
+- **(C) The engine's crowd-disc query cap.** `CrowdLongitudinalConstraint` (and the B6 swerve-synthesis site)
+  read at most **16** discs into a `stackalloc WorldDisc[16]`. At 10× a car has a **median 39 / max 131**
+  crowd discs in range, so the in-path disc was truncated away **25/28** nose-ins → the car never braked.
+  Fix: `Engine.MaxCrowdDiscs = 256` at both query sites. **Parity-inert** — every crowd query is gated on
+  `CrowdSource != null`, null on every golden/bench, so the buffer is never even allocated there (verified
+  `657/4` + bench `D96213B7BB4021A7` unchanged after the edit). This is the load-bearing density fix.
+
+- **(D) ORCA peds fed only as their 0.3 m physics footprint** (`OrcaCrowd.QueryNear`) → same narrow-corridor
+  late-trigger. `LiveCityConfig.GateOrcaPedsOnCrossing` (env `LIVECITY_GATE_ORCA`) would also feed ORCA
+  peds on a crossing to the wide occupancy gate. **Defaulted OFF:** the occupancy disc is velocity-0, so it
+  makes a car fully STOP for an ORCA ped merely walking across → measured ~15 % car-throughput loss (the
+  `DenseFlow` liveness guard drops 490→418) for little gain, because fix (C) alone already cut ORCA nose-ins
+  **11→3** at 10×. The *proper* ORCA fix — a velocity-PRESERVING wide vehicle-facing footprint (so the car
+  brakes with margin but follows the ped's motion rather than stopping dead) — is a **follow-up** (realism
+  #3/#4 neighbourhood); the knob stays for experimentation.
+
+**Result (10×, shipped = C on, D off):** nose-in **28 → 5**, of which **0 fast** (median 1.3 m/s — a slow
+tail of "ped steps onto the zebra right in front of a committed car", not drive-throughs). 1× stays at
+**0**. Car throughput preserved (`DenseFlow` 490 ≥ 450 guard).
+
+Regression guard: `tests/Sim.LiveCity.Tests` `CrossingYield_HoldsUnderHighPedDensity_NoMassDriveThrough`
+(10× density, nose-in ≤ 12; pre-fix was 28). `DenseFlow_...NoGridlock` guards the throughput side.

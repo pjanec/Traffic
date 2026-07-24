@@ -8569,6 +8569,16 @@ public sealed partial class Engine : IEngine
     // Gated on CrowdSource != null -> +Infinity (inert) for every scenario without a coupling attached,
     // so byte-identical (no committed golden sets CrowdSource). Uses the neutral world-disc seam +
     // LaneProjection, NOT the string ExternalObstacle store.
+    // Crowd-disc query buffer size. QueryNear writes at most this many discs into the ego's stackalloc span;
+    // if MORE crowd agents sit within the query radius, the surplus is silently dropped -- and with it the
+    // in-path agent the car must brake/swerve for, so at high crowd density a car sails through a pedestrian
+    // it never "saw" (measured: at 10x live-city ped density, a car has a median 39 / max 131 crowd discs in
+    // range, so the old cap of 16 truncated the in-path disc ~90% of the time). 256 covers realistic demo
+    // densities with headroom (40 B/disc -> 10 KB stackalloc, safe). PARITY-INERT: every crowd query is gated
+    // on CrowdSource != null, which is null for every committed golden and the bench, so this buffer is never
+    // even allocated on the parity path -- byte-identical (verified: 657/4 + bench hash unchanged).
+    private const int MaxCrowdDiscs = 256;
+
     private double CrowdLongitudinalConstraint(VehicleRuntime v, double time, double laneVehicleMaxSpeed)
     {
         if (CrowdSource is null)
@@ -8581,7 +8591,7 @@ public sealed partial class Engine : IEngine
         var (egoX, egoY, _) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos, v.Kinematics.LatOffset);
         var radius = v.Kinematics.Speed * 3.0 + v.VType.MinGap + 2.0 * v.VType.Length + 5.0;
 
-        Span<Sim.Core.Bridge.WorldDisc> discs = stackalloc Sim.Core.Bridge.WorldDisc[16];
+        Span<Sim.Core.Bridge.WorldDisc> discs = stackalloc Sim.Core.Bridge.WorldDisc[MaxCrowdDiscs];
         var got = CrowdSource.QueryNear(egoX, egoY, radius, discs);
 
         var nearestBack = double.PositiveInfinity;
@@ -9195,7 +9205,7 @@ public sealed partial class Engine : IEngine
         {
             var (egoWX, egoWY, _) = LaneGeometry.PositionAtOffset(lane.Shape, v.Kinematics.Pos, 0.0);
             var crowdLookahead = v.Kinematics.Speed * SwervePredictionHorizon + v.VType.Length + v.VType.MinGap + 5.0;
-            Span<Sim.Core.Bridge.WorldDisc> discs = stackalloc Sim.Core.Bridge.WorldDisc[16];
+            Span<Sim.Core.Bridge.WorldDisc> discs = stackalloc Sim.Core.Bridge.WorldDisc[MaxCrowdDiscs];
             var got = CrowdSource.QueryNear(egoWX, egoWY, crowdLookahead, discs);
             for (var d = 0; d < got; d++)
             {

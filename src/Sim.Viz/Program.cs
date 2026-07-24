@@ -393,6 +393,7 @@ internal static class Program
         long noseAccelerating = 0;   // car SPED UP vs previous tick during the nose-in (lunge signature)
         long noseRegLowWalk = 0, noseRegHigh = 0, noseRegPaused = 0;   // regime of the ped nosed-over
         long noseFed = 0, noseNotFed = 0;   // was the nosed-over ped actually in the occupancy feed this tick?
+        long noseTruncatable = 0; var noseDiscCounts = new List<double>();   // crowd discs near the car > engine's 16-cap?
         var prevSpeed = new Dictionary<Sim.Core.VehicleHandle, double>();
 
         for (var step = 0; step < steps; step++)
@@ -445,6 +446,11 @@ internal static class Program
                             else if (reg == Sim.LiveCity.PedRegime.HighPower) noseRegHigh++;
                             else noseRegPaused++;
                             if (sim.IsOccupancyMarkedAt(px, py)) noseFed++; else noseNotFed++;
+                            // truncation probe: total crowd discs within the engine's query radius for this car
+                            var qr = spd * 3.0 + 2.5 + 2.0 * c.Length + 5.0;
+                            var (hi, oc) = sim.CrowdDiscCountsNear(c.X, c.Y, qr);
+                            noseDiscCounts.Add(hi + oc);
+                            if (hi + oc > 16) noseTruncatable++;
                         }
                     }
 
@@ -504,6 +510,8 @@ internal static class Program
             + $"neverBraked={noseNoBrake}  |  car ACCELERATING during nose-in={noseAccelerating}");
         Console.WriteLine($"    nosed-over ped REGIME: lowPowerWalking={noseRegLowWalk}  highPower/ORCA={noseRegHigh}  paused={noseRegPaused}");
         Console.WriteLine($"    nosed-over ped IN occupancy feed: fed={noseFed}  NOT-fed(invisible to cars)={noseNotFed}");
+        Console.WriteLine($"    TRUNCATION probe: nose-ins where crowd-discs-near-car > engine's 16-cap = {noseTruncatable}  "
+            + $"(disc count near car: median={Median(noseDiscCounts):F0} max={(noseDiscCounts.Count > 0 ? Max(noseDiscCounts) : 0):F0})");
         Console.WriteLine($"  THROUGHPUT: carArrivedTotal={sim.ArrivedTotal} peakOccupiedCrossings={sim.PeakOccupiedCrossings} "
             + $"gateRadius={cfg.CrossingGateRadius:F2} gatePaused={cfg.GatePausedPedsOnCrossing}");
         Console.WriteLine("  worst onsets (brake first engaged here):");

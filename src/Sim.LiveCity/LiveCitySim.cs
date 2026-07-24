@@ -472,17 +472,26 @@ public sealed class LiveCitySim : IDisposable
         _demand.Step(_now, dt, _field, NoEntities);
         var tNext = _now + dt;
 
-        // (c) gather this tick's low-power ped positions for the crossing-occupancy gate. realism #1/#2 fix
-        // (A): include peds PAUSED on a crossing (AnimTag != Walk), not just walking ones -- a ped standing on
-        // a crosswalk is more reason to yield, and dropping them was the biggest car-drives-over-ped bucket.
-        // The occupancy source's polygon test still restricts discs to peds actually ON a crossing, so feeding
-        // an idle ped standing on the SIDEWALK costs one bbox reject and marks nothing. ORCA (promoted) peds
-        // are excluded here -- they gate cars via HighPowerFootprints already.
+        // (c) gather this tick's ped positions for the crossing-occupancy gate. The occupancy source's
+        // point-in-polygon test restricts discs to peds actually ON a crossing, so this over-feeds cheaply
+        // (one bbox reject per off-crossing ped) and the gate stays correct. Two realism #1/#2 fixes:
+        //  (A) include peds PAUSED on a crossing (AnimTag != Walk), not just walking ones -- a ped standing on
+        //      a crosswalk is more reason to yield, not less.
+        //  (ORCA) ALSO feed high-power (promoted/ORCA) peds. They gate cars via HighPowerFootprints too, but
+        //      that disc is the ped's 0.3 m PHYSICS radius, which only enters the car's ~1.2 m wheel corridor
+        //      when the ped is nearly in front -> the car noses over an ORCA ped on a crossing (rampant at
+        //      high density). Feeding them here gives an ORCA ped on a crossing the same wide CrossingGateRadius
+        //      gate disc as a low-power one, so the car brakes for it in time. Off-crossing ORCA peds still
+        //      only carry their footprint (no gate disc), so free-road ORCA avoidance is unchanged.
         _movingLowPowerPositions.Clear();
         foreach (var id in _demand.LiveIds)
         {
-            if (_manager.ModelOf(id) == PedDrModel.FreeKinematic) continue;
-            if (!_cfg.GatePausedPedsOnCrossing
+            var isOrca = _manager.ModelOf(id) == PedDrModel.FreeKinematic;
+            if (isOrca)
+            {
+                if (!_cfg.GateOrcaPedsOnCrossing) continue;   // ORCA peds gate via footprint only
+            }
+            else if (!_cfg.GatePausedPedsOnCrossing
                 && _manager.AnimTagOf(id, tNext) != ActivityTimeline.WalkAnimTag)
             {
                 continue;   // stock behaviour: walking low-power peds only
@@ -583,6 +592,18 @@ public sealed class LiveCitySim : IDisposable
     // #realism-1 diagnostic: is world point (x,y) actually INSIDE a crossing polygon (independent of the
     // occupancy feed)? Distinguishes a ped genuinely on a crosswalk from one merely near a junction.
     public bool IsOnCrossingPolygon(double x, double y) => _crossingOccupancy.IsInsideAnyCrossing(x, y);
+
+    // #realism-1 density diagnostic: how many crowd discs (ORCA footprints + crossing-occupancy gates) sit
+    // within `radius` of (x,y)? The engine's CrowdLongitudinalConstraint reads at most 16 into a stackalloc
+    // span, so if the TRUE count here exceeds 16 the in-path disc can be truncated away -> the car never
+    // brakes for it. Returns (highPowerFootprints, occupancyGates); sum > 16 flags the truncation risk.
+    public (int High, int Occ) CrowdDiscCountsNear(double x, double y, double radius)
+    {
+        Span<WorldDisc> buf = stackalloc WorldDisc[512];
+        var high = _manager.HighPowerFootprints.QueryNear(x, y, radius, buf);
+        var occ = _crossingOccupancy.QueryNear(x, y, radius, buf);
+        return (high, occ);
+    }
 
     // Increment once per occupied crossing disc that has at least one car within 10 m braking (Speed <
     // 2.0 m/s) beside it -- the "car stopped for a ped on a crosswalk" proxy. A ped's own moving-low-power

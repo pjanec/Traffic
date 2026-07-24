@@ -481,4 +481,35 @@ public class LiveCitySimTests
         Assert.True(fixedNose * 2 < stockNose,
             $"crossing-yield fix lost its margin: fixed={fixedNose} stock={stockNose} (want fixed*2 < stock)");
     }
+
+    // Realism #1/#2 at HIGH ped density -- the guard for the two density-only bugs the 1x test can't see:
+    //  (i)  the engine's crowd-disc query cap (was 16): at 10x density a car has a median ~39 / max ~131 crowd
+    //       discs in range, so the in-path disc was truncated away and the car drove THROUGH the ped;
+    //  (ii) ORCA peds on a crossing were fed only as their 0.3 m physics footprint (narrow wheel corridor).
+    // With MaxCrowdDiscs=256 + ORCA peds fed to the wide crossing gate, nose-ins at 10x drop from 28 (15 of
+    // them FAST >=4 m/s) to a handful of slow (~1.3 m/s) tail cases. Deterministic (seed+config fixed).
+    // One 400-step run at 1600 peds -- heavier than the 1x test, but still a few seconds headless.
+    [Fact]
+    public void CrossingYield_HoldsUnderHighPedDensity_NoMassDriveThrough()
+    {
+        var cfg = LiveCityConfig.ForRepoRoot(RepoRoot());
+        cfg.CarTargetConcurrent = 160;
+        cfg.TimeToTeleportSeconds = 0.0;
+        cfg.Dt = 0.5;
+        cfg.YieldEnabled = true;
+        cfg.PedPopulationCap = 1600;              // 10x the shipped 160
+        cfg.PedSpawnRatePerSecond = 80.0;         // matches ForRepoRoot's LIVECITY_PEDS scaling (8 * peds/160)
+        // shipped fix defaults (assert they're what we think, so a default change can't silently weaken this)
+        Assert.Equal(1.5, cfg.CrossingGateRadius);
+        Assert.True(cfg.GatePausedPedsOnCrossing);
+
+        var nose = CountCrossingNoseIns(cfg, 400);
+
+        // At 10x, the pre-fix engine truncated in-path discs and drove through ~28 crossing peds (15 fast).
+        // The fix keeps it to a small slow tail; 12 sits well below the broken regime with margin for the
+        // finite-difference metric's noise.
+        Assert.True(nose <= 12,
+            $"HIGH-DENSITY crossing-yield regression: {nose} nose-ins at 10x ped density (fixed target <=12; the "
+            + "pre-fix engine 16-disc truncation + ORCA point-disc drove through ~28, 15 of them fast)");
+    }
 }

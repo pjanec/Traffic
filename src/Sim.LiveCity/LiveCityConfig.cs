@@ -70,6 +70,19 @@ public sealed class LiveCityConfig
     // stock (walking-only). Overridable via LIVECITY_GATE_PAUSED (0 = off).
     public bool GatePausedPedsOnCrossing { get; set; } = true;
 
+    // realism #1 (density) fix: also feed HIGH-power (ORCA) peds on a crossing to the wide occupancy gate, not
+    // just their 0.3 m ORCA physics footprint. The footprint's narrow radius only enters a car's ~1.2 m wheel
+    // corridor when the ORCA ped is nearly in front -> cars nose over ORCA peds on crossings (rampant at high
+    // density). Feeding them here gives the wide CrossingGateRadius gate. Trade-off: the gate disc is velocity
+    // 0 (a car treats it as a STOPPED obstacle and waits), which over-brakes for an ORCA ped merely walking
+    // across -- measured to cost car throughput. Off-crossing ORCA peds are unaffected (footprint only).
+    // false = ORCA peds gate cars via footprint only. Overridable via LIVECITY_GATE_ORCA (1 = on).
+    // DEFAULT OFF: measured to cut car throughput ~15% (velocity-0 gate over-brakes a walking ORCA ped) for
+    // little nose-in gain once the crowd-disc query cap is fixed (that un-truncation alone cut ORCA nose-ins
+    // 11->3 at 10x density). The proper ORCA fix -- a velocity-PRESERVING wide vehicle-facing footprint -- is
+    // a follow-up; this knob stays for experimentation.
+    public bool GateOrcaPedsOnCrossing { get; set; } = false;
+
     // docs/LIVE-CITY-15-YIELD-TIMEOUT-DESIGN.md: after this many seconds waiting at a junction, a car
     // forces its gap through APPROACHING cross-traffic (impatience) instead of yielding forever -- the
     // "driver who didn't notice the gap, then recovers" behaviour. 0 = off (SUMO-parity). Only affects
@@ -196,6 +209,12 @@ public sealed class LiveCityConfig
         if (gatePausedEnv != null)
         {
             cfg.GatePausedPedsOnCrossing = gatePausedEnv != "0";
+        }
+
+        var gateOrcaEnv = Environment.GetEnvironmentVariable("LIVECITY_GATE_ORCA");
+        if (gateOrcaEnv != null)
+        {
+            cfg.GateOrcaPedsOnCrossing = gateOrcaEnv != "0";
         }
 
         if (double.TryParse(Environment.GetEnvironmentVariable("LIVECITY_YIELDTIMEOUT"), out var yto) && yto >= 0.0)

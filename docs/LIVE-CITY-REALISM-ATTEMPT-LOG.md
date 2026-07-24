@@ -250,3 +250,23 @@ flow). **Literal polygon-gating was rejected** — the junction-sized polys woul
 (stock nose-in ≥5, fixed ≤3, fixed*2<stock — a guard the parity gate structurally cannot provide).
 **Residual = 1 ORCA nose-in** (promotion/footprint-timing) → folded into defects #3/#4. NEXT (owner): confirm
 the HTML replay (cars stop at occupied crossings), then move to #3/#4.
+
+### DEFECT #1 — DENSITY regression (owner 10x stress-test): "cars drive through ORCA AND low-power peds like crazy"
+At `LIVECITY_PEDS=1600` (10x) the r=1.5 fix FAILED: `--live-city-yieldtrace 400` → nose-in **28** (15 FAST
+≥4 m/s, median 6.5 m/s). Two density-only root causes, both proven from entity state:
+- **Engine 16-disc query cap** (`CrowdLongitudinalConstraint`/swerve `stackalloc WorldDisc[16]`): new probe
+  `LiveCitySim.CrowdDiscCountsNear` shows **25/28** nose-ins have >16 crowd discs near the car (median 39,
+  max 131) → the in-path disc is truncated away, car never brakes. Fix: `Engine.MaxCrowdDiscs=256` (both
+  sites). Parity-inert (gated on `CrowdSource != null`, null on all goldens) → verified `657/4` + bench
+  `D96213B7BB4021A7` unchanged. **This is the load-bearing fix.**
+- **ORCA peds = 0.3 m footprint** (narrow corridor). Knob `GateOrcaPedsOnCrossing` (env `LIVECITY_GATE_ORCA`)
+  would feed them to the wide gate, but the velocity-0 gate over-brakes a WALKING ORCA ped → DenseFlow
+  throughput 490→418. **DEFAULTED OFF**: fix (buffer) alone already cut ORCA nose-in 11→3 at 10x. Proper ORCA
+  fix (velocity-preserving wide footprint) = follow-up.
+
+**A/B (buffer on):** ORCA-feed OFF → 10x nose-in 5 (1 fast), 1x/2000-step throughput **490** (≥450 guard ✓);
+ORCA-feed ON → 5 (0 fast) but throughput 418 (✗). Shipped = ORCA OFF.
+**Result:** 10x nose-in **28→5, 0 fast** (slow ~1.3 m/s tail); 1x **0**; throughput preserved. New guard
+`CrossingYield_HoldsUnderHighPedDensity_NoMassDriveThrough` (10x nose-in ≤12). All 25 LiveCity tests green.
+**OPEN (owner):** the ORCA narrow-corridor residual (3 at 10x) — do the velocity-preserving ORCA footprint
+next, or accept? Also: merge main's viz-unification + add click-to-mark-a-car to the viewer (owner asks).
