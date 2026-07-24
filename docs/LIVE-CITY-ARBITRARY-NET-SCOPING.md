@@ -114,6 +114,10 @@ Therefore:
   O/D sampling. Documented as a future enhancement (real edge-based ped demand exists in typical datasets
   and is an attractive later source).
 - **Polygon / TAZ crops** — n/a given §3.
+- **Pedestrians dynamically avoiding vehicles** — deferred. The current demo coupling is one-directional
+  (cars yield to peds; peds do not dodge cars — `LiveCitySim.Step` passes empty `externalEntities`); road-net
+  mode matches it. Enabling ped-avoids-car is a self-contained, **navmesh-independent** config-gated
+  enhancement (feed vehicle discs to `OrcaCrowd.SetExternalObstacles`) for a later round.
 
 ---
 
