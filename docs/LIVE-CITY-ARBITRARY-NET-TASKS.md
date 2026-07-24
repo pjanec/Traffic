@@ -138,6 +138,24 @@ the F gate need the Opus accept/reject review. Delegate per `CLAUDE.md`.
 - **Success:** the road-net smoke test asserts the nav object is a `SumoRouteGraphNav` and that no
   `RerouteDriver` / concrete `SumoNavMesh` is constructed in road-net mode (type assertion / no-throw).
 
+### C5 — Feed live vehicle discs to the ped crowd (ped-avoids-car)  *(design §5.8)*
+- **Files:** `src/Sim.LiveCity/LiveCitySim.cs` (`Step`, `:451`); `src/Sim.LiveCity/LiveCityConfig.cs`
+  (`PedAvoidVehicles` knob).
+- **Deps:** C1.
+- **Do:** add `LiveCityConfig.PedAvoidVehicles` (default **true** for `ForDataset`, **false** for
+  `ForRepoRoot`); when on, project each live vehicle from `_lastSnapshot` (pos, velocity, bounding radius
+  from `Length/Width`) to a reused `WorldDisc[]` and pass it as `externalEntities` to `_demand.Step`
+  (replacing `NoEntities`); when off, keep `NoEntities`.
+- **Success:**
+  1. With `PedAvoidVehicles==false`, `_demand.Step` receives an empty `externalEntities` and behaviour is
+     **byte-identical** to today (demo dense-flow liveness + scene tests unchanged).
+  2. With `PedAvoidVehicles==true`, a **high-power** ped approaching a **stopped car placed on a crossing**
+     laterally displaces around it (max lateral offset from its straight path > the car disc radius) instead
+     of passing through — deterministic headless fixture test.
+  3. A **low-power** ped is unaffected (walks its polyline through the car) — asserts the LOD boundary is
+     intentional and the feed is high-power-only.
+  4. Disc projection is deterministic (no `System.Random`); two runs identical.
+
 ---
 
 ## Stage D — Config surfacing
@@ -147,7 +165,8 @@ the F gate need the Opus accept/reject review. Delegate per `CLAUDE.md`.
 - **Deps:** A1.
 - **Success:**
   1. `PedMaxSpeed`, `PedRadius`, `PedArrivalRadius`, `PedEnableWeave`, and the liveliness fields exist on the
-     config, defaulted to the current literals; the ctor reads them from `cfg`.
+     config, defaulted to the current literals; the ctor reads them from `cfg`. (`PedAvoidVehicles` is added
+     in C5, not here.)
   2. The demo `PedDemandConfig` built via `ForRepoRoot` is **byte-identical** to today (unit test on the
      resulting field values); dense-flow liveness + scene tests unchanged.
 

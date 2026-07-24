@@ -100,6 +100,11 @@ Therefore:
   net ped-capable (`--sidewalks.guess --crossings.guess`, walkingareas as needed).
 - **Robustness verification** — confirm the ped/vehicle pipelines tolerate large-magnitude, negative, and
   3-D (elevation) shape coordinates (the demo net exercised none of these).
+- **Pedestrians avoid SUMO cars (high-power/ORCA)** — a real-world requirement: peds walk **around a car
+  stopped on a crosswalk** (jammed junction) and around abandoned cars. Feed live vehicle discs to the ped
+  crowd (`OrcaCrowd.SetExternalObstacles`) — **navmesh-independent**, one-sided (cars already avoid peds via
+  the existing yield coupling). Only high-power peds avoid (LOD design); config-gated, **on** for road-net
+  import, **off** for the demo so its liveness regression stays byte-identical.
 
 ### Out of scope (this round)
 - **Any crop feature** — done offline (§3).
@@ -114,10 +119,8 @@ Therefore:
   O/D sampling. Documented as a future enhancement (real edge-based ped demand exists in typical datasets
   and is an attractive later source).
 - **Polygon / TAZ crops** — n/a given §3.
-- **Pedestrians dynamically avoiding vehicles** — deferred. The current demo coupling is one-directional
-  (cars yield to peds; peds do not dodge cars — `LiveCitySim.Step` passes empty `externalEntities`); road-net
-  mode matches it. Enabling ped-avoids-car is a self-contained, **navmesh-independent** config-gated
-  enhancement (feed vehicle discs to `OrcaCrowd.SetExternalObstacles`) for a later round.
+- **Low-power pedestrian obstacle avoidance** — not planned. By LOD design, low-power PathArc peds avoid
+  nothing; only high-power (ORCA) peds avoid cars/each other (see the in-scope item below).
 
 ---
 

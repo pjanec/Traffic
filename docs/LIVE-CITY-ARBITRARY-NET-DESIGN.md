@@ -225,23 +225,39 @@ is a `SumoRouteGraphNav`).
 
 ---
 
-### 5.8 Pedestrian avoidance of vehicles is navmesh-independent
+### 5.8 Pedestrian avoidance of vehicles (IN SCOPE — real-world requirement)
 
-Car-avoidance and pathfinding are separate mechanisms; the navmesh is irrelevant to the former. Pedestrians
-avoid vehicles via `OrcaCrowd.SetExternalObstacles(discs)` (`src/Sim.Core/Orca/OrcaCrowd.cs:797-803`) —
-vehicle positions projected to `WorldDisc`s and avoided **one-sided** (responsibility 1.0: the crowd yields
-fully, the vehicle avoids the crowd through its own lane solve; `OrcaCrowd.cs:731-745`). These discs arrive
-via `PedDemand.Step(..., externalEntities)` → `PedLodManager.Step(..., externalEntities)` — pure runtime
-position data, never the navigation seam. **Route-graph mode does ped-avoids-car identically to navmesh
-mode; it needs no navmesh.**
+Peds must know about SUMO cars: walk **around a car stopped on a crosswalk** (a jammed junction — a real
+situation) and, for later evacuation work, around abandoned cars on the street. This is a first-class
+requirement, not an enhancement.
 
-Note the *current* coupling: `LiveCitySim.Step` passes `NoEntities` (empty) as `externalEntities`
-(`LiveCitySim.cs:451`), so the demo's coupling is **one-directional — cars yield to peds** (via
-`Engine.CrowdSource = Composite(HighPowerFootprints, crossingOccupancy)`) and peds do **not** dynamically
-dodge cars. Road-net mode **matches the demo** (this round): identical one-directional coupling, lowest
-parity/behaviour risk. Enabling ped-avoids-car is a **deferred, config-gated enhancement** — project live
-vehicle positions to `WorldDisc`s each `Step` and pass them instead of `NoEntities`; self-contained,
-navmesh-independent, and applies equally to demo and road-net mode if ever turned on.
+**Mechanism (navmesh-independent).** Car-avoidance and pathfinding are separate: pedestrians avoid vehicles
+via `OrcaCrowd.SetExternalObstacles(discs)` (`src/Sim.Core/Orca/OrcaCrowd.cs:797-803`) — vehicle positions
+projected to `WorldDisc`s and avoided **one-sided** (responsibility 1.0: the crowd yields fully, the vehicle
+avoids the crowd through its own lane solve; `OrcaCrowd.cs:731-745`). The discs reach the crowd via
+`PedDemand.Step(..., externalEntities)` → `PedLodManager.Step(..., externalEntities)`, which feeds them to
+`_highCrowd.SetExternalObstacles` then `_highCrowd.Step(dt)` (`PedLodManager.cs:472-480`) — pure runtime
+position data, never the navigation seam. So **route-graph mode does ped-avoids-car identically to navmesh
+mode.**
+
+**What road-net mode does:** in `LiveCitySim.Step`, project each live vehicle from the engine snapshot
+(`_lastSnapshot`: `PosX/PosY`, velocity, a bounding radius from `Length/Width`) to a `WorldDisc[]` and pass
+that as `externalEntities` (replacing the current `NoEntities`, `LiveCitySim.cs:451`). One disc per car
+centre for v1 (radius ≈ half the larger body dimension); a short chain of discs along the body is a later
+refinement if single-disc corner clipping shows. Deterministic (derived from the snapshot, no RNG).
+`OrcaCrowd`'s range cutoff means feeding all live cars is fine — only nearby ones influence a ped.
+
+**LOD boundary (by design, expected):** only **high-power (ORCA) peds** avoid cars (and each other); this is
+the whole point of the LOD split. **Low-power PathArc peds avoid nothing** — they are cheap dead-reckoning
+that walks the polyline, and that is intended, not a gap. The peds a viewer watches near a jammed crosswalk
+are the promoted high-power ones in the realism zone, so they visibly go around a stopped car; distant
+low-power peds do not, and are not meant to. No low-power avoidance is in scope or planned for this feature.
+
+**Config + demo safety.** A `LiveCityConfig.PedAvoidVehicles` knob gates it: **on** for road-net
+`ForDataset`, **off** for the demo `ForRepoRoot` so the dense-flow liveness regression stays byte-identical
+(the demo currently passes `NoEntities`; turning the feed on there changes ped positions that loop back into
+the crossing gate → `CrowdSource` → car metrics, so the demo default stays off and the pinned liveness test
+is untouched). The feed is additive and never runs in parity/bench (they drive `Engine` directly).
 
 ## 6. Capability detection + graceful degrade (R3)
 

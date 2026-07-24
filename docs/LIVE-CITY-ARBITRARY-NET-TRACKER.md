@@ -20,6 +20,7 @@ conditions are verified first-hand (Opus gate for the reviewed tasks). Global ga
 - [ ] **C2** crossings-only bake + gate/signals + walk-only degrade
 - [ ] **C3** O/D sampling from sidewalk centrelines (deterministic)
 - [ ] **C4** `RerouteDriver`/concrete-`SumoNavMesh` not wired in road-net mode
+- [ ] **C5** feed live vehicle discs to ped crowd (ped-avoids-car; high-power only; demo default off)
 
 ## Stage D — config surfacing
 - [ ] **D1** ped-demand knobs promoted to config (demo `PedDemandConfig` byte-identical)
