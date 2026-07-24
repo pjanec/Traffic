@@ -7,8 +7,9 @@ Design docs: `LIVE-CITY-15-LANECHANGE-JUNCTION-FIX-DESIGN.md`, `LIVE-CITY-15-COO
 
 ---
 
-## 1. STATUS — what is DONE (all committed + pushed; latest tip `8f1c0ed`)
-Three distinct problems found and fixed, in order, each verified first-hand:
+## 1. STATUS — what is DONE (all committed + pushed; latest tip `89743b8`)
+Four distinct problems found and fixed, in order, each verified first-hand (the 4th, into-occupied cut-ins,
+is summarized in §2 item 1 — gridlock/blockage/float are the first three below):
 
 1. **The terminal gridlock (#15 core) — CURED.** Root cause (per-car verified): a continuous
    lane-change maneuver (`lanechange.duration=2.0`) that crossed a junction boundary left a stale
@@ -43,15 +44,21 @@ fixes are demo-gated → inert on every golden → byte-identical.
 
 ---
 
-## 2. FOLLOW-UPS (the queue — owner wants to compact BEFORE starting these)
+## 2. FOLLOW-UPS (the queue)
 In priority order:
-1. **NEXT: "into-occupied" cut-ins.** `LIVECITY-LCSWAP intoStoppedTgt` shows ~28 lane changes over 1000s
-   that slot in close to a STANDING target-lane car (keepRight ~5, strategic ~50 cumulative, speedGain
-   ~17). "Safe" per `IsTargetLaneSafe` (a braking-gap check, not an "empty lane" check — a stopped
-   follower needs ~no gap), but visually a tight push-in. Owner rule: never swap into an occupied lane;
-   if required, cooperative. Likely fix: a demo-gated minimum-ABSOLUTE-clear-gap veto (don't merge within
-   ~X m of a standing target-lane car) + let the strategic informFollower open the gap first. MEASURE it
-   doesn't hurt flow (parity-sensitive if applied to the shared IsTargetLaneSafe → keep it demo-gated).
+1. **DONE — "into-occupied" cut-ins (commits `ff23060` + `89743b8`).** Per-car analysis (new
+   `LIVECITY-LCDETAIL` probe: side × gap bucket) showed the residual was FOLLOWER-side, gap 2-5 m, by a
+   MOVING changer — nothing ever <2 m. Root loophole: `IsTargetLaneSafe` is a braking-gap check a STOPPED
+   follower satisfies at any closeness. Fix (all demo-gated, engine knobs default 0 ⇒ goldens inert):
+   `Engine.MergeStoppedMinGap` (5 m) vetoes a tight cut-in ahead of a stopped follower on the
+   DISCRETIONARY paths (speed-gain, keep-right → 14→0); `Engine.MergeStoppedStrategicDeferDist` (15 m)
+   urgency-gates the REQUIRED strategic path (defer while ample road remains, allow once must-merge → 46→16,
+   strand-safe). Blanket-vetoing the strategic path was MEASURED to reform gridlock (arrivals→361) — a
+   saturated turn lane has no non-tight merge point, so required queue-joins must be allowed. A/B sweep found
+   a sharp flow cliff between 20-25 m (deferral). Net: total follower-side tight cut-ins **60→16 (−73%)**,
+   flow unchanged (arrivals 1085→1068, stoppedFrac 0.34), parity 657/4 + hash `D96213B7BB4021A7`. Survivors
+   are required moving forward+lateral queue-joins at the must-merge point (owner-permitted). Env knobs:
+   `LIVECITY_MERGEGAP`, `LIVECITY_MERGEDEFER`. Design: `LIVE-CITY-15-INTO-OCCUPIED-DESIGN.md`.
 2. **Automatic per-area realism LOD gate.** Cooperative LC is currently a GLOBAL flag. Owner requirement
    (documented, attempt log "OWNER REQUIREMENT ... per-area LOD"): when globally ON, each area's realism
    LOD should AUTO-decide per car — HIGH realism (on-screen) = cooperative + no float; LOW realism
