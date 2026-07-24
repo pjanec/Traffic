@@ -86,6 +86,12 @@ In priority order:
 4. **Visual confirm in the 3D viewer.** The engine now emits ZERO stopped lateral swaps, so the float
    source is gone at the source (not masked). Owner to confirm cars cooperatively merge instead of
    floating. Remaining keep-rights are all ≥1.5 m/s (forward+lateral diagonals, owner-accepted).
+5. **DEFERRED (owner) — detach the live-city DEMO data from the LOCKED `box` regression fixture.** The
+   liveness test (and several existing tests) pin `scenarios/_ped/demo_city/box/`, so it can't be freely
+   edited as demo scene data. Plan: lock `box` (🔒 README), give the demo its own `box-live` copy, split
+   `LiveCityConfig.ForRepoRoot` (demo default) vs a new `ForRegressionFixture` (locked), repoint the 7 test
+   `ForRepoRoot` callers. Full concrete plan + open naming decision recorded in the GLOBAL queue
+   `docs/TASKS.md` ("Deferred — detach the live-city DEMO data …") and `box/README.md`.
 
 ---
 
