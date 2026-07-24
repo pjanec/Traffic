@@ -47,6 +47,7 @@ internal static class Program
             Console.Error.WriteLine("       Sim.Viz --ped-dense-city <outPath>");
             Console.Error.WriteLine("       Sim.Viz --live-city <outPath>");
             Console.Error.WriteLine("       Sim.Viz --live-city-demo <outPath>   (FAITHFUL: real LiveCitySim + LiveCityConfig)");
+            Console.Error.WriteLine("       Sim.Viz --engine-replay <scenarioDir> <outPath>   (REAL deterministic engine run, DR-smoothed)");
             Console.Error.WriteLine("       Sim.Viz --ped-remote <outPath>");
             Console.Error.WriteLine("       Sim.Viz --ped-subarea-fcd <outPath.fcd.xml> [--dial d] [--seconds s] [--box <dir>]");
             return args.Length == 0 ? 2 : 0;
@@ -72,6 +73,7 @@ internal static class Program
             "--ped-dense-city" => RunPedDenseCity(args),
             "--live-city" => RunLiveCity(args),
             "--live-city-demo" => RunLiveCityDemo(args),
+            "--engine-replay" => RunEngineReplay(args),
             "--ped-remote" => RunPedRemote(args),
             "--ped-subarea-fcd" => RunPedSubareaFcd(args),
             "--ped-weave-csv" => RunPedWeaveCsv(args),
@@ -376,6 +378,43 @@ internal static class Program
         Console.WriteLine(
             $"  FAITHFUL(real LiveCitySim): near-collision(car within 2.5m of a ped ON a crossing)={nearCollision} "
             + $"over pedOnCrossingSamples={pedOnCrossingSamples}; minCarSpeedNearOccupiedCrossing={minStr} m/s");
+        return 0;
+    }
+
+    // T3 (docs/VIZ-UNIFICATION-DESIGN.md): render the REAL deterministic engine run on a scenario dir
+    // (net+rou+sumocfg), DR-smoothed through the one shared VizReplayBuilder. Same trajectory the
+    // committed golden.fcd.xml encodes for this scenario, shown reconstructed (not raw FCD playback).
+    private static int RunEngineReplay(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("error: --engine-replay requires <scenarioDir> <outPath>");
+            return 2;
+        }
+
+        var scenarioDir = args[1];
+        var outPath = args[2];
+        using var source = new EngineScenarioSource(scenarioDir);
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(scenarioDir));
+        var opts = new VizReplayOptions(
+            $"Engine replay: {name}",
+            "The real deterministic SumoSharp engine run on this scenario (net + demand + sumocfg), "
+            + "dead-reckoning-reconstructed for smooth display (vehicle center + emitted heading + "
+            + "upcoming-lane look-ahead) via the shared VizReplayBuilder -- the same trajectory the "
+            + "committed golden encodes, shown smooth instead of raw FCD.",
+            RenderHz: 10.0,
+            Steps: source.Steps);
+        var scene = VizReplayBuilder.Build(source, opts);
+        var payload = new ReplayData(new[] { scene });
+        if (!WriteHtml(payload, scene.Name, outPath))
+        {
+            return 2;
+        }
+
+        var size = new FileInfo(outPath).Length;
+        Console.WriteLine(
+            $"wrote {outPath}  ({size} bytes)  scenario={name} steps={source.Steps} frames={scene.Frames.Length} "
+            + $"view={scene.View[0]},{scene.View[1]}..{scene.View[2]},{scene.View[3]}");
         return 0;
     }
 
