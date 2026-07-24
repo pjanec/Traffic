@@ -2474,6 +2474,13 @@ Relevant wiring (for whoever picks these up):
    transition may not fire (or not restore the route/sidewalk target), leaving an orphaned ORCA agent with no
    goal.
 
+6. **[TODO, low priority — owner obs 2026-07] Low-power peds merge into a SINGLE point at a junction and
+   idle there (that point sometimes even turns amber/ORCA-coloured), instead of dispersing.** Looks like they
+   share ONE final destination and all converge on it. Fix idea: randomize ped destinations (and/or the
+   arrival/idle spot) so they end up idling on DIFFERENT spots rather than stacking on one common place. Likely
+   area: `PedDemandConfig.Destinations`/`odPoints` + `ArrivalRadius`/dwell in `PedDemand`/`PedLodManager`
+   (`LiveCitySim` ctor). NOT a priority per owner; record only.
+
 5. **ORCA peds do NOT dodge a SUMO car standing on the crosswalk.** Observed: when a junction is blocked by
    cars stopped ON the zebra, ORCA peds walk into / stall against the standing car instead of routing around
    it, though there is physical space to pass. Expected: the ORCA ped treats the standing car as an obstacle

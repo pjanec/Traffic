@@ -76,6 +76,7 @@ internal static class Program
             "--live-city-yielddump" => RunLiveCityYieldDump(args),
             "--live-city-yieldtrace" => RunLiveCityYieldTrace(args),
             "--live-city-orcatrace" => RunLiveCityOrcaTrace(args),
+            "--live-city-cartrace" => RunLiveCityCarTrace(args),
             "--engine-replay" => RunEngineReplay(args),
             "--ped-remote" => RunPedRemote(args),
             "--ped-subarea-fcd" => RunPedSubareaFcd(args),
@@ -600,6 +601,50 @@ internal static class Program
         Console.WriteLine($"    on INTERNAL (junction) lane = {throughInternal}  |  FAST(>=4 m/s) = {throughFast}  |  crowd-brake NOT engaged (binder!=13) = {throughNoBrake}");
         foreach (var w in worst)
             Console.WriteLine($"    t={w.T:F1} car={w.Car} spd={w.Spd:F1} lane={w.Lane} binder={w.Binder} discsNear={w.Discs} lat={w.Lat:F2} along={w.Along:F2}");
+        return 0;
+    }
+
+    // Per-tick dump of one car's authoritative state (speed, lane, binding constraint, position) + whether it
+    // is near a crossing -- to diagnose the "stopped car floats/rotates at a crosswalk" DR artifact: if a car
+    // held at a crossing MICRO-CREEPS (speed oscillating around KinematicHeading.HoldSpeed=0.5) the heading-hold
+    // releases and the look-ahead predictor rotates the stopped body. args: steps, carId, [minStep] [maxStep].
+    private static int RunLiveCityCarTrace(string[] args)
+    {
+        var steps = args.Length >= 2 && int.TryParse(args[1], out var s) ? s : 400;
+        var carId = args.Length >= 3 ? args[2] : null;
+        var lo = args.Length >= 4 && int.TryParse(args[3], out var l) ? l : 0;
+        var hi = args.Length >= 5 && int.TryParse(args[4], out var h) ? h : steps;
+        var cfg = Sim.LiveCity.LiveCityConfig.ForRepoRoot(RepoRoot());
+        using var sim = new Sim.LiveCity.LiveCitySim(cfg);
+        var dt = cfg.Dt;
+        var crossings = sim.CrossingCentroids;
+        var prev = new Dictionary<Sim.Core.VehicleHandle, (double X, double Y)>();
+
+        for (var step = 0; step < steps; step++)
+        {
+            sim.Step();
+            var snap = sim.Sample();
+            var t = (step + 1) * dt;
+            if (step < lo || step > hi) { prev.Clear(); foreach (var c in snap.Cars) prev[c.Handle] = (c.X, c.Y); continue; }
+            var wit = new Dictionary<Sim.Core.VehicleHandle, Sim.LiveCity.LiveCitySim.CarAuthWitness>();
+            foreach (var w in sim.WitnessAuthoritative()) wit[w.Handle] = w;
+
+            foreach (var c in snap.Cars)
+            {
+                if (carId != null && c.Name != carId) continue;
+                var moved = prev.TryGetValue(c.Handle, out var pp);
+                var fdSpd = moved ? Math.Sqrt((c.X - pp.X) * (c.X - pp.X) + (c.Y - pp.Y) * (c.Y - pp.Y)) / dt : 0.0;
+                var w = wit.TryGetValue(c.Handle, out var ww) ? ww : default;
+                var nearCross = false; double cd = 1e9;
+                foreach (var (cx, cy, hw) in crossings) { var d = Math.Sqrt((c.X - cx) * (c.X - cx) + (c.Y - cy) * (c.Y - cy)); if (d < cd) cd = d; if (d < hw + 3.0) nearCross = true; }
+                Console.WriteLine($"  {c.Name} t={t:F1} authSpd={w.Speed:F2} fdSpd={fdSpd:F2} lane={w.LaneId} binder={w.Binder} "
+                    + $"pos=({c.X:F2},{c.Y:F2}) angle={c.AngleDeg:F0} nearCrossing={nearCross} distCross={cd:F1}");
+            }
+
+            prev.Clear();
+            foreach (var c in snap.Cars) prev[c.Handle] = (c.X, c.Y);
+        }
+
         return 0;
     }
 
