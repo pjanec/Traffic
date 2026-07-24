@@ -111,3 +111,18 @@ on the demo-faithful sim** — the target to drive toward 0 (or explained) by th
 
 Henceforth ALL realism repro + fix-verification uses `--live-city-demo` (and, for isolation, the focused
 `--ped-*` scenes cross-checked against it). The batch `--live-city` stays only as the public-gallery demo.
+
+### Faithful replay now uses the VIEWERS' DR motion reconstruction (owner: HTML must match 2D/3D viewers)
+The `--live-city-demo` replay was writing raw 2 Hz `Sample()` poses → the HTML showed the steppy
+authoritative motion (junction facet-snaps, instant lane changes), NOT the DR-predicted smoothing the raylib
+2D + City3D viewers apply at render time. Fixed: `BuildLiveCityDemo` now runs the EXACT viewer pipeline —
+`DrClock.ResolveAt` (deterministic sibling of the wall-clock `Resolve`, the one IgBridge uses) → the shared
+`KinematicReconstructor` facade (`Sim.Viewer.Motion`; continuous junction arcs + gliding lane changes +
+rear-axle heading drag), fed from `LiveCitySim.VehicleSource` (the same in-process replication wire the
+viewers consume) with a one-step (0.5 s) playout delay + `CoarseFeed`, resampled at render rate. Peds are
+sampled at the SAME render instants via new `LiveCitySim.SamplePedsAt(t)` (ped DR is continuous in time).
+The replay player's own Catmull-Rom interpolation fills between the reconstructed samples, so 6 Hz emit is
+smooth AND mobile-friendly (718 frames, 4.8 MB vs 8 MB at 10 Hz). Sim.Viz now references
+`Sim.Viewer.Motion` + `Sim.LiveCity`; engine/goldens untouched (full build green, `Sim.LiveCity.Tests`
+23/23). near-collision RATE unchanged (129/3582 = 3.6% vs 43/1197 = 3.6% → defect #1 intact). **The HTML now
+shows the SAME DR-smoothed motion as the demos.**

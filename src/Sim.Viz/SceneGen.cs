@@ -9,6 +9,7 @@ using Sim.Pedestrians.Lod;
 using Sim.Pedestrians.Navigation;
 using Sim.Pedestrians.Navigation.Bake;
 using Sim.LiveCity;
+using Sim.Viewer.Motion;
 using Sim.Pedestrians.Obstacles;
 using Sim.Pedestrians.Parking;
 using Sim.Replication;
@@ -2389,45 +2390,82 @@ internal static class SceneGen
 
         using var sim = new LiveCitySim(cfg);
 
+        // FAITHFUL DR RECONSTRUCTION -- the EXACT motion pipeline the raylib 2D + City3D viewers use
+        // (RenderHelpers.PumpAndBuildVehicleDraws) and IgBridge: DrClock.ResolveAt (the deterministic,
+        // offline-safe sibling of the wall-clock Resolve) -> the shared KinematicReconstructor facade
+        // (Sim.Viewer.Motion), fed from LiveCitySim.VehicleSource (the SAME in-process replication wire the
+        // viewers consume) with a one-step playout delay + CoarseFeed (a sparse 2 Hz feed), RESAMPLED at
+        // render rate. So junction turns render as continuous arcs and lane changes glide -- no facet-snaps,
+        // no instant lateral jumps. Peds are sampled at the SAME render instants (their DR is continuous in
+        // time). Net: the HTML shows the SAME smoothed motion as the demos.
+        const double RenderHz = 6.0;                  // DR-reconstructed samples; the player Catmull-Rom
+                                                      // interpolates between them, so 6 Hz is smooth AND
+                                                      // mobile-friendly in file size (vs 30/60 Hz emit)
+        var renderDt = 1.0 / RenderHz;
+        var delay = cfg.Dt;                           // one-step playout -> query instant sits between the two
+                                                      // newest samples (DrClock INTERPOLATE branch, arc turns)
+        var drClock = new DrClock();
+        var recon = new KinematicReconstructor { CoarseFeed = true };
+        var lanes = sim.LocalLanes;
+
         var slotByHandle = new Dictionary<uint, int>();
         var frames = new List<FramePayload>();
         var discsKeyedPerFrame = new List<List<(string Key, double[] Disc)>>();
+        var lastTauByHandle = new Dictionary<uint, double>();
+        var pedScratch = new List<LiveCityPed>();
 
+        var simTime = 0.0;   // sim clock (= LiveCitySim._now after each Step)
+        var tau = 0.0;       // render query instant on the sim timeline, advanced at RenderHz
         for (var step = 0; step < steps; step++)
         {
             sim.Step();
-            var snap = sim.Sample();
+            sim.VehicleSource.Pump();  // publish this step's poses onto the wire the reconstruction reads
+            simTime += cfg.Dt;
 
-            // cars in crop -> fixed slot per stable handle (so slot j is the same vehicle across frames).
-            foreach (var c in snap.Cars)
+            // Emit every render frame whose query instant is now buffered (tau <= simTime - delay).
+            var target = simTime - delay;
+            while (tau <= target + 1e-9)
             {
-                if (!In(c.X, c.Y)) continue;
-                if (!slotByHandle.ContainsKey(c.Handle.Index)) slotByHandle[c.Handle.Index] = slotByHandle.Count;
-            }
-
-            var v = new double[slotByHandle.Count][];
-            foreach (var c in snap.Cars)
-            {
-                if (!In(c.X, c.Y)) continue;
-                v[slotByHandle[c.Handle.Index]] = new[] { R(c.X), R(c.Y), R(c.AngleDeg) };
-            }
-
-            // peds -> [x, y, radius, kind], kind = the demo's LOD regime (Sample() already resolves it).
-            var discs = new List<(string, double[])>(snap.Peds.Count);
-            foreach (var p in snap.Peds)
-            {
-                if (!In(p.X, p.Y)) continue;
-                var kind = p.Regime switch
+                // --- vehicles: DR-reconstructed continuous pose at tau (front bumper = SUMO's pose point) ---
+                var poses = new List<(uint Idx, double X, double Y, double Deg)>();
+                foreach (var kv in sim.VehicleSource.History)
                 {
-                    PedRegime.HighPower => KindPedHighPower,
-                    PedRegime.LowPowerWalking => KindPedLowPower,
-                    _ => KindPedPaused,
-                };
-                discs.Add(($"ped{p.Id}", new[] { R(p.X), R(p.Y), 0.3, (double)kind }));
-            }
+                    var history = kv.Value;
+                    if (history.Count == 0) continue;
+                    var handle = kv.Key;
+                    var resolved = drClock.ResolveAt(history, tau, lanes);
+                    var dims = sim.VehicleSource.Dims.TryGetValue(handle, out var d) ? d : (5.0f, 1.8f);
+                    var realDt = lastTauByHandle.TryGetValue(handle.Index, out var lt) ? Math.Max(1e-3, tau - lt) : renderDt;
+                    var result = recon.Resolve(handle, resolved, lanes, dims, (float)realDt);
+                    lastTauByHandle[handle.Index] = tau;
+                    if (!result.Ok) continue;
+                    if (!In(result.SmoothedFrontX, result.SmoothedFrontY)) continue;
+                    if (!slotByHandle.ContainsKey(handle.Index)) slotByHandle[handle.Index] = slotByHandle.Count;
+                    poses.Add((handle.Index, result.SmoothedFrontX, result.SmoothedFrontY, result.HeadingDeg));
+                }
 
-            frames.Add(new FramePayload(v, Array.Empty<double[]?>()));
-            discsKeyedPerFrame.Add(discs);
+                var v = new double[slotByHandle.Count][];
+                foreach (var (idx, x, y, deg) in poses) v[slotByHandle[idx]] = new[] { R(x), R(y), R(deg) };
+
+                // --- peds: sampled at the SAME render instant tau (smooth, matching the viewers) ---
+                sim.SamplePedsAt(tau, pedScratch);
+                var discs = new List<(string, double[])>(pedScratch.Count);
+                foreach (var p in pedScratch)
+                {
+                    if (!In(p.X, p.Y)) continue;
+                    var kind = p.Regime switch
+                    {
+                        PedRegime.HighPower => KindPedHighPower,
+                        PedRegime.LowPowerWalking => KindPedLowPower,
+                        _ => KindPedPaused,
+                    };
+                    discs.Add(($"ped{p.Id}", new[] { R(p.X), R(p.Y), 0.3, (double)kind }));
+                }
+
+                frames.Add(new FramePayload(v, Array.Empty<double[]?>()));
+                discsKeyedPerFrame.Add(discs);
+                tau += renderDt;
+            }
         }
 
         NormalizeVehicleSlots(frames, slotByHandle.Count);
@@ -2436,15 +2474,17 @@ internal static class SceneGen
         var cropNet = CropNetwork(fullNet, pedNetwork, netPath, x0, y0, x1, y1);
 
         return new ScenePayload(
-            "Live-city DEMO (faithful): cars + peds, real LiveCityConfig",
+            "Live-city DEMO (faithful, DR-smoothed): cars + peds, real LiveCityConfig",
             "The ACTUAL live-city demo sim (LiveCitySim + LiveCityConfig -- same net, demand and params as "
             + "the City3D/raylib demo: cooperative lane change, per-area realism LOD gate, crossing-occupancy "
-            + "yield). Grey = low-power ped, orange = promoted full-ORCA, yellow = paused; boxes = cars. A fix "
-            + "verified in this replay transfers directly to the demo.",
+            + "yield), with the SAME dead-reckoning motion reconstruction the 2D/3D viewers use (DrClock + "
+            + "KinematicReconstructor: continuous junction arcs, gliding lane changes -- no facet-snaps). Grey "
+            + "= low-power ped, orange = promoted full-ORCA, yellow = paused; boxes = cars. A fix verified in "
+            + "this replay transfers directly to the demo.",
             new double[] { R(x0), R(y0), R(x1), R(y1) },
             cropNet,
             new double[] { 5.0, 1.8 },
-            cfg.Dt,
+            renderDt,
             frames.ToArray());
     }
 

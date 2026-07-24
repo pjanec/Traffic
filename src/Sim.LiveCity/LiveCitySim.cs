@@ -724,6 +724,27 @@ public sealed class LiveCitySim : IDisposable
         return new LiveCitySnapshot(cars, peds, _crossingOccupancy.OccupiedCount);
     }
 
+    // Sample pedestrians at an ARBITRARY (continuous) time `t`, not just the current sim step. Ped DR is a
+    // pure function of time (PathArc / ActivityTimeline), so this yields the smooth intermediate pose the
+    // interactive viewers render between sim ticks. Used by the faithful HTML replay exporter to emit
+    // dense (render-rate) ped frames aligned with the DR-reconstructed vehicle frames -- same as the
+    // viewers show. `t` should be within ~one step of the latest `Step()` (the arc it interpolates along).
+    public void SamplePedsAt(double t, List<LiveCityPed> into)
+    {
+        into.Clear();
+        foreach (var id in _demand.LiveIds)
+        {
+            var p = _manager.PositionOf(id, t);
+            if (p.X < _x0 || p.X > _x1 || p.Y < _y0 || p.Y > _y1) continue;
+            var model = _manager.ModelOf(id);
+            var animTag = _manager.AnimTagOf(id, t);
+            var regime = model == PedDrModel.FreeKinematic ? PedRegime.HighPower
+                : animTag == ActivityTimeline.WalkAnimTag ? PedRegime.LowPowerWalking
+                : PedRegime.Paused;
+            into.Add(new LiveCityPed(id, p.X, p.Y, 0.0, regime, animTag));
+        }
+    }
+
     // Read the union of drivable edge ids from a committed car route file (every `edges="..."` token).
     // Copied from SceneGen.ReadDrivableEdges.
     private static IReadOnlyList<string> ReadDrivableEdges(string rouPath)

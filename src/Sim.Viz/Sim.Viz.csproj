@@ -14,6 +14,7 @@
     <ProjectReference Include="..\Sim.Evac\Sim.Evac.csproj" />
     <ProjectReference Include="..\Sim.Pedestrians\Sim.Pedestrians.csproj" />
     <ProjectReference Include="..\Sim.LiveCity\Sim.LiveCity.csproj" />
+    <ProjectReference Include="..\Sim.Viewer.Motion\Sim.Viewer.Motion.csproj" />
   </ItemGroup>
 
   <ItemGroup>
